@@ -45,21 +45,65 @@ jobs:
           name: playwright-report
           path: web-publica/playwright-report
 
+  web-interna:
+    name: web-interna (build y tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: web-interna
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-interna/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      # Solo dependencias de produccion; falla si hay vulnerabilidades altas o criticas
+      - run: npm audit --omit=dev --audit-level=high
+      # E2E con Playwright (Chromium, Firefox y WebKit). No necesitan backend ni Keycloak: levantan
+      # vite y simulan la API con page.route. Los pasos solo corren si el repo ya trae la configuracion
+      # Sin condicion (SEC-J-I29): si se borra web-interna/playwright.config.js la CI debe fallar,
+      # no saltarse en silencio WI-15 (privacidad de teselas) y WI-10.
+      - name: Instalar navegadores de Playwright
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: E2E
+        run: npm run test:e2e
+      - name: Informe de Playwright
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-report-web-interna
+          path: web-interna/playwright-report
+          if-no-files-found: ignore
+          retention-days: 7
+
   backend:
-    name: backend (${{ matrix.servicio }})
+    name: backend (${{ matrix.servicio }}, ${{ matrix.tz }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # Zona horaria del proceso. Los runners usan UTC; las entradas America/Bogota reproducen la
+      # maquina del equipo y atrapan pruebas que mezclan la zona del servidor con la de Bogota
+      # (ver ValidadorDatosHallazgoTest, que fallaba entre las 00:00 y las 05:00 UTC).
+      TZ: ${{ matrix.tz }}
     strategy:
       fail-fast: false
       matrix:
-        # Para agregar otro servicio, anade su carpeta aqui, por ejemplo:
-        #   - servicio-equipos
-        #   - servicio-reportes
+        # Para agregar otro servicio, anade una entrada con su carpeta y tz: UTC, por ejemplo:
+        #   - { servicio: servicio-equipos, tz: UTC }
+        #   - { servicio: servicio-reportes, tz: UTC }
+        # Anade tambien una de America/Bogota solo si el servicio maneja fechas/horas locales.
         # (los tests de integracion usan Testcontainers: ubuntu-latest ya trae Docker)
-        servicio:
-          - servicio-cientifico
-          - servicio-consulta-publica
-          - api-gateway
+        include:
+          - { servicio: servicio-cientifico, tz: UTC }
+          - { servicio: servicio-cientifico, tz: America/Bogota }
+          - { servicio: servicio-consulta-publica, tz: UTC }
+          - { servicio: servicio-consulta-publica, tz: America/Bogota }
+          - { servicio: api-gateway, tz: UTC }
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
@@ -67,13 +111,18 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
-      # verify = compilar + tests unitarios e integracion (Testcontainers) + empaquetar
-      - run: mvn -B -ntp -pl ${{ matrix.servicio }} -am verify
+      # verify = compilar + tests unitarios e integracion (Testcontainers) + empaquetar.
+      # La JVM de las pruebas es un proceso hijo de Surefire/Failsafe (fork): hereda TZ del entorno, pero
+      # MAVEN_OPTS solo afectaria a la JVM de Maven, no a la de las pruebas. Por eso ademas se fija
+      # -Duser.timezone con -DargLine (propiedad que leen Surefire y Failsafe; ningun pom la define),
+      # sin tocar los pom.xml.
+      - name: mvn verify (TZ=${{ matrix.tz }})
+        run: mvn -B -ntp -pl ${{ matrix.servicio }} -am verify "-DargLine=-Duser.timezone=${{ matrix.tz }}"
       - name: Informes de pruebas (si algo falla)
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: surefire-${{ matrix.servicio }}
+          name: surefire-${{ matrix.servicio }}-${{ matrix.tz == 'UTC' && 'utc' || 'bogota' }}
           path: ${{ matrix.servicio }}/target/surefire-reports
           if-no-files-found: ignore
           retention-days: 7
