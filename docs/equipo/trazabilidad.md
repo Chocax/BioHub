@@ -196,11 +196,12 @@ Esta matriz es una línea base de otra rama: la tabla de arriba no se reescribi�
 
 | Requisito | Estado | Código | Pruebas |
 |---|---|---|---|
-| HU-08, RF14 (control), RNF11, ASR8 | Cumple | `api-gateway/.../filtro/ApiKeyRateLimitFilter.java`, `infrastructure/limite/`, `ApiExternaController` | `ApiKeyRateLimitFilterTest`, `GatewayIntegracionTest`, Bruno `gateway/` |
+| HU-08, RF14 (control), RNF11, ASR8 | Cumple, con evidencia de carga (2026-11-14) | `api-gateway/.../filtro/ApiKeyRateLimitFilter.java`, `infrastructure/limite/`, `ApiExternaController` | `ApiKeyRateLimitFilterTest`, `GatewayIntegracionTest`, Bruno `gateway/`; k6 `pruebas-carga/k6/gateway-limite-api-externa.js` (`resultados/asr8-gateway*.json`, `10-verificacion-sad.md`) |
 | HU-12 | Cumple | `ServicioApiKeys`, `ConsumidoresController`, `infrastructure/credenciales/` | `ServicioApiKeysTest`, `ConsumidoresControllerTest`, `GatewayIntegracionTest` |
 | RNF12, ASR9 | Cumple | `ProxyService.reenviarApiExterna`, `RutasGateway.PREFIJO_API_EXTERNA` | `ProxyServiceTest`, Bruno `gateway/` |
 | HU-10, RF17, RF19 | Cumple en backend; falta pantalla | `ServicioUsuarios`, `KeycloakAdminAdapter`, `RevocacionTokenFilter` | `KeycloakAdminAdapterIntegracionTest`, `ServicioUsuariosTest`, `GatewayIntegracionTest` |
 | HU-11 c.1, c.2, RF18 | Cumple | `realm-biohub.json` (`failureFactor: 3`), `SecurityConfig` | `KeycloakAdminAdapterIntegracionTest` |
 | HU-11 c.3 | Depende de Hernando | Guardar el `sub` en cada acción | Pendiente |
 | SEC-02 | Parcial | Gateway hecho; falta `denyAll` en los 4 servicios | `MatrizAccesoGatewayTest` |
+| SEC-J-04 (apoya RF11, RF12) | Cumple en el gateway; falta usarlo en `MapaHallazgos.jsx` | `TeselasController`, `ServicioTeselas`, `infrastructure/teselas/OrigenTeselasHttp` (D56) | `TeselasControllerTest`, `ServicioTeselasTest`, `OrigenTeselasHttpTest`; de punta a punta contra OSM |
 | RNF13 en `web-interna`, login y navegación | Pendiente | Las pantallas van al final | Pendiente |
