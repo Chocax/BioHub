@@ -13,11 +13,13 @@ export class ErrorApi extends Error {
 /**
  * Cliente HTTP inyectable. Contrato que espera el módulo:
  *   cliente.get(ruta, { signal })     -> Promise<json>   (JSON de la API)
- *   cliente.getBlob(ruta, { signal }) -> Promise<Blob>   (binarios: teselas del mapa, SEC-J-04)
+ *   cliente.getBlob(ruta, { signal, sinCache }) -> Promise<Blob>   (teselas del mapa, SEC-J-04;
+ *                                     con sinCache: true no debe usar la caché, SEC-J-24/D57)
  * Ambos rechazan con un error que tenga `.status` (0 = sin respuesta; 401, 403, 429, 5xx...) y,
  * si lo conocen, `.codigo`. Un AbortError del `signal` se propaga tal cual.
- * Un cliente propio (no el de `crearClienteUbicacion`) DEBE implementar también `getBlob`, o el
- * mapa base no cargará (la vista Lista seguirá funcionando).
+ * Un cliente propio (no el de `crearClienteUbicacion`) DEBE implementar también
+ * `getBlob(ruta, { signal, sinCache })` y, con `sinCache: true`, no guardar la respuesta en caché
+ * (SEC-J-24). Sin `getBlob` el mapa base no cargará (la vista Lista seguirá funcionando).
  * `crearClienteUbicacion` da una implementación lista con `fetch`; Santiago solo aporta
  * `apiUrl` y `obtenerToken` (por ejemplo: async () => { await keycloak.updateToken(30); return keycloak.token; }).
  */
@@ -32,11 +34,12 @@ export function crearClienteUbicacion({ apiUrl, obtenerToken }) {
     }
     let r;
     try {
+      // `opciones` va primero: nada puede sobrescribir el token, `credentials` ni la señal (SEC-J-I25).
       r = await fetch(`${apiUrl}${ruta}`, {
+        ...opciones,
         headers: { Authorization: `Bearer ${token}`, Accept: accept },
         credentials: 'omit',
         signal,
-        ...opciones,
       });
     } catch (e) {
       if (e?.name === 'AbortError') throw e;
@@ -60,11 +63,12 @@ export function crearClienteUbicacion({ apiUrl, obtenerToken }) {
       return r.json();
     },
     /**
-     * Binarios (teselas PNG). Sin `cache: 'no-store'`: el gateway manda `private, max-age=86400`
-     * y el navegador debe poder reutilizar la tesela.
+     * Binarios (teselas PNG). Por defecto respeta la caché del navegador (el gateway manda
+     * `private, max-age=86400`). Con `sinCache: true` usa `cache: 'no-store'`: ni se lee ni se
+     * guarda en la caché HTTP, para que las teselas de zoom alto no queden en disco (SEC-J-24).
      */
-    async getBlob(ruta, { signal } = {}) {
-      const r = await pedir(ruta, { signal, accept: 'image/png' });
+    async getBlob(ruta, { signal, sinCache = false } = {}) {
+      const r = await pedir(ruta, { signal, accept: 'image/png', opciones: sinCache ? { cache: 'no-store' } : {} });
       let blob;
       try {
         blob = await r.blob();

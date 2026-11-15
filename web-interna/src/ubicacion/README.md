@@ -32,7 +32,8 @@ const cliente = crearClienteUbicacion({
 />
 ```
 
-- `cliente` es cualquier objeto `{ get(ruta, { signal }) => Promise<json>, getBlob(ruta, { signal }) => Promise<Blob> }` que rechace con un error con `status` (y `codigo` si lo conoce; `0` = sin respuesta; el `AbortError` se propaga). `crearClienteUbicacion` ya lo implementa con `fetch` (Bearer, sin cookies; `get` con `cache: 'no-store'`, `getBlob` sin él para que el navegador reutilice las teselas). Un cliente propio debe implementar también `getBlob`; sin él el mapa base no carga y la pantalla pasa a la vista Lista. En tests se puede inyectar uno falso.
+- `cliente` es cualquier objeto `{ get(ruta, { signal }) => Promise<json>, getBlob(ruta, { signal, sinCache }) => Promise<Blob> }` que rechace con un error con `status` (y `codigo` si lo conoce; `0` = sin respuesta; el `AbortError` se propaga). `crearClienteUbicacion` ya lo implementa con `fetch` (Bearer, sin cookies; `get` con `cache: 'no-store'`, `getBlob` con `no-store` solo si `sinCache: true`, es decir desde el zoom 9, D57; por debajo el navegador reutiliza las teselas). Un cliente propio debe implementar también `getBlob` y respetar `sinCache` (si lo ignora, reabre SEC-J-24); sin él el mapa base no carga y la pantalla pasa a la vista Lista. En tests se puede inyectar uno falso.
+- Con `sinCache: true` (teselas de zoom 9 o más, `ZOOM_SIN_CACHE`) el cliente no debe leer ni guardar la respuesta en la caché del navegador; `crearClienteUbicacion` usa `cache: 'no-store'` (SEC-J-24).
 - `roles`: roles de negocio (`rolesUsuario()`). Solo `cientifico_alto_rango` ve coordenadas y entra al mapa. Cualquier otro rol (o lista vacía) ve "Restringido" y, en el mapa, la pantalla de acceso denegado **sin llamar a la API**.
 - El enlace "Mapa" puede mostrarse a todos los roles: la pantalla explica el rechazo.
 - Las pantallas cambian `document.title` y mueven el foco al título al entrar.

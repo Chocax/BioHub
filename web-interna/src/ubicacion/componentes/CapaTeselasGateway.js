@@ -2,12 +2,18 @@ import L from 'leaflet';
 
 /** Ruta relativa al gateway (04 §8.1). La resuelve el cliente inyectado: nunca un host de OSM (SEC-J-04). */
 export const RUTA_TESELAS = '/api/gateway/teselas/{z}/{x}/{y}.png';
+/**
+ * Desde este zoom las teselas se piden sin caché del navegador (SEC-J-24): a partir de 9 una
+ * tesela cubre un área pequeña alrededor del hallazgo y, guardada en disco, delataría qué zonas
+ * miró el usuario a quien use después el mismo equipo. Las de zoom bajo (país, departamento) sí se guardan.
+ */
+export const ZOOM_SIN_CACHE = 9;
 
 /**
  * Capa de teselas que las pide al gateway con el JWT (11 §7, D56). Un `<img src>` no puede enviar
  * `Authorization`, así que cada tesela se descarga con `cliente.getBlob` y se muestra desde un object URL.
  *
- * Opciones propias: `cliente` ({ getBlob(ruta, { signal }) }) y `alSesionVencida` (se llama UNA vez ante un 401).
+ * Opciones propias: `cliente` ({ getBlob(ruta, { signal, sinCache }) }; con `sinCache: true` no debe usar la caché, D57) y `alSesionVencida` (se llama UNA vez ante un 401).
  *
  * Ciclo de vida de cada tesela (una entrada en `this._pendientes`):
  *  - un AbortController por tesela; se aborta cuando Leaflet la descarta (`tileunload`, `tileabort`,
@@ -35,7 +41,7 @@ export const CapaTeselasGateway = L.TileLayer.extend({
     const ruta = L.Util.template(this._url, { x: coords.x, y: coords.y, z: coords.z });
     // Promise.resolve().then: si el cliente no implementa getBlob el fallo llega como tileerror, no rompe a Leaflet.
     Promise.resolve()
-      .then(() => this.options.cliente.getBlob(ruta, { signal: entrada.controlador.signal }))
+      .then(() => this.options.cliente.getBlob(ruta, { signal: entrada.controlador.signal, sinCache: coords.z >= ZOOM_SIN_CACHE }))
       .then((blob) => {
         if (entrada.controlador.signal.aborted) return; // se descartó mientras bajaba
         entrada.urlObjeto = URL.createObjectURL(blob);

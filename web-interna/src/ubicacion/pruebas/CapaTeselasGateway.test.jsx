@@ -2,7 +2,7 @@ import { act, cleanup, render } from '@testing-library/react';
 import { MapContainer } from 'react-leaflet';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { crearClienteUbicacion, ErrorApi } from '../api/ubicacionApi.js';
-import { CapaTeselasGateway, RUTA_TESELAS } from '../componentes/CapaTeselasGateway.js';
+import { CapaTeselasGateway, RUTA_TESELAS, ZOOM_SIN_CACHE } from '../componentes/CapaTeselasGateway.js';
 import TeselasGateway from '../componentes/TeselasGateway.jsx';
 
 const PNG = () => new Blob(['png'], { type: 'image/png' });
@@ -39,6 +39,16 @@ afterEach(() => {
 });
 
 describe('CapaTeselasGateway (capa Leaflet)', () => {
+  it('SEC-J-24: desde el zoom 9 pide la tesela sin caché; por debajo, con caché', async () => {
+    expect(ZOOM_SIN_CACHE).toBe(9);
+    const cliente = clienteManual();
+    const capa = new CapaTeselasGateway(RUTA_TESELAS, { cliente });
+    for (const z of [0, 5, 8, 9, 10, 12]) capa.createTile({ x: 0, y: 0, z }, vi.fn());
+    await vaciar();
+    const sinCachePorZoom = cliente.getBlob.mock.calls.map(([ruta, op]) => [Number(ruta.split('/')[4]), op.sinCache]);
+    expect(sinCachePorZoom).toEqual([[0, false], [5, false], [8, false], [9, true], [10, true], [12, true]]);
+  });
+
   it('pide la tesela por el cliente con la ruta relativa del gateway y la muestra desde un object URL', async () => {
     const cliente = clienteManual();
     const capa = new CapaTeselasGateway(RUTA_TESELAS, { cliente });

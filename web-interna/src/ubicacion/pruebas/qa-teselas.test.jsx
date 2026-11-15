@@ -3,7 +3,7 @@ import { act, cleanup, render } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { MapContainer } from 'react-leaflet';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ErrorApi } from '../api/ubicacionApi.js';
+import { crearClienteUbicacion, ErrorApi } from '../api/ubicacionApi.js';
 import { CapaTeselasGateway, RUTA_TESELAS } from '../componentes/CapaTeselasGateway.js';
 import MapaHallazgos, { MAX_ERRORES_TESELAS } from '../componentes/MapaHallazgos.jsx';
 import TeselasGateway from '../componentes/TeselasGateway.jsx';
@@ -175,5 +175,59 @@ describe('QA teselas: capa aislada', () => {
     rech(new ErrorApi(401));
     await vaciar();
     expect(alSesionVencida).not.toHaveBeenCalled();
+  });
+});
+
+describe('QA 20f (SEC-J-24): zoom >= 9 sin caché, de punta a punta', () => {
+  const respuestaPng = () => ({ ok: true, blob: () => Promise.resolve(PNG()) });
+  const fetchPorZoom = async (zoom) => {
+    const f = vi.fn().mockResolvedValue(respuestaPng());
+    vi.stubGlobal('fetch', f);
+    const cliente = crearClienteUbicacion({ apiUrl: 'http://gw', obtenerToken: async () => 'TOKEN' });
+    const { unmount } = render(
+      <MapContainer center={[4.5, -74.1]} zoom={zoom} maxZoom={12} style={{ height: 512, width: 512 }}>
+        <TeselasGateway cliente={cliente} attribution="OSM" maxZoom={12} />
+      </MapContainer>,
+    );
+    await act(vaciar);
+    await act(vaciar);
+    unmount();
+    return f.mock.calls;
+  };
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each([[8, false], [9, true], [12, true]])('mapa real con cliente real a zoom %i: cache no-store = %s, con Bearer, omit, Accept png y señal', async (z, esperado) => {
+    const llamadas = await fetchPorZoom(z);
+    expect(llamadas.length).toBeGreaterThan(0);
+    for (const [url, op] of llamadas) {
+      expect(url).toMatch(new RegExp(`^http://gw/api/gateway/teselas/${z}/\\d+/\\d+\\.png$`));
+      if (esperado) expect(op.cache).toBe('no-store');
+      else expect(op).not.toHaveProperty('cache');
+      expect(op.headers.Authorization).toBe('Bearer TOKEN');
+      expect(op.headers.Accept).toBe('image/png');
+      expect(op.credentials).toBe('omit');
+      expect(op.signal).toBeInstanceOf(AbortSignal);
+    }
+  });
+
+  it('getBlob con sinCache false/undefined explícito no manda cache; get sigue con no-store, Bearer y omit', async () => {
+    const f = vi.fn().mockResolvedValue({ ok: true, blob: () => Promise.resolve(PNG()), json: () => Promise.resolve({}) });
+    vi.stubGlobal('fetch', f);
+    const c = crearClienteUbicacion({ apiUrl: 'http://gw', obtenerToken: async () => 'T' });
+    await c.getBlob('/t', { sinCache: false });
+    await c.getBlob('/t', { sinCache: undefined });
+    await c.get('/x');
+    const [[, a], [, b], [, g]] = f.mock.calls;
+    expect(a).not.toHaveProperty('cache');
+    expect(b).not.toHaveProperty('cache');
+    expect(g.cache).toBe('no-store');
+    expect(g.headers).toEqual({ Authorization: 'Bearer T', Accept: 'application/json' });
+    expect(g.credentials).toBe('omit');
+  });
+
+  it('con sinCache los errores se siguen traduciendo (401 -> ErrorApi 401)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401, json: () => Promise.reject(new Error('x')) }));
+    const c = crearClienteUbicacion({ apiUrl: 'http://gw', obtenerToken: async () => 'T' });
+    await expect(c.getBlob('/t', { sinCache: true })).rejects.toMatchObject({ status: 401 });
   });
 });
