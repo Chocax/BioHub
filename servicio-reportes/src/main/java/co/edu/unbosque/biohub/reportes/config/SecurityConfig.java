@@ -13,25 +13,30 @@ import org.springframework.security.web.SecurityFilterChain;
 
 /**
  * Resource server: valida el JWT emitido por Keycloak (firma, emisor, vigencia y audiencia).
- * Los roles del realm se convierten en authorities ROLE_&lt;rol&gt;.
+ * Los roles del realm se convierten en authorities ROLE_<rol>.
  */
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity // habilita @PreAuthorize("hasRole(...)") en los services/controllers
+@EnableMethodSecurity
 public class SecurityConfig {
 
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.disable()) // API stateless con Bearer token, sin cookies de sesión
-                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth
-                        // Deja llegar los errores (400/500) al cliente en vez de convertirlos en 401
-                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
-                        .anyRequest().authenticated())
-                .oauth2ResourceServer(oauth -> oauth
-                        .jwt(jwt -> jwt.jwtAuthenticationConverter(new KeycloakJwtAuthenticationConverter())));
+            .csrf(csrf -> csrf.disable())
+            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .authorizeHttpRequests(auth -> auth
+                .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
+                .requestMatchers("/api/reportes/**").hasAnyRole(
+                    "investigador_campo",
+                    "auditor_cientifico",
+                    "cientifico_alto_rango",
+                    "analista_ambiental",
+                    "administrador")
+                .anyRequest().denyAll())
+            .oauth2ResourceServer(oauth -> oauth
+                .jwt(jwt -> jwt.jwtAuthenticationConverter(new KeycloakJwtAuthenticationConverter())));
         return http.build();
     }
 }
