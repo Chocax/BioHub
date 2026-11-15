@@ -693,3 +693,45 @@ Detalle de M4: la prueba "Saltar el mapa y ver la lista" de `mapa.e2e.js` sí re
 ## Veredicto Iteración 21c: APROBADO CON OBSERVACIONES
 
 Se cumple lo declarado: Vitest 92/92, `dist/` sin ningún rastro del arnés, E2E 78/78 en local (3 corridas, además de 234 y 156 repetidas con y sin carga), 117/117 dos veces en la imagen de Playwright con los 3 motores y sin inestabilidad. De las 11 mutaciones, 10 son detectadas por alguna capa (M4 solo de forma intermitente por la E2E, M9 y M10 solo por Vitest) y solo sobrevive M11; las E2E aportan valor propio (M3, M6, M8, M2). Las dos correcciones de `MapaHallazgos.jsx` son correctas y no rompen nada. El YAML del CI es coherente con lo que necesitan las E2E y el cambio de zona horaria es efectivo (364/0/0 en UTC y en Bogotá). Quedan tres hallazgos Bajos, todos de calidad de las pruebas y ninguno de producción (BUG-J21-1 a 3), y verificación pendiente en navegador real: WI-13 y la parte manual de WI-15 (guía del README), más Edge para WI-11. Ninguno bloquea el commit.
+
+---
+## Iteración 22 – mediciones de rendimiento de HU-06 c.3 y HU-13 c.3 (22a, 22b)
+
+**Veredicto: CUMPLEN las dos.** Consolidado por el Tech Lead a partir de los informes de los dos qa-tester. El Tech Lead repitió la prueba de HU-13 una vez y obtuvo un p95 máximo de 29,5 ms.
+
+### HU-06 c.3 / CG-02 / RNF5: búsqueda pública, p95 ≤ 2 s, 10.000 fichas, caché fría
+- **Entorno:** `compose-carga.yml` con 1 réplica (2 CPU y 1 GiB) detrás de NGINX, mysql-lectura 8.4.13 y Redis de desarrollo. Siembra con `FICHAS=10000 ./datos/sembrar.sh` (17 familias, 33 departamentos, 20 % `EN_PELIGRO`).
+- **Método:** se vacían solo las claves `biohub:publica:*` antes de cada fase (sin `FLUSHALL`). Fase A: 100 búsquedas distintas con 1 VU. Fase B: otras 100 distintas con 10 VUs. Hay 13 categorías de consulta. Se hicieron 3 corridas y se reporta la mediana. Los JSON cumplen D42.
+
+| Fase | p50 | p95 | p99 | máx | Umbral p95 |
+|---|---:|---:|---:|---:|---:|
+| A (1 VU) | 6,8 | **14,2** | 18,4 | 25,9 | 2.000 |
+| B (10 VUs) | 27,4 | **58,6** | 82,5 | 128,1 | 2.000 |
+
+- **Errores:** 0 respuestas no-200 y 0 búsquedas vacías (entre 8 y 10.000 coincidencias).
+- **Controles:** con la JVM fría, p95 de 20,6 y 84,7 ms (máximo 402 ms). Contra un destino inexistente, el script reporta NO CUMPLE.
+- **EXPLAIN:** usan índice el FULLTEXT por texto y los filtros de familia y departamento.
+- **Limitaciones:** la medición es local y sin gateway, a propósito (RQ-6). `deploy/backend/docker-compose.yml` ya no existe, así que se usaron los límites de ARQ-24. Si el despliegue real tiene menos CPU, hay que repetir con `CARGA_CPUS`.
+- **Evidencia:** `pruebas-carga/resultados/hu06-*.json`, `pruebas-carga/README.md` (sección HU-06 c.3), `correr-hu06-frio.sh` y `resumir-hu06.sh`.
+
+### HU-13 c.3 / CG-08 / HB-23 / DB-07: búsqueda interna, p95 < 3 s, 10.000 hallazgos
+- **Prueba:** `servicio-cientifico/.../ubicacion/rendimiento/BusquedaInterna10kRendimientoTest` (Testcontainers MySQL 8.4.13, Flyway real y MockMvc con la cadena de seguridad real). Se omite por defecto y se activa con `-Drendimiento=true`. El `verify` normal da 459 pruebas, 0 fallos y 3 omitidas.
+- **Siembra:** 10.000 hallazgos (20 % `EN_PELIGRO`), cifrados con el `CifradorCoordenadas` real (AES-256-GCM), en unos 1 s.
+- **Método:** 10 peticiones de calentamiento y 100 medidas por caso, con 4 combinaciones de 2 filtros (151 a 493 coincidencias). Se hicieron 3 corridas y se reporta la mediana.
+
+| Caso | p50 | p95 | p99 | máx |
+|---|---:|---:|---:|---:|
+| alto rango size=20 | 16,1 | 22,1 | 27,8 | 32,5 |
+| alto rango size=50 | 13,0 | 20,1 | 32,5 | 34,2 |
+| alto rango size=100 | 13,1 | 17,2 | 30,4 | 32,5 |
+| investigador size=20 | 8,7 | 12,4 | 17,8 | 24,5 |
+| investigador size=50 | 8,8 | 11,5 | 13,7 | 19,8 |
+| investigador size=100 | 8,0 | 10,4 | 12,3 | 13,6 |
+
+- **Peor caso informativo:** 10.000 coincidencias y página 99, con un p95 de 39,2 ms.
+- **HB-23:** alto rango descifra exactamente `size` registros (≤ `size`). El investigador hace 0 descifrados y no recibe coordenadas.
+- **DB-07 (observación DB-J22-1, Baja, para el dba):** con las estadísticas que deja Flyway, 2 de las 4 combinaciones (investigador+fecha y especie+fechas) tienen un plan degradado: MySQL toma como tabla directriz `ubicacion_departamento`, estimada en 1 fila, y hace "Range checked for each record" sobre unas 9.700 filas. Tras `ANALYZE TABLE` de `ubicacion_departamento` y `ubicacion_region`, usan `idx_ubicacion_hallazgo_invest_fecha` e `idx_ubicacion_hallazgo_especie_fecha`. Con 10.000 filas cuesta unos 10 ms, así que no afecta al criterio. Es un riesgo si el volumen crece. Posible corrección: `ANALYZE TABLE` del catálogo al final de su migración, o como tarea de mantenimiento.
+- **Limitaciones:** MockMvc no incluye la red, el gateway, la validación criptográfica del JWT ni la latencia a una base remota (2 consultas por búsqueda). Las peticiones son secuenciales, sin concurrencia.
+
+**Seguridad:** no aplica revisión de ciberseguridad. Solo hay código de prueba y scripts de carga locales: sin dependencias nuevas, sin cambios de autenticación y sin datos reales (fichas y hallazgos sintéticos).
+

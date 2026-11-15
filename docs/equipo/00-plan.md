@@ -325,3 +325,31 @@ Despliegue de bases, Redis y RabbitMQ en VMs locales con una VPN de malla, y su 
 | Fase | USD | Agente que más consumió | Cambios de modelo (motivo) |
 |---|---:|---|---|
 | 21a–21e | 11.38 acumulado en la sesión (≈6.63 en la iteración 21; opus 9.61, sonnet 1.77 en total) | frontend-senior 21a (opus, 2.74); luego ciberseguridad 21d (opus, 1.11) y qa-tester 21c (sonnet, 1.00) | Ninguno fuera de la matriz de calidad |
+
+---
+# Iteración 22: mediciones de rendimiento de HU-06 c.3 y HU-13 c.3
+
+**Fecha:** 2026-11-15 · **Rama:** `feature/ubicacion-consulta-publica` · **Modo de presupuesto:** equilibrado, sin tope.
+
+**Alcance:** completar las tres historias de Juanita midiendo el único criterio que les falta a HU-06 y HU-13.
+- HU-06 c.3 (CG-02): búsqueda pública con p95 ≤ 2 s, 10.000 fichas y caché fría. k6 sobre `compose-carga.yml`, con las reglas de evidencia de D42.
+- HU-13 c.3 (CG-08, HB-23, DB-07): búsqueda interna con p95 < 3 s y 10.000 hallazgos cifrados. Prueba JUnit con Testcontainers y MockMvc, desactivada por defecto (`-Drendimiento=true`).
+- Cada agente informa al Tech Lead, que consolida en `07-reporte-qa.md` y `trazabilidad.md`, para que ninguno edite los documentos compartidos.
+
+| # | Tarea | Responsable | Modelo | Estado |
+|---|---|---|---|---|
+| 22a | HU-06 c.3 / CG-02: siembra parametrizable a 10.000, `k6/busqueda-publica-fria.js`, 3 corridas | qa-tester | sonnet/**high** | Hecho: **CUMPLE**. p95 en caché fría con 10.000 fichas: fase A 14,2 ms y fase B (10 VUs) 58,6 ms (medianas de 3 corridas; umbral 2.000 ms); 0 errores; FULLTEXT e índices en uso. 1 réplica con 2 CPU y 1 GiB, local y sin gateway (RQ-6) |
+| 22b | HU-13 c.3 / CG-08: `BusquedaInterna10kRendimientoTest` (10.000 hallazgos cifrados, descifrados ≤ size, EXPLAIN), 3 corridas | qa-tester | sonnet/**high** | Hecho: **CUMPLE**. p95 ≤ 28,2 ms en los 6 casos (el Tech Lead lo repitió: ≤ 29,5 ms); descifrados = size; investigador sin coordenadas. DB-J22-1 (Baja): plan degradado por estadísticas del catálogo sin `ANALYZE` |
+| 22c | Consolidar resultados, trazabilidad, commit y PR | Tech Lead | opus/medium | Hecho: `07` §22, `trazabilidad.md` (HU-06 y HU-13 → Cumple) |
+
+**Cambios de modelo:** qa-tester sonnet/**high** (matriz equilibrado: medium) en 22a y 22b, porque el método de medición tiene que ser riguroso para que cuente como evidencia (D42). Si no se cumple un umbral, la causa la analiza el dba antes de tocar índices.
+
+**Pendientes tras la iteración 22:**
+- dba: DB-J22-1 (`ANALYZE TABLE` de `ubicacion_departamento` y `ubicacion_region` tras las migraciones, para que el optimizador use los índices de investigador+fecha y especie+fecha).
+- Si el despliegue real tiene menos de 2 CPU por réplica, repetir HU-06 c.3 con `CARGA_CPUS`.
+
+**Modelos y consumo (iteración 22):**
+| Fase | USD | Agente que más consumió | Cambios de modelo (motivo) |
+|---|---:|---|---|
+| 22a–22c | 14.19 acumulado en la sesión (≈2.81 en la iteración 22; opus 11.10, sonnet 3.09 en total) | los dos qa-tester (sonnet/high) | qa-tester sonnet/**high** (matriz: medium): rigor del método de medición |
+
