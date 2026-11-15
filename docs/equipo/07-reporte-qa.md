@@ -508,3 +508,85 @@ OBS-J17-1: **CERRADO**. Servicios y gateway detenidos al terminar; sin cambios e
 ## Veredicto Iteración 18: APROBADO
 
 SEC-J-19 y SEC-J-20 cumplen lo declarado: las mutaciones sobre `@PreAuthorize` son detectadas, el 403 problem+json `ROL_INSUFICIENTE` con `no-store` aplica a todo el servicio (comprobado en pruebas y en vivo), el 401 conserva el contrato sin filtrar la descripción del decodificador, el handler de `ubicacion` sigue auditando y `ConsultaPublicaExceptionHandler` ya no produce 500. Las suites pasan en UTC y Bogota (434 y 339, 0 fallos tras repetir). Queda un único hallazgo Bajo (BUG-J18-1, prueba intermitente), que no bloquea el push pero conviene estabilizar porque puede hacer fallar el CI al azar.
+
+---
+
+# Iteración 20 – teselas por el gateway (20b)
+
+Alcance: parte frontend de SEC-J-04 (cambios sin commit en `web-interna/src/ubicacion/**`: `CapaTeselasGateway.js`, `TeselasGateway.jsx`, `MapaHallazgos.jsx`, `PaginaMapa.jsx`, `ubicacionApi.js` con `getBlob`, y las pruebas asociadas).
+
+## Comandos y resultados
+
+| Comando (en `web-interna`) | Resultado |
+|---|---|
+| `npx vitest run` (estado recibido, sin mis pruebas) | 5 archivos, **73 pruebas aprobadas, 0 fallidas** |
+| `npx vitest run` (con `qa-teselas.test.jsx`) | 6 archivos, **84 pruebas aprobadas, 0 fallidas** |
+| `npm run build` | OK, 21 módulos, `index-*.js` 248.30 kB (77.42 kB gzip) |
+| Cobertura | No configurada |
+
+Alcance del cambio: `git status` fuera de `web-interna/src/ubicacion/**` solo muestra `docs/equipo/00-plan.md`, `04`, `11` (y `06`, mío). No se tocaron `App.jsx`, `package.json`, login ni navegación. No hay dependencias nuevas. Única mención a OSM en código: la atribución (obligatoria) y comentarios.
+
+## Qué se comprobó
+
+- Las pruebas del desarrollador sí prueban lo pedido: URL relativa `/api/gateway/teselas/{z}/{x}/{y}.png`, con el cliente real `fetch` a `apiUrl` + ruta con `Authorization: Bearer`, `Accept: image/png`, `credentials: omit` y sin `cache` (`ubicacionApi.test.js`, `CapaTeselasGateway.test.jsx`); `fetch` nunca recibe `openstreetmap` y no hay `<img src>` remoto; `getBlob` 200/400/401/403/429/502/503/sin red/corte de cuerpo/abort/fallo de token; aborto por tesela, por zoom y al desmontar sin `tileerror`; revocación de object URL (carga, error de decodificación, descarte, idempotente); 401 una sola vez; 403/429/5xx/0 no cierran sesión; cliente sin `getBlob` degrada a `tileerror`; umbral y paso a Lista en `PaginaMapa.test.jsx` (con `TeselasGateway` simulado).
+- No se rompió nada existente: las 73 pruebas previas pasan; `alt=''` y `role=presentation` en teselas; marcadores y teclado siguen cubiertos en `PaginaMapa.test.jsx`/`MapaHallazgos` sin cambios de comportamiento (el diff de `MapaHallazgos.jsx` solo cambia la capa y el contador).
+- Huecos que cubrí en `web-interna/src/ubicacion/pruebas/qa-teselas.test.jsx` (11 pruebas, todas pasan, con Leaflet real en jsdom): respuesta (blob) tardía tras desmontar con cliente que ignora la señal (sin object URL ni errores); 401 tardío tras desmontar (no cierra sesión); StrictMode (una sola capa, descargas del primer montaje abortadas, sin errores); cambio de `cliente` entre renders (capa recreada, señales anteriores abortadas); 429 repetidos superan `MAX_ERRORES_TESELAS` y avisan una sola vez; el umbral exacto no avisa; abortos no cuentan; sin `<img>` externos; 401 con aborto previo no avisa.
+- `06-plan-pruebas.md`: agregados WC-09..WC-14 y WI-15 (sin tocar lo existente) y la fila de trazabilidad de HU-07.2.
+
+## Bugs y observaciones
+
+### BUG-J20-1 (Bajo) `alSesionVencida` se llama una vez por capa, no una vez por mapa
+- Responsable sugerido: frontend.
+- Archivo: `web-interna/src/ubicacion/componentes/CapaTeselasGateway.js:24,55-58` (la bandera `_sesionAvisada` vive en la capa) y `TeselasGateway.jsx:17-29` (el efecto recrea la capa si cambia `cliente`, `attribution` o `maxZoom`).
+- Pasos: montar `TeselasGateway` con un cliente que responde 401, esperar, `rerender` con otro cliente que también da 401.
+- Esperado (README/11 §7: "una sola vez"): 1 llamada. Obtenido: 2 (`qa-teselas.test.jsx`, prueba "cambio de cliente... una vez POR CAPA", que documenta el comportamiento actual y pasa). Además, un 401 de la lista (`PaginaMapa.jsx:52`) y otro de teselas pueden llamarlo ambos. En la práctica `alSesionVencida` de Santiago redirige al login, por lo que el impacto es bajo; conviene que sea idempotente.
+- Corrección sugerida: mover la bandera a `TeselasGateway` (`useRef`) o dejar documentado que el consumidor debe ser idempotente.
+
+### BUG-J20-2 (Bajo, documentación) Casos de prueba existentes con texto obsoleto
+- Responsable: QA/docs. `06-plan-pruebas.md` WI-05 dice "teselas solo de OSM" y WP-09 "ninguna a teselas": ahora las teselas salen por el gateway del mismo origen. No los reescribí (regla); WC-09 y WI-15 describen el comportamiento vigente.
+
+### Observaciones (no son bugs del cambio)
+- El mapa base no reintenta: más de 3 teselas fallidas (incluido un 429 pasajero o un 503 del circuit breaker) pasan a la vista Lista hasta recargar, y el contador no se reinicia. Es el diseño previo; el riesgo de 429 es bajo (una vista usa 20-40 de 600/min), pero un `Retry-After` podría usarse.
+- No verificado en navegador real (WI-15 pendiente): carga de `blob:` con una CSP, comportamiento real de Leaflet al hacer zoom animado con descargas en vuelo y que el gateway esté levantado. Las pruebas usan jsdom con medidas simuladas.
+- La capa depende de internos de Leaflet (`_tiles`, `_tileZoom`, `_abortLoading`); está fijada la versión 1.9, pero una actualización mayor exige revisar `qa-teselas.test.jsx` y la prueba de zoom.
+
+## Veredicto Iteración 20b: APROBADO CON OBSERVACIONES
+
+El cambio cumple lo declarado: las teselas van solo al gateway con Bearer a través del `cliente` inyectado, cero peticiones a OSM, abortos y object URL bien manejados, aviso y paso a Lista intactos, sin regresiones (84/84 pruebas, build OK) y sin salirse del reparto. Quedan dos hallazgos Bajos (BUG-J20-1, BUG-J20-2) y la verificación en navegador real pendiente (WI-15), que no bloquean el commit.
+
+---
+
+## Iteración 20f – verificación de SEC-J-24 (zoom ≥ 9 sin caché)
+
+Alcance: cambios sin commit de la tarea 20e (`ubicacionApi.js`: `getBlob(ruta, { signal, sinCache })` y orden de `...opciones`; `CapaTeselasGateway.js`: `ZOOM_SIN_CACHE = 9`; pruebas, README, `11` §7, D57).
+
+### Comandos y resultados
+
+| Comando (en `web-interna`) | Resultado |
+|---|---|
+| `npx vitest run` (estado recibido) | 6 archivos, **86 pruebas aprobadas, 0 fallidas** (coincide con el Tech Lead; antes 84) |
+| `npm run build` | OK, 21 módulos, `index-*.js` 248.30 kB (77.42 kB gzip) |
+| `npx vitest run` (con mis 5 casos nuevos en `qa-teselas.test.jsx`) | 6 archivos, **91 pruebas aprobadas, 0 fallidas** |
+| Cobertura | No configurada |
+
+### Qué se comprobó
+
+- Umbral: la prueba nueva de `CapaTeselasGateway.test.jsx` cubre zooms 0, 5, 8 (`sinCache: false`) y 9, 10, 12 (`true`) y la constante `ZOOM_SIN_CACHE === 9`. Suficiente.
+- `ubicacionApi.test.js`: con `sinCache` el `fetch` lleva `cache: 'no-store'`, `Authorization: Bearer`, `credentials: 'omit'` y la misma `signal`; sin la opción no existe la propiedad `cache`. Suficiente.
+- Regresión por mover `...opciones`: `get` sigue con `cache: 'no-store'` (prueba existente `envía Bearer, no-store...` pasa y mi prueba nueva lo reafirma con headers exactos y `omit`). Con `opciones` primero ya nada puede sobrescribir `headers`, `credentials` ni `signal`; hoy `opciones` solo trae `cache`, así que no hay cambio observable. Las 11 pruebas previas de `qa-teselas.test.jsx` siguen pasando.
+- Huecos cubiertos por mí en `web-interna/src/ubicacion/pruebas/qa-teselas.test.jsx` (5 pruebas nuevas, todas pasan): mapa Leaflet real + cliente real con `fetch` simulado a zoom 8, 9 y 12 (cada petición: URL `http://gw/api/gateway/teselas/{z}/x/y.png`, `no-store` solo desde 9, Bearer, `Accept: image/png`, `omit` y `AbortSignal`); `sinCache: false` y `undefined` explícitos no mandan `cache`; `get` conserva `no-store` y headers exactos; con `sinCache` un 401 sigue traduciéndose a `ErrorApi` 401. Los tests del desarrollador probaban capa y cliente por separado; estos prueban la cadena completa.
+- Alcance: sin dependencias nuevas, sin cambios fuera de `web-interna/src/ubicacion/**` y docs. No toqué código de producción.
+
+### Bugs
+
+Ninguno nuevo (no se abre BUG-J20-3 ni posteriores). Siguen abiertos BUG-J20-1 y BUG-J20-2 de la 20b, sin relación con este cambio.
+
+### Observaciones (no bloquean)
+
+- `no-store` en la petición evita leer y guardar, pero NO borra entradas de zoom ≥ 9 que ya estén en disco de versiones anteriores (hasta 24 h por el `max-age=86400`). Es transitorio; el `Clear-Site-Data: "cache"` al cerrar sesión (opcional, Santiago) lo resolvería.
+- El umbral usa `coords.z` de Leaflet; con `zoomOffset` o capas retina distintos de 0 habría que revisarlo (hoy no se usan).
+- La no escritura real en la caché HTTP solo se puede comprobar en navegador real (pestaña Network / `chrome://cache`): las pruebas verifican la opción enviada a `fetch`, no el comportamiento del navegador. Pendiente manual junto con WI-15.
+
+### Veredicto 20f: APROBADO CON OBSERVACIONES
+
+SEC-J-24 queda corregido en el código: el umbral 9, la opción `no-store` y la conservación de token, `omit` y señal están cubiertos con pruebas, `get` no cambió y no hay regresiones (86/86 recibido, 91/91 con mis casos, build OK). Las observaciones son de verificación en navegador real y de entradas antiguas en caché.

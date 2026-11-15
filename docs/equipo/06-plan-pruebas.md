@@ -239,7 +239,7 @@ Niveles usados en las tablas: **U** unitario, **I** integración (Testcontainers
 | HU-07.1 validación en cada petición | MP-10 | I |
 | HU-07.1 descifrado solo en memoria | MP-13, DB-06, LG-02 | I, SEG |
 | HU-07.1 filtros, vacío, inválidos, truncado, omitidos | MP-14..MP-21 | I |
-| HU-07.2 pantalla de mapa | WC-02..WC-06, WI-05..WI-09, WI-13, WI-14 | U, E2E |
+| HU-07.2 pantalla de mapa | WC-02..WC-06, WI-05..WI-09, WI-13, WI-14, WC-09..WC-14, WI-15 | U, E2E |
 | HU-07.1 texto especial y bordes de coordenadas | MP-20, MP-21 | SEG, I |
 | HU-07.3 auditoría (Could) | MP-22, MP-23 | I |
 | HU-13.1 filtros combinables, orden, paginación | HB-01..HB-06, HB-10, HB-11 | I |
@@ -635,7 +635,7 @@ Casos sobre componentes (Vitest + Testing Library, `fetch` y rol simulados) llev
 | WI-02 | Búsqueda sin permiso | (M) `investigador1`; la respuesta trae por error coordenadas | Columna "Restringido"; DOM sin centinelas | E2E | HU-13.3 |
 | WI-03 | Sin resultados | (M) vacío | "No hay hallazgos que coincidan con los filtros" | E2E | HU-13.3 |
 | WI-04 | Sesión vencida | (M) 401 | Redirige al login (flujo de Santiago) sin dejar datos previos en pantalla | E2E | HU-13.3 |
-| WI-05 | Mapa con marcadores | (M) 3 features | 3 marcadores; al pulsar: especie, fecha, coordenadas; zoom máximo 12; teselas solo de OSM | E2E | HU-07.2 |
+| WI-05 | Mapa con marcadores | (M) 3 features | 3 marcadores; al pulsar: especie, fecha, coordenadas; zoom máximo 12; teselas solo de `/api/gateway/teselas/` con `Authorization: Bearer`, ninguna petición a OSM (SEC-J-04, D56) | E2E | HU-07.2 |
 | WI-06 | Mapa sin permiso | (M) `investigador1` abre `/ubicacion/mapa` | Pantalla "No tienes permiso…"; 0 peticiones a `/mapa` (verificado en red) | E2E | HU-07.2 |
 | WI-07 | Mapa vacío | (M) `features=[]` | "No hay hallazgos para los filtros seleccionados" | E2E | HU-07.2 |
 | WI-08 | Truncado | (M) `truncado:true,total:1500` | Aviso de afinar filtros | E2E | HU-07.2 |
@@ -645,6 +645,13 @@ Casos sobre componentes (Vitest + Testing Library, `fetch` y rol simulados) llev
 | WI-12 | Error 5xx/red en búsqueda y mapa | (M) 500, 503, abort | Mensaje en español con reintento; sin trazas | E2E | UX |
 | WI-13 | Login real local con Keycloak (R) **[BLOQ: montaje de Santiago]** | `cientifico1` y `investigador1` en Compose local | Mapa accesible solo al primero; el segundo ve I3 | E2E | HU-07.2/HU-10 |
 | WI-14 | Teselas en nivel alto | Acercar al máximo | No se piden teselas de nivel > 12 (riesgo R6) | E2E | `03` R6 |
+| WC-09 | Teselas por el gateway con Bearer (SEC-J-04) | Cliente real con `fetch` simulado; montar el mapa | Toda petición a `{apiUrl}/api/gateway/teselas/{z}/{x}/{y}.png` con `Authorization: Bearer`, `Accept: image/png`, `credentials: omit`; 0 a `openstreetmap` | U | `11` §7, `04` §8.1 |
+| WC-10 | `getBlob` 200/400/401/403/429/502/503/sin red/corte/abort | `fetch` simulado | Blob en 200; `ErrorApi{status,codigo}` en errores; `status 0` sin red o corte; `AbortError` se propaga; sin token: 401 sin llamar | U | `04` §8.1 |
+| WC-11 | Aborto de tesela no es error | Desmontar, cambiar zoom o `tileunload` con descargas en curso; respuesta o 401 tardíos | Señal abortada; sin `tileerror`, sin object URL, sin `alSesionVencida`; object URL revocado en carga, fallo y descarte | U | `11` §7 |
+| WC-12 | 401 de tesela | Varias teselas con 401; 403/429/5xx/0 | `alSesionVencida` una vez por capa; los otros estados no cierran sesión | U | `11` §7 |
+| WC-13 | Umbral del mapa base | Más de `MAX_ERRORES_TESELAS` fallos (incluidos 429 repetidos) | Aviso "No se pudo cargar el mapa base" una vez y paso a Lista; abortos no cuentan | U | `02` estados del mapa |
+| WC-14 | Ciclo de vida de la capa | StrictMode (doble montaje); cambio de `cliente` entre renders | Una sola capa viva; descargas del montaje/cliente anterior abortadas | U | `11` §7 |
+| WI-15 | Teselas por el gateway en navegador real (R) **[PENDIENTE: gateway + `web-interna` montados]** | Abrir el mapa con `cientifico1`, registrar la red | Teselas `200 image/png` desde el gateway con Bearer; 0 peticiones a `tile.openstreetmap.org`; 429 tras >600/min muestra el aviso | E2E | SEC-J-04 |
 
 ## P10. Pruebas de usabilidad
 | ID | Descripción | Datos / pasos | Esperado | Nivel | Criterio |

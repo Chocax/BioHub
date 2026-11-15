@@ -135,43 +135,17 @@ Sin hacer, a propósito:
 | Qué | Solo teselas que existen, con zoom de 0 a 12 | El mismo tope `ZOOM_MAXIMO` del mapa. Fuera de rango: 400 `PARAMETRO_INVALIDO` |
 | Cuánto | 600 teselas por minuto por usuario | Una vista usa entre 20 y 40. Con ese tope nadie descarga el mapa entero. Si se pasa: 429 `LIMITE_EXCEDIDO` con `Retry-After` |
 | Hacia OSM | 2 descargas a la vez y `User-Agent` de BioHub, sin Referer, IP, token ni cookies | Lo pide la política de uso de OSM |
-| Caché | En memoria, 64 MB y 7 días; el navegador la guarda 1 día con `private` | No va en Redis: con `volatile-lru`, las teselas podrían expulsar las marcas de revocación |
+| Caché | En memoria, 64 MB y 7 días; el navegador guarda 1 día (`private`) solo las de zoom 0 a 8; desde el zoom 9 el front las pide con `cache: 'no-store'` y no quedan en disco (SEC-J-24) | No va en Redis: con `volatile-lru`, las teselas podrían expulsar las marcas de revocación |
 | Fallos | Circuit breaker (D52): 503 `SERVICIO_NO_DISPONIBLE`. Respuesta que no es imagen: 502 `TESELA_NO_DISPONIBLE` | Un OSM caído no ocupa hilos del gateway |
 | Log | Nunca registra z/x/y | Esas coordenadas delatarían el área del hallazgo |
 
-**Cambio pendiente en el front (dueña: Juanita, `MapaHallazgos.jsx`).** Leaflet carga las teselas con `<img>`, y un `<img>` no puede enviar `Authorization`. Por eso la capa tiene que pedirlas con `fetch`:
+**Cambio en el front: hecho.** Leaflet carga las teselas con `<img>`, y un `<img>` no puede enviar `Authorization`. Por eso `web-interna/src/ubicacion/componentes/CapaTeselasGateway.js` es una capa Leaflet propia que las pide con `fetch` y las muestra como blob. Así quedó, con dos diferencias respecto del código que se sugería antes:
 
-```js
-import L from 'leaflet';
-import { createLayerComponent } from '@react-leaflet/core';
+- **Token y host por el cliente inyectado (D17).** La capa no sabe de Keycloak ni del host: llama a `cliente.getBlob('/api/gateway/teselas/{z}/{x}/{y}.png', { signal, sinCache })`. `crearClienteUbicacion` antepone `apiUrl`, envía `Authorization: Bearer`, `Accept: image/png` y `credentials: 'omit'`, y con `sinCache: true` (zoom ≥ 9, D57) usa `cache: 'no-store'`; las de zoom 0 a 8 se piden sin él para que el navegador las reutilice (`private, max-age=86400`). Santiago no cambia nada. No se usa `@react-leaflet/core`: `TeselasGateway.jsx` añade la capa con `useMap`, así que no hay dependencia nueva.
+- **Abortos y memoria.** Cada tesela tiene su `AbortController`, que se aborta cuando Leaflet la descarta (`tileunload`, `tileabort`, cambio de zoom, quitar el mapa), para no gastar el límite de 600/min. El object URL se revoca siempre (al cargar, al fallar o al descartarse). Un aborto no cuenta como error; cualquier otro fallo dispara `tileerror` y alimenta el aviso "No se pudo cargar el mapa base". Un 401 de tesela llama una sola vez a `alSesionVencida`.
 
-// Pide cada tesela al gateway con el token y la muestra como blob.
-const CapaTeselasGateway = L.TileLayer.extend({
-  createTile(coords, listo) {
-    const img = document.createElement('img');
-    img.alt = '';
-    fetch(this.getTileUrl(coords), { headers: { Authorization: `Bearer ${this.options.obtenerToken()}` } })
-      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`tesela ${r.status}`))))
-      .then((blob) => {
-        img.onload = () => { URL.revokeObjectURL(img.src); listo(null, img); };
-        img.src = URL.createObjectURL(blob);
-      })
-      .catch((error) => listo(error, img)); // dispara tileerror: onTeselasFallidas sigue funcionando
-    return img;
-  },
-});
+Las pruebas (`src/ubicacion/pruebas/`) comprueban la URL del gateway con `Bearer`, que no se pide nada a OSM, el aborto, la revocación y el 401. Sigue pendiente verlo en un navegador real con el gateway levantado.
 
-export const TeselasGateway = createLayerComponent(
-  ({ url, ...opciones }, ctx) => ({ instance: new CapaTeselasGateway(url, opciones), context: ctx }),
-);
-
-// En MapaHallazgos.jsx, en lugar de <TileLayer url={URL_TESELAS} ...>:
-// <TeselasGateway url={`${GATEWAY}/api/gateway/teselas/{z}/{x}/{y}.png`} obtenerToken={() => keycloak.token}
-//   attribution={ATRIBUCION} maxZoom={ZOOM_MAXIMO} eventHandlers={manejadores} />
-```
-
-`keycloak` sale de `src/auth/keycloak.js`. `@react-leaflet/core` ya llega con `react-leaflet` 5, pero conviene declararlo en `package.json`. Este código todavía no se ha probado en el navegador: se valida cuando se monte el mapa. El backend sí está probado de punta a punta.
-
-La atribución a OpenStreetMap se mantiene: la licencia la exige aunque la tesela llegue por el gateway. Si se agrega una CSP a `web-interna` (SEC-J-07), debe incluir `img-src 'self' blob:` y `connect-src` hacia el gateway.
+La atribución a OpenStreetMap se mantiene: la licencia la exige aunque la tesela llegue por el gateway. Si se agrega una CSP a `web-interna` (SEC-J-07), debe incluir `img-src 'self' data: blob:` y `connect-src` hacia el gateway.
 
 **Configuración** (`application.yml`, `biohub.gateway.teselas`): `GATEWAY_TESELAS_URL` para usar otro servidor de teselas, `GATEWAY_TESELAS_AGENTE`, `GATEWAY_TESELAS_POR_USUARIO` y `GATEWAY_TESELAS_CACHE`. Código: `TeselasController`, `ServicioTeselas`, `OrigenTeselasHttp`.
