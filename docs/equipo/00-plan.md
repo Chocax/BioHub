@@ -230,7 +230,7 @@ Despliegue de bases, Redis y RabbitMQ en VMs locales con una VPN de malla, y su 
 | 18d | Seguridad de SEC-J-19/20 | ciberseguridad | opus/medium | Hecho: APROBADO CON OBSERVACIONES (6827c17). SEC-J-20 cerrado; SEC-J-22 (Bajo) nuevo; SEC-J-23 (Medio, Hernando) |
 | 18e | SEC-J-22 y BUG-J18-1 (solo `src/test`) | backend-senior | sonnet/high | Hecho (99fdf15, 89e280e). verify UTC y Bogotá: científico 458/0 (2 omitidas), consulta-pública 364/0; BUG-J18-1 15/15 |
 | 18f | Re-verificación de SEC-J-22 | ciberseguridad | opus/medium | Hecho: APROBADO (d837520). SEC-J-19 y SEC-J-22 cerrados; SEC-J-I23 informativo (XS); condición de D55 cumplida en esta rama |
-| 18g | Push de la rama, CI y PR a `develop` | Tech Lead | opus/medium | Pendiente del OK de la usuaria |
+| 18g | Push de la rama, CI y PR a `develop` | Tech Lead | opus/medium | Hecho: PR #8 abierto el 2026-11-09 (CI verde); se completa en 19a |
 
 **Pendientes tras la iteración 18:**
 - Hernando (mensaje enviado por la usuaria): dejar de importar `ubicacion` en `registro` (D53), SEC-J-23 (roles de `administrador` fuera de la matriz §2), agregar sus endpoints a `SeguridadEndpointsTest.ENDPOINTS`, conflicto en `04-contrato-api.md`.
@@ -241,3 +241,26 @@ Despliegue de bases, Redis y RabbitMQ en VMs locales con una VPN de malla, y su 
 | Fase | USD | Agente que más consumió | Cambios de modelo (motivo) |
 |---|---:|---|---|
 | 18a–18f (sesión 2026-11-09) | 5.60 en esta sesión (opus 4.31, sonnet 1.29) | sesión principal (opus, 2.54); ciberseguridad 1.77 en 2 tareas | ciberseguridad opus/**medium** (matriz: high) en 18d y 18f: re-verificación de un diff acotado de su propia auditoría, como en 15h y 16d |
+
+---
+# Iteración 19: integración con develop
+
+**Fecha:** 2026-11-15 · **Rama:** `feature/ubicacion-consulta-publica` · **Modo de presupuesto:** equilibrado, sin tope.
+
+**Alcance:** traer `develop` (PR #9: proxy de teselas del gateway, SEC-J-04/D56, evidencia k6 de ASR8) a la rama sin perder el avance propio, y mezclar el PR #8 en `develop`.
+
+| # | Tarea | Responsable | Modelo | Estado |
+|---|---|---|---|---|
+| 19a | Mezcla de prueba con `origin/develop` en una copia aparte: sin conflictos (solo 5 documentos de `docs/equipo/` en común), sin decisiones duplicadas; `verify` con TZ=UTC: api-gateway 200/0, científico 458/0 (2 omitidas), consulta-pública 364/0 | Tech Lead | opus/medium | Hecho |
+| 19b | Borrar la copia de trabajo y la rama sobrantes `worktree-agent-a81b33dc5352a050a` (sus 2 commits ya estaban en la rama como b4053c3 y d9a9031) | Tech Lead | — | Hecho |
+| 19c | Merge de `origin/develop` en la rama (9ed29ec), push, CI y merge del PR #8 en `develop` | Tech Lead | opus/medium | En curso |
+
+**Pendientes tras la iteración 19:**
+- De Juanita: `MapaHallazgos.jsx` debe pedir las teselas a `/api/gateway/teselas/{z}/{x}/{y}.png` con el JWT (`11-seguridad-y-acceso.md` §7; parte front de SEC-J-04). SEC-04, SEC-J-I23, entrada del CI con `TZ: America/Bogota`, k6 de D42.
+- Hernando: D53 cumplido en `origin/feature/registro-cientifico` (f8ae73a, ya no importa `ubicacion`). Siguen SEC-J-23 y sus endpoints en `SeguridadEndpointsTest.ENDPOINTS`.
+- Santiago: 16j, SEC-J-I19.
+
+**Modelos y consumo (iteración 19):**
+| Fase | USD | Agente que más consumió | Cambios de modelo (motivo) |
+|---|---:|---|---|
+| 19a–19c (sesión 2026-11-15) | 0.69 en esta sesión (opus 0.69) | sesión principal (opus, 0.69) | — (sin subagentes: integración y pruebas las corrió el Tech Lead) |
