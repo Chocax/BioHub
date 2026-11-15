@@ -277,7 +277,7 @@ Despliegue de bases, Redis y RabbitMQ en VMs locales con una VPN de malla, y su 
 | 20a | Capa de teselas con `fetch` + JWT (aborto por tesela, revocación de object URL, 401 → `alSesionVencida`), `getBlob` en el cliente, pruebas Vitest | frontend-senior | sonnet/**high** | Hecho (sin commit): Vitest 73/73 (verificado por el Tech Lead), build OK; sin referencias a `tile.openstreetmap.org`; sin dependencias nuevas |
 | 20b | QA de 20a | qa-tester | sonnet/medium | Hecho: APROBADO CON OBSERVACIONES. Vitest 84/84 con `qa-teselas.test.jsx` (11 casos borde), build OK. BUG-J20-1 (Bajo, `alSesionVencida` una vez por capa y no por mapa); BUG-J20-2 (Bajo, doc) corregido por el Tech Lead en WI-05; WI-15 (navegador real) pendiente |
 | 20c | Seguridad de 20a (token, privacidad de z/x/y, fugas) | ciberseguridad | opus/high | Hecho: APROBADO CON OBSERVACIONES. 0 Críticos/Altos/Medios; SEC-J-24 (Bajo, teselas 24 h en caché de disco: decisión pendiente de la usuaria); SEC-J-I24 (CSP necesita `data:`) corregido por el Tech Lead en README, `11` y `08`; SEC-J-I25 a I27 informativos. SEC-J-I14 cerrado; SEC-J-04 se cierra con la prueba manual en navegador |
-| 20d | Commit, push y PR a `develop` | Tech Lead | opus/medium | Hecho (autorizado por la usuaria al aprobar QA y seguridad) |
+| 20d | Commit, push y PR a `develop` | Tech Lead | opus/medium | Hecho: PR #10 mezclado en `develop` (7143a6b, merge sin squash, CI verde en 09afeb8); la rama sigue abierta |
 
 **Cambios de modelo:** frontend-senior sonnet/**high** (matriz: sonnet/medium) en 20a: maneja el token y la privacidad de las coordenadas.
 
@@ -299,3 +299,29 @@ Despliegue de bases, Redis y RabbitMQ en VMs locales con una VPN de malla, y su 
 |---|---:|---|---|
 | 20a–20d (sesión 2026-11-15) | 2.96 acumulado en la sesión (≈2.27 en la iteración 20; opus 2.44, sonnet 0.52) | sesión principal (opus, 1.62); ciberseguridad 0.82; frontend-senior 0.34; qa-tester 0.18 | frontend-senior sonnet/**high** (matriz: medium): token y privacidad de coordenadas |
 | 20e–20g (SEC-J-24, D57) | 4.75 acumulado en la sesión (≈1.79 en 20e–20g; opus 4.11, sonnet 0.64) | sesión principal (opus) | ciberseguridad opus/medium en 20g (re-verificación acotada) |
+
+---
+# Iteración 21: arnés de desarrollo con E2E de ubicación, y CI de web-interna
+
+**Fecha:** 2026-11-15 · **Rama:** `feature/ubicacion-consulta-publica` · **Modo de presupuesto:** **calidad** (pedido por la usuaria para esta iteración), sin tope.
+
+**Alcance:** (1) arnés solo de desarrollo para abrir y probar las pantallas de `src/ubicacion/` en navegador real sin esperar a 16j, con E2E de Playwright (incluido WI-15 para cerrar SEC-J-04) y guía manual en modo real (D58); (2) job de `web-interna` en la CI y entradas de backend con `TZ: America/Bogota`.
+
+| # | Tarea | Responsable | Modelo | Estado |
+|---|---|---|---|---|
+| 21a | Arnés `src/ubicacion/dev/`, Playwright E2E, guía manual (D58) | frontend-senior | opus/medium | Hecho (sin commit): Playwright 117/117 (39 por motor, imagen oficial con CI=1); verificado por el Tech Lead: Vitest 92/92, `dist/` sin arnés, Chromium 39/39. Las E2E destaparon 2 defectos en `MapaHallazgos.jsx` (Enter no abría el detalle; error `_leaflet_pos` al pasar a Lista durante el zoom), corregidos |
+| 21b | Job `web-interna` en CI (E2E condicional) y matriz con `America/Bogota` | devops | sonnet/high | Hecho (sin commit): 8 jobs (web-interna + backend 5 entradas: científico y consulta-pública en UTC y Bogotá, gateway en UTC); `-DargLine=-Duser.timezone`; YAML y actionlint OK; local web-interna 91/91, audit 0; `ValidadorDatosHallazgoTest` con Bogotá 20/0. Sin checks requeridos en `develop`/`main`, así que el cambio de nombre de los jobs no bloquea |
+| 21c | QA de 21a y 21b | qa-tester | sonnet/high | Hecho: APROBADO CON OBSERVACIONES. Vitest 92/92; E2E 78/78 ×3 (Chromium y Firefox) y 117/117 ×2 en la imagen oficial, sin inestabilidad; 10 mutaciones (7 detectadas por E2E); consulta-pública 364/0 en UTC y Bogotá. BUG-J21-1/2/3 (Bajos, solo pruebas). `06` P14 con el mapa WI-* → specs |
+| 21d | Seguridad: el arnés y el modo simulado no llegan a producción; dependencia nueva `@playwright/test` | ciberseguridad | opus/high | Hecho: APROBADO CON OBSERVACIONES, solo 5 informativos (SEC-J-I29 a I33); el arnés es seguro tal como está (build normal y forzado sin modo simulado; token falso rechazado por el gateway; ningún despliegue sirve `vite dev`). I29 (E2E sin condición en la CI), I30 (nota de trazas) e I33 (webs solo desde `dist/`) aplicados por el Tech Lead antes del commit |
+| 21e | Commit, push, CI real y PR a `develop` | Tech Lead | opus/medium | Hecho |
+
+**Modelos:** matriz del modo calidad. La sesión principal sigue en opus/medium (el modo pide opus/high; la usuaria puede subirlo con `/effort high`).
+
+**Pendientes tras la iteración 21:**
+- De Juanita: prueba manual con el arnés en modo real (gateway + servicio científico levantados) para WI-13 y la parte manual de WI-15 → cierra SEC-J-04 y confirma SEC-J-24 en navegador. BUG-J21-1 (hacer determinista la prueba de `_leaflet_pos`), BUG-J21-2 (`toContainText('(1)')` débil), BUG-J21-3 (asertar `defaultPrevented` con Espacio). SEC-J-I31 (opcional: `persist-credentials: false`, audit de dev). Mediciones HU-06 c.3 y HU-13 c.3.
+- Santiago: avisarle del cambio aditivo en `web-interna/package.json` (D58); fijar `leaflet` 1.9.4 (SEC-J-I27 e I32: ya hay dos internos de Leaflet en uso); subir Playwright a 1.65.x en ambas webs a la vez.
+
+**Modelos y consumo (iteración 21, modo calidad):**
+| Fase | USD | Agente que más consumió | Cambios de modelo (motivo) |
+|---|---:|---|---|
+| 21a–21e | 11.38 acumulado en la sesión (≈6.63 en la iteración 21; opus 9.61, sonnet 1.77 en total) | frontend-senior 21a (opus, 2.74); luego ciberseguridad 21d (opus, 1.11) y qa-tester 21c (sonnet, 1.00) | Ninguno fuera de la matriz de calidad |

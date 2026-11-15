@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -16,8 +16,15 @@ vi.mock('react-leaflet', () => ({
     sim.propsMapa = p;
     return <div data-testid="mapa-leaflet">{children}</div>;
   },
+  // Leaflet entrega Enter sobre un marcador como `keydown` (no como `click`): el simulado lo reenvía igual.
   Marker: ({ position, eventHandlers, title }) => (
-    <button type="button" data-testid="marcador" data-posicion={JSON.stringify(position)} onClick={() => eventHandlers.click({ target: { getElement: () => null } })}>
+    <button
+      type="button"
+      data-testid="marcador"
+      data-posicion={JSON.stringify(position)}
+      onClick={() => eventHandlers.click({ target: { getElement: () => null } })}
+      onKeyDown={(e) => eventHandlers.keydown?.({ originalEvent: e.nativeEvent, target: { getElement: () => null } })}
+    >
       {title}
     </button>
   ),
@@ -214,6 +221,21 @@ describe('PaginaMapa: alto rango', () => {
     await u.click(screen.getByTestId('marcador'));
     await u.click(screen.getByRole('button', { name: 'Cerrar' }));
     expect(screen.getByText('Selecciona un marcador para ver el detalle.')).toBeInTheDocument();
+  });
+
+  it('Enter o Espacio sobre un marcador (keydown de Leaflet) abre el detalle; otras teclas no (02 §Teclado)', async () => {
+    const cliente = clienteFalso(() => mapa([feature('a', -73.1234567, 5.1234567)]));
+    render(<PaginaMapa cliente={cliente} roles={ALTO} />);
+    const marcador = await screen.findByTestId('marcador');
+    // fireEvent.keyDown no genera el click nativo del <button> simulado: solo cuenta el manejador keydown.
+    fireEvent.keyDown(marcador, { key: 'a' });
+    expect(screen.getByText('Selecciona un marcador para ver el detalle.')).toBeInTheDocument();
+    fireEvent.keyDown(marcador, { key: 'Enter' });
+    expect(within(screen.getByRole('complementary', { name: 'Detalle del hallazgo' })).getByText('5.12346')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByText('Selecciona un marcador para ver el detalle.')).toBeInTheDocument();
+    fireEvent.keyDown(marcador, { key: ' ' });
+    expect(within(screen.getByRole('complementary', { name: 'Detalle del hallazgo' })).getByText('5.12346')).toBeInTheDocument();
   });
 
   it('no deja coordenadas en el título de la pestaña, ni en atributos de la página', async () => {
