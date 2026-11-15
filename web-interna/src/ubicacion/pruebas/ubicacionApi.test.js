@@ -68,6 +68,20 @@ describe('crearClienteUbicacion', () => {
 describe('crearClienteUbicacion.getBlob (teselas)', () => {
   const crear = () => crearClienteUbicacion({ apiUrl: 'http://gw', obtenerToken: async () => 'TOKEN' });
 
+  it('SEC-J-24: con sinCache usa no-store sin perder token, credentials ni señal; sin la opción no manda cache', async () => {
+    const f = vi.fn().mockResolvedValue({ ok: true, blob: () => Promise.resolve(new Blob(['x'])) });
+    vi.stubGlobal('fetch', f);
+    const control = new AbortController();
+    await crear().getBlob('/t', { signal: control.signal, sinCache: true });
+    await crear().getBlob('/t', { signal: control.signal });
+    const [[, conNoStore], [, normal]] = f.mock.calls;
+    expect(conNoStore.cache).toBe('no-store');
+    expect(conNoStore.headers.Authorization).toBe('Bearer TOKEN');
+    expect(conNoStore.credentials).toBe('omit');
+    expect(conNoStore.signal).toBe(control.signal);
+    expect(normal).not.toHaveProperty('cache');
+  });
+
   it('200: devuelve el Blob; Bearer, Accept image/png, sin cookies y SIN no-store (la caché del navegador sirve)', async () => {
     const png = new Blob(['x'], { type: 'image/png' });
     const f = vi.fn().mockResolvedValue({ ok: true, blob: () => Promise.resolve(png) });
