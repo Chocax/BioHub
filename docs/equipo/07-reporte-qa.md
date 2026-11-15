@@ -508,3 +508,48 @@ OBS-J17-1: **CERRADO**. Servicios y gateway detenidos al terminar; sin cambios e
 ## Veredicto Iteración 18: APROBADO
 
 SEC-J-19 y SEC-J-20 cumplen lo declarado: las mutaciones sobre `@PreAuthorize` son detectadas, el 403 problem+json `ROL_INSUFICIENTE` con `no-store` aplica a todo el servicio (comprobado en pruebas y en vivo), el 401 conserva el contrato sin filtrar la descripción del decodificador, el handler de `ubicacion` sigue auditando y `ConsultaPublicaExceptionHandler` ya no produce 500. Las suites pasan en UTC y Bogota (434 y 339, 0 fallos tras repetir). Queda un único hallazgo Bajo (BUG-J18-1, prueba intermitente), que no bloquea el push pero conviene estabilizar porque puede hacer fallar el CI al azar.
+
+---
+
+# Iteración 20 – teselas por el gateway (20b)
+
+Alcance: parte frontend de SEC-J-04 (cambios sin commit en `web-interna/src/ubicacion/**`: `CapaTeselasGateway.js`, `TeselasGateway.jsx`, `MapaHallazgos.jsx`, `PaginaMapa.jsx`, `ubicacionApi.js` con `getBlob`, y las pruebas asociadas).
+
+## Comandos y resultados
+
+| Comando (en `web-interna`) | Resultado |
+|---|---|
+| `npx vitest run` (estado recibido, sin mis pruebas) | 5 archivos, **73 pruebas aprobadas, 0 fallidas** |
+| `npx vitest run` (con `qa-teselas.test.jsx`) | 6 archivos, **84 pruebas aprobadas, 0 fallidas** |
+| `npm run build` | OK, 21 módulos, `index-*.js` 248.30 kB (77.42 kB gzip) |
+| Cobertura | No configurada |
+
+Alcance del cambio: `git status` fuera de `web-interna/src/ubicacion/**` solo muestra `docs/equipo/00-plan.md`, `04`, `11` (y `06`, mío). No se tocaron `App.jsx`, `package.json`, login ni navegación. No hay dependencias nuevas. Única mención a OSM en código: la atribución (obligatoria) y comentarios.
+
+## Qué se comprobó
+
+- Las pruebas del desarrollador sí prueban lo pedido: URL relativa `/api/gateway/teselas/{z}/{x}/{y}.png`, con el cliente real `fetch` a `apiUrl` + ruta con `Authorization: Bearer`, `Accept: image/png`, `credentials: omit` y sin `cache` (`ubicacionApi.test.js`, `CapaTeselasGateway.test.jsx`); `fetch` nunca recibe `openstreetmap` y no hay `<img src>` remoto; `getBlob` 200/400/401/403/429/502/503/sin red/corte de cuerpo/abort/fallo de token; aborto por tesela, por zoom y al desmontar sin `tileerror`; revocación de object URL (carga, error de decodificación, descarte, idempotente); 401 una sola vez; 403/429/5xx/0 no cierran sesión; cliente sin `getBlob` degrada a `tileerror`; umbral y paso a Lista en `PaginaMapa.test.jsx` (con `TeselasGateway` simulado).
+- No se rompió nada existente: las 73 pruebas previas pasan; `alt=''` y `role=presentation` en teselas; marcadores y teclado siguen cubiertos en `PaginaMapa.test.jsx`/`MapaHallazgos` sin cambios de comportamiento (el diff de `MapaHallazgos.jsx` solo cambia la capa y el contador).
+- Huecos que cubrí en `web-interna/src/ubicacion/pruebas/qa-teselas.test.jsx` (11 pruebas, todas pasan, con Leaflet real en jsdom): respuesta (blob) tardía tras desmontar con cliente que ignora la señal (sin object URL ni errores); 401 tardío tras desmontar (no cierra sesión); StrictMode (una sola capa, descargas del primer montaje abortadas, sin errores); cambio de `cliente` entre renders (capa recreada, señales anteriores abortadas); 429 repetidos superan `MAX_ERRORES_TESELAS` y avisan una sola vez; el umbral exacto no avisa; abortos no cuentan; sin `<img>` externos; 401 con aborto previo no avisa.
+- `06-plan-pruebas.md`: agregados WC-09..WC-14 y WI-15 (sin tocar lo existente) y la fila de trazabilidad de HU-07.2.
+
+## Bugs y observaciones
+
+### BUG-J20-1 (Bajo) `alSesionVencida` se llama una vez por capa, no una vez por mapa
+- Responsable sugerido: frontend.
+- Archivo: `web-interna/src/ubicacion/componentes/CapaTeselasGateway.js:24,55-58` (la bandera `_sesionAvisada` vive en la capa) y `TeselasGateway.jsx:17-29` (el efecto recrea la capa si cambia `cliente`, `attribution` o `maxZoom`).
+- Pasos: montar `TeselasGateway` con un cliente que responde 401, esperar, `rerender` con otro cliente que también da 401.
+- Esperado (README/11 §7: "una sola vez"): 1 llamada. Obtenido: 2 (`qa-teselas.test.jsx`, prueba "cambio de cliente... una vez POR CAPA", que documenta el comportamiento actual y pasa). Además, un 401 de la lista (`PaginaMapa.jsx:52`) y otro de teselas pueden llamarlo ambos. En la práctica `alSesionVencida` de Santiago redirige al login, por lo que el impacto es bajo; conviene que sea idempotente.
+- Corrección sugerida: mover la bandera a `TeselasGateway` (`useRef`) o dejar documentado que el consumidor debe ser idempotente.
+
+### BUG-J20-2 (Bajo, documentación) Casos de prueba existentes con texto obsoleto
+- Responsable: QA/docs. `06-plan-pruebas.md` WI-05 dice "teselas solo de OSM" y WP-09 "ninguna a teselas": ahora las teselas salen por el gateway del mismo origen. No los reescribí (regla); WC-09 y WI-15 describen el comportamiento vigente.
+
+### Observaciones (no son bugs del cambio)
+- El mapa base no reintenta: más de 3 teselas fallidas (incluido un 429 pasajero o un 503 del circuit breaker) pasan a la vista Lista hasta recargar, y el contador no se reinicia. Es el diseño previo; el riesgo de 429 es bajo (una vista usa 20-40 de 600/min), pero un `Retry-After` podría usarse.
+- No verificado en navegador real (WI-15 pendiente): carga de `blob:` con una CSP, comportamiento real de Leaflet al hacer zoom animado con descargas en vuelo y que el gateway esté levantado. Las pruebas usan jsdom con medidas simuladas.
+- La capa depende de internos de Leaflet (`_tiles`, `_tileZoom`, `_abortLoading`); está fijada la versión 1.9, pero una actualización mayor exige revisar `qa-teselas.test.jsx` y la prueba de zoom.
+
+## Veredicto Iteración 20b: APROBADO CON OBSERVACIONES
+
+El cambio cumple lo declarado: las teselas van solo al gateway con Bearer a través del `cliente` inyectado, cero peticiones a OSM, abortos y object URL bien manejados, aviso y paso a Lista intactos, sin regresiones (84/84 pruebas, build OK) y sin salirse del reparto. Quedan dos hallazgos Bajos (BUG-J20-1, BUG-J20-2) y la verificación en navegador real pendiente (WI-15), que no bloquean el commit.

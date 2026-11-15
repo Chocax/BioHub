@@ -264,3 +264,29 @@ Despliegue de bases, Redis y RabbitMQ en VMs locales con una VPN de malla, y su 
 | Fase | USD | Agente que más consumió | Cambios de modelo (motivo) |
 |---|---:|---|---|
 | 19a–19c (sesión 2026-11-15) | 0.69 en esta sesión (opus 0.69) | sesión principal (opus, 0.69) | — (sin subagentes: integración y pruebas las corrió el Tech Lead) |
+
+---
+# Iteración 20: teselas del mapa por el gateway (parte front de SEC-J-04)
+
+**Fecha:** 2026-11-15 · **Rama:** `feature/ubicacion-consulta-publica` · **Modo de presupuesto:** equilibrado, sin tope.
+
+**Alcance:** `web-interna/src/ubicacion/componentes/MapaHallazgos.jsx` pide las teselas a `/api/gateway/teselas/{z}/{x}/{y}.png` con el JWT a través del `cliente` inyectado (D17), en vez de a `tile.openstreetmap.org`. Dueña: Juanita (D17; `11-seguridad-y-acceso.md` §7). El proxy del gateway es de Santiago y ya está en `develop` (PR #9). Santiago no tiene que cambiar nada: sigue aportando solo `apiUrl` y `obtenerToken`.
+
+| # | Tarea | Responsable | Modelo | Estado |
+|---|---|---|---|---|
+| 20a | Capa de teselas con `fetch` + JWT (aborto por tesela, revocación de object URL, 401 → `alSesionVencida`), `getBlob` en el cliente, pruebas Vitest | frontend-senior | sonnet/**high** | Hecho (sin commit): Vitest 73/73 (verificado por el Tech Lead), build OK; sin referencias a `tile.openstreetmap.org`; sin dependencias nuevas |
+| 20b | QA de 20a | qa-tester | sonnet/medium | Hecho: APROBADO CON OBSERVACIONES. Vitest 84/84 con `qa-teselas.test.jsx` (11 casos borde), build OK. BUG-J20-1 (Bajo, `alSesionVencida` una vez por capa y no por mapa); BUG-J20-2 (Bajo, doc) corregido por el Tech Lead en WI-05; WI-15 (navegador real) pendiente |
+| 20c | Seguridad de 20a (token, privacidad de z/x/y, fugas) | ciberseguridad | opus/high | Hecho: APROBADO CON OBSERVACIONES. 0 Críticos/Altos/Medios; SEC-J-24 (Bajo, teselas 24 h en caché de disco: decisión pendiente de la usuaria); SEC-J-I24 (CSP necesita `data:`) corregido por el Tech Lead en README, `11` y `08`; SEC-J-I25 a I27 informativos. SEC-J-I14 cerrado; SEC-J-04 se cierra con la prueba manual en navegador |
+| 20d | Commit, push y PR a `develop` | Tech Lead | opus/medium | Hecho (autorizado por la usuaria al aprobar QA y seguridad) |
+
+**Cambios de modelo:** frontend-senior sonnet/**high** (matriz: sonnet/medium) en 20a: maneja el token y la privacidad de las coordenadas.
+
+**Pendientes tras la iteración 20:**
+- Usuaria: decidir SEC-J-24 (no-store para z ≥ 9 en el front o en el gateway, o aceptarlo como riesgo residual de R6).
+- De Juanita (Bajos/informativos): BUG-J20-1, SEC-J-I25 (validar tipo del blob; `...opciones` antes de `headers`), SEC-J-I26 (`referrerPolicy: 'no-referrer'` en `pedir`; nota de proxies en `09`), SEC-J-I27 (fijar `leaflet` 1.9.4, coordinar con Santiago porque `package.json` es suyo). Prueba manual WI-15 en navegador para cerrar SEC-J-04.
+- Santiago: montar `src/ubicacion/` en `App.jsx` (16j); CSP de SEC-J-07 con `img-src 'self' data: blob:`; crear el `cliente` una sola vez; si inyecta un cliente propio, implementar `getBlob`.
+
+**Modelos y consumo (iteración 20):**
+| Fase | USD | Agente que más consumió | Cambios de modelo (motivo) |
+|---|---:|---|---|
+| 20a–20d (sesión 2026-11-15) | 2.96 acumulado en la sesión (≈2.27 en la iteración 20; opus 2.44, sonnet 0.52) | sesión principal (opus, 1.62); ciberseguridad 0.82; frontend-senior 0.34; qa-tester 0.18 | frontend-senior sonnet/**high** (matriz: medium): token y privacidad de coordenadas |
