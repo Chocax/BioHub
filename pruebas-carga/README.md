@@ -16,6 +16,7 @@ un despliegue). Miden la consulta pública (ASR1/RNF1, pico x60) y su comportami
 | `correr-k6.sh` | Ejecuta un script k6 con la imagen `grafana/k6` (versión fija en `K6_VERSION`) y deja el JSON en `resultados/`. |
 | `k6/consulta-publica-pico.js` | **ASR1/RNF1.** Perfil de tasa constante: base N req/s, rampa, pico N x `MULT` (60 por defecto), bajada y post-pico. Mide % de 200, 5xx/timeouts, p95 por fase y por ventana de 15 s, y la estabilización tras la rampa. Mezcla 60 % fichas (85 % "virales", caché caliente) y 40 % búsquedas. |
 | `k6/carga-cientifica-simultanea.js` | **ASR4/RNF5 (CG-04).** Mide la lectura pública con y sin carga científica (`CIENTIFICA=0|1`). La carga son eventos `hallazgo.registrado`/`hallazgo.reclasificado` publicados a RabbitMQ y consumidos por consulta-publica (SELECT ... FOR UPDATE + INSERT/UPDATE e invalidación de caché). Al final comprueba que la **DLQ de carga esté vacía** (umbral `dlq_mensajes`) y reporta eventos publicados, procesados (ack) y pendientes. |
+| `k6/gateway-limite-api-externa.js` | **ASR8/RNF11, HU-08 c.2, HU-12 c.2.** Va contra el **api-gateway**, no contra NGINX. Un consumidor abusivo (A) recibe 429 con `Retry-After` y como máximo 60 respuestas 200 por minuto. Mientras tanto, otros dos consumidores (uno con límite configurado) y el portal siguen en 200 sin perder latencia. Además, una key revocada a mitad de la prueba recibe 401 desde la petición siguiente. Ver la sección siguiente. |
 | `k6/registro-hallazgo.js` | **Pendiente** (depende de HU-01, módulo registro). Esqueleto para RNF2/RNF4. |
 | `k6/lib/comun.js` | Utilidades compartidas (mezcla de peticiones, ids de la semilla, ventanas). |
 | `resultados/` | JSON de cada corrida. Los que empiezan por `descartado-` documentan fallos del banco de pruebas y **no cuentan como evidencia** (D42). |
@@ -54,6 +55,48 @@ Parámetros de `consulta-publica-pico.js`: `BASE_URL` (por defecto `http://127.0
 `T_PICO`, `T_BAJA`, `T_POST`, `MAX_VUS`, `POOL`, `SALIDA`. De `carga-cientifica-simultanea.js`: `R` (req/s públicas),
 `EV` (eventos/s), `DUR`, `CIENTIFICA`, `COLA`, `RMQ_URL`, `SALIDA`. Variables del compose: `CARGA_CPUS` (CPU por réplica,
 2 por defecto) y `COLA_CARGA` (cola de carga, `consulta-publica.carga.eventos`).
+
+### ASR8: límite por consumidor en el gateway
+
+Requisitos:
+
+- El `api-gateway` y `servicio-consulta-publica` corriendo con el perfil **`local`**. **Nunca con `aiven`**: el script crea 4 consumidores con prefijo `k6-asr8-` en la base del gateway (D30). Al final revoca sus keys.
+- Redis y Keycloak del compose arriba.
+- El JWT de `admin1` en la variable `TOKEN`. Vive 5 minutos, así que sácalo justo antes. La prueba dura unos 4 minutos.
+
+```bash
+# Linux / Git Bash (k6 en la red del host)
+export TOKEN=$(curl -s -d grant_type=password -d client_id=biohub-pruebas -d username=admin1 \
+  --data-urlencode "password=$(grep -E '^KEYCLOAK_TEST_USERS_PASSWORD=' ../.env | cut -d= -f2-)" \
+  http://localhost:8180/realms/biohub/protocol/openid-connect/token | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+./correr-k6.sh k6/gateway-limite-api-externa.js -e BASE_URL=http://127.0.0.1:8080 -e SALIDA=/resultados/asr8-gateway.json
+```
+
+```powershell
+# Windows (Docker Desktop: el contenedor llega al gateway por host.docker.internal)
+cd D:\Projects\BioHub
+$clave = (Select-String -Path .env -Pattern '^KEYCLOAK_TEST_USERS_PASSWORD=').Line.Split('=', 2)[1]
+$env:TOKEN = (Invoke-RestMethod -Method Post http://localhost:8180/realms/biohub/protocol/openid-connect/token -Body @{ grant_type = 'password'; client_id = 'biohub-pruebas'; username = 'admin1'; password = $clave }).access_token
+docker run --rm -e TOKEN -v "${PWD}\pruebas-carga\k6:/scripts:ro" -v "${PWD}\pruebas-carga\resultados:/resultados" grafana/k6:2.3.0 run --quiet -e BASE_URL=http://host.docker.internal:8080 -e SALIDA=/resultados/asr8-gateway.json /scripts/gateway-limite-api-externa.js
+```
+
+Parámetros:
+
+| Parámetro | Por defecto | Qué es |
+|---|---|---|
+| `ABUSO_RPS` | 20 | Peticiones por segundo del consumidor abusivo |
+| `LIMITE_B` | 120 | Límite configurado del consumidor B, por minuto |
+| `LIMITE_POR_DEFECTO` | 60 | Debe ser igual al del gateway |
+| `T_BASE`, `T_ABUSO`, `T_POST` | 60s, 120s, 30s | Duración de cada fase |
+| `SALIDA` | – | Ruta del JSON de resultados |
+
+**Qué tiene que pasar para que cuente:**
+
+- Consumidor A: a lo sumo `60 × (ceil(T_ABUSO/60) + 1)` respuestas 200 (por la ventana fija, D46), al menos un 429, todos los 429 con `Retry-After` y ningún otro estado.
+- B, C y el portal: 100 % de 200.
+- D: 100 % de 401 después de revocar su key.
+
+`umbrales_cumplidos: true` en el JSON resume todo. Los cinco clientes salen de la misma IP, por eso D pide a 0,5 req/s: así queda debajo del bloqueo por IP de 20 keys inválidas por minuto.
 
 ### Eventos de la carga científica y la verificación del publicador
 

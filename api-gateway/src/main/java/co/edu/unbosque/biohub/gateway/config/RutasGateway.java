@@ -23,6 +23,9 @@ public class RutasGateway {
     /** Único recurso que se expone a externos: nunca /api/publica/eventos/**. */
     public static final String RECURSO_FICHAS = "/fichas";
 
+    /** Teselas del mapa servidas por el gateway (SEC-J-04): el navegador nunca habla con OpenStreetMap. */
+    public static final String TESELAS = "/api/gateway/teselas";
+
     private final RequestMatcher apiExterna;
     private final RequestMatcher portal;
     private final String[] prefijosInternos;

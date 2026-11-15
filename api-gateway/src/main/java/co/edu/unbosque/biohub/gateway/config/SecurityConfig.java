@@ -64,6 +64,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/gateway/consumidores/**", "/api/gateway/keys/**",
                                 "/api/gateway/usuarios/**").hasRole(ROL_ADMINISTRADOR)
                         .requestMatchers(HttpMethod.GET, "/api/gateway/ping").hasAnyRole(RolInterno.nombres())
+                        // Teselas del mapa (SEC-J-04): solo personal interno, para que el proxy no sea un relé abierto.
+                        .requestMatchers(HttpMethod.GET, RutasGateway.TESELAS + "/**").hasAnyRole(RolInterno.nombres())
                         // HU-10 c.2: un usuario autenticado sin rol tampoco entra a los módulos internos.
                         .requestMatchers(rutas.prefijosInternos()).hasAnyRole(RolInterno.nombres())
                         .anyRequest().denyAll())

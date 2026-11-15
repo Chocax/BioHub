@@ -306,6 +306,7 @@ Guía para el equipo: `11-seguridad-y-acceso.md`.
 | `GATEWAY_LIMITE_CONSUMIDOR_POR_MINUTO`, `GATEWAY_LIMITE_IP_PORTAL_POR_MINUTO`, `GATEWAY_LIMITE_FALLOS_KEY_POR_MINUTO` | Opcionales | Por defecto 60, 120 y 20 |
 | `REDIS_MAXMEMORY` | Opcional, solo Compose | Por defecto `256mb` |
 | `GATEWAY_CIRCUITO_FALLOS`, `GATEWAY_CIRCUITO_TIEMPO_ABIERTO` | Opcionales | Circuit breaker hacia los servicios (D52). Por defecto 5 fallos y `10s` |
+| `GATEWAY_TESELAS_URL`, `GATEWAY_TESELAS_AGENTE`, `GATEWAY_TESELAS_POR_USUARIO`, `GATEWAY_TESELAS_CACHE` | Opcionales | Proxy de teselas del mapa (D56). Por defecto, OSM, el `User-Agent` de BioHub, 600 por minuto y `64MB`. El gateway necesita salida a internet hacia ese servidor |
 | `RABBITMQ_CIENTIFICO_PASSWORD`, `RABBITMQ_CONSULTA_PASSWORD`, `RABBITMQ_REPORTES_PASSWORD` | Opcionales, `.env` raíz | Crean los usuarios por servicio (SEC-04) |
 
 - **Cambios del realm:** `failureFactor` 3, cliente `biohub-gateway` y usuario de prueba `sinrol1`. Hay que reimportar el realm.

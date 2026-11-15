@@ -34,13 +34,14 @@ Esta base vive en el servicio de Aiven de **lectura**. Los usuarios (`gateway_ap
 | Paquete | Contiene |
 |---|---|
 | `config` | Seguridad (`SecurityConfig`), rutas (`RutasGateway`) y propiedades |
-| `controller` | Proxy, API externa y administración de consumidores y usuarios |
-| `service` | Reglas: API Keys, consumidores, usuarios y proxy |
-| `domain` | Entidades, repositorios y puertos (`LimitadorPeticiones`, `AlmacenCredenciales`, `ClienteIdentidad`, `RegistroRevocaciones`) |
+| `controller` | Proxy, API externa, teselas del mapa y administración de consumidores y usuarios |
+| `service` | Reglas: API Keys, consumidores, usuarios, proxy, circuit breaker y teselas |
+| `domain` | Entidades, repositorios y puertos (`LimitadorPeticiones`, `AlmacenCredenciales`, `ClienteIdentidad`, `RegistroRevocaciones`, `OrigenTeselas`) |
 | `infrastructure.filtro` | `ApiKeyRateLimitFilter`, `RevocacionTokenFilter`, `EscritorProblema` |
 | `infrastructure.limite` | Limitador en Redis, en memoria y decorador con respaldo |
 | `infrastructure.credenciales` | Credenciales desde la BD y caché en Redis |
 | `infrastructure.identidad` | Adaptador de Keycloak y revocaciones en Redis |
+| `infrastructure.teselas` | Descarga de teselas por HTTP (`OrigenTeselasHttp`), sin datos del navegador (SEC-J-04, D56) |
 
 ## Pruebas
 
