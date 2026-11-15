@@ -633,7 +633,7 @@ Nicolás (reportes) recibe los mismos eventos por su cola `reportes.eventos` y p
 | `/api/v1/externa/fichas/**` (API externa, D16) | consulta-publica, **reescribiendo** a `/api/publica/fichas/**` | No (API Key) | **Hecho.** Ver §9 |
 | CORS | – | – | `Access-Control-Expose-Headers: Retry-After` **hecho**. **Falta** el origen de web-publica en Vercel cuando exista |
 | Cabeceras de respuesta | – | – | **Hecho.** `Cache-Control` pasa sin filtrar, salvo en la API externa, donde `public` pasa a `private` (D47) |
-| `GET /api/gateway/teselas/{z}/{x}/{y}.png` (fondo del mapa, SEC-J-04, D56) | El gateway, que la pide a OSM | Sí, uno de los 5 roles | **Hecho.** Ver §8.1. **Falta** que `MapaHallazgos.jsx` lo use (`11-seguridad-y-acceso.md` §7) |
+| `GET /api/gateway/teselas/{z}/{x}/{y}.png` (fondo del mapa, SEC-J-04, D56) | El gateway, que la pide a OSM | Sí, uno de los 5 roles | **Hecho.** Ver §8.1. **Hecho en el front:** `MapaHallazgos.jsx` ya lo usa, con `CapaTeselasGateway` y `cliente.getBlob` (`11-seguridad-y-acceso.md` §7) |
 
 ### 8.1 Teselas del mapa
 

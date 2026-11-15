@@ -253,7 +253,7 @@ Despliegue de bases, Redis y RabbitMQ en VMs locales con una VPN de malla, y su 
 |---|---|---|---|---|
 | 19a | Mezcla de prueba con `origin/develop` en una copia aparte: sin conflictos (solo 5 documentos de `docs/equipo/` en común), sin decisiones duplicadas; `verify` con TZ=UTC: api-gateway 200/0, científico 458/0 (2 omitidas), consulta-pública 364/0 | Tech Lead | opus/medium | Hecho |
 | 19b | Borrar la copia de trabajo y la rama sobrantes `worktree-agent-a81b33dc5352a050a` (sus 2 commits ya estaban en la rama como b4053c3 y d9a9031) | Tech Lead | — | Hecho |
-| 19c | Merge de `origin/develop` en la rama (9ed29ec), push, CI y merge del PR #8 en `develop` | Tech Lead | opus/medium | En curso |
+| 19c | Merge de `origin/develop` en la rama (9ed29ec), push, CI y merge del PR #8 en `develop` | Tech Lead | opus/medium | Hecho: CI del PR verde en b171bf0 (5/5 trabajos); PR #8 mezclado en `develop` (060f5e5, merge sin squash); la rama sigue abierta |
 
 **Pendientes tras la iteración 19:**
 - De Juanita: `MapaHallazgos.jsx` debe pedir las teselas a `/api/gateway/teselas/{z}/{x}/{y}.png` con el JWT (`11-seguridad-y-acceso.md` §7; parte front de SEC-J-04). SEC-04, SEC-J-I23, entrada del CI con `TZ: America/Bogota`, k6 de D42.
@@ -264,3 +264,38 @@ Despliegue de bases, Redis y RabbitMQ en VMs locales con una VPN de malla, y su 
 | Fase | USD | Agente que más consumió | Cambios de modelo (motivo) |
 |---|---:|---|---|
 | 19a–19c (sesión 2026-11-15) | 0.69 en esta sesión (opus 0.69) | sesión principal (opus, 0.69) | — (sin subagentes: integración y pruebas las corrió el Tech Lead) |
+
+---
+# Iteración 20: teselas del mapa por el gateway (parte front de SEC-J-04)
+
+**Fecha:** 2026-11-15 · **Rama:** `feature/ubicacion-consulta-publica` · **Modo de presupuesto:** equilibrado, sin tope.
+
+**Alcance:** `web-interna/src/ubicacion/componentes/MapaHallazgos.jsx` pide las teselas a `/api/gateway/teselas/{z}/{x}/{y}.png` con el JWT a través del `cliente` inyectado (D17), en vez de a `tile.openstreetmap.org`. Dueña: Juanita (D17; `11-seguridad-y-acceso.md` §7). El proxy del gateway es de Santiago y ya está en `develop` (PR #9). Santiago no tiene que cambiar nada: sigue aportando solo `apiUrl` y `obtenerToken`.
+
+| # | Tarea | Responsable | Modelo | Estado |
+|---|---|---|---|---|
+| 20a | Capa de teselas con `fetch` + JWT (aborto por tesela, revocación de object URL, 401 → `alSesionVencida`), `getBlob` en el cliente, pruebas Vitest | frontend-senior | sonnet/**high** | Hecho (sin commit): Vitest 73/73 (verificado por el Tech Lead), build OK; sin referencias a `tile.openstreetmap.org`; sin dependencias nuevas |
+| 20b | QA de 20a | qa-tester | sonnet/medium | Hecho: APROBADO CON OBSERVACIONES. Vitest 84/84 con `qa-teselas.test.jsx` (11 casos borde), build OK. BUG-J20-1 (Bajo, `alSesionVencida` una vez por capa y no por mapa); BUG-J20-2 (Bajo, doc) corregido por el Tech Lead en WI-05; WI-15 (navegador real) pendiente |
+| 20c | Seguridad de 20a (token, privacidad de z/x/y, fugas) | ciberseguridad | opus/high | Hecho: APROBADO CON OBSERVACIONES. 0 Críticos/Altos/Medios; SEC-J-24 (Bajo, teselas 24 h en caché de disco: decisión pendiente de la usuaria); SEC-J-I24 (CSP necesita `data:`) corregido por el Tech Lead en README, `11` y `08`; SEC-J-I25 a I27 informativos. SEC-J-I14 cerrado; SEC-J-04 se cierra con la prueba manual en navegador |
+| 20d | Commit, push y PR a `develop` | Tech Lead | opus/medium | Hecho (autorizado por la usuaria al aprobar QA y seguridad) |
+
+**Cambios de modelo:** frontend-senior sonnet/**high** (matriz: sonnet/medium) en 20a: maneja el token y la privacidad de las coordenadas.
+
+**Pendientes tras la iteración 20:**
+- ~~Usuaria: decidir SEC-J-24~~ → decidido: zoom ≥ 9 sin caché en el front (D57, tareas 20e–20g).
+- De Juanita (Bajos/informativos): BUG-J20-1, SEC-J-I25 (validar tipo del blob; `...opciones` antes de `headers`), SEC-J-I26 (`referrerPolicy: 'no-referrer'` en `pedir`; nota de proxies en `09`), SEC-J-I27 (fijar `leaflet` 1.9.4, coordinar con Santiago porque `package.json` es suyo). Prueba manual WI-15 en navegador para cerrar SEC-J-04.
+- Santiago: SEC-J-25 (recargar en `pageshow` con `persisted` tras cerrar sesión); opcional `Clear-Site-Data: "cache"` al cerrar sesión; montar `src/ubicacion/` en `App.jsx` (16j); CSP de SEC-J-07 con `img-src 'self' data: blob:`; crear el `cliente` una sola vez; si inyecta un cliente propio, implementar `getBlob`.
+
+| # | Tarea | Responsable | Modelo | Estado |
+|---|---|---|---|---|
+| 20e | SEC-J-24: `ZOOM_SIN_CACHE = 9`, `getBlob(..., { sinCache })` con `no-store`; `...opciones` antes de `headers` (SEC-J-I25); D57; pruebas | Tech Lead | opus/medium | Hecho (sin commit): Vitest 86/86, build OK; mutación `>=`→`>` detectada por la prueba |
+| 20f | QA de 20e | qa-tester | sonnet/medium | Hecho: APROBADO CON OBSERVACIONES, sin bugs nuevos. Vitest 91/91 (5 casos más en `qa-teselas.test.jsx`), build OK. Nota: BUG-J20-2 ya estaba corregido (WI-05) |
+| 20g | Re-verificación de SEC-J-24 | ciberseguridad | opus/**medium** | Hecho: APROBADO CON OBSERVACIONES. SEC-J-24 cerrado (falta verlo en navegador junto con WI-15); SEC-J-I25 parcial (orden de `...opciones` cerrado; queda `blob.type` y png/jpeg en el gateway); SEC-J-I28 (doc) corregido por el Tech Lead antes del commit; SEC-J-25 nuevo (Bajo, bfcache tras cerrar sesión, de Santiago) |
+
+**Cambios de modelo:** 20e la hizo el Tech Lead (cambio de ~40 líneas; no justificaba lanzar un agente). Ciberseguridad opus/**medium** (matriz: high) en 20g: re-verificación de un diff acotado de su propio hallazgo, como en 18d y 18f.
+
+**Modelos y consumo (iteración 20):**
+| Fase | USD | Agente que más consumió | Cambios de modelo (motivo) |
+|---|---:|---|---|
+| 20a–20d (sesión 2026-11-15) | 2.96 acumulado en la sesión (≈2.27 en la iteración 20; opus 2.44, sonnet 0.52) | sesión principal (opus, 1.62); ciberseguridad 0.82; frontend-senior 0.34; qa-tester 0.18 | frontend-senior sonnet/**high** (matriz: medium): token y privacidad de coordenadas |
+| 20e–20g (SEC-J-24, D57) | 4.75 acumulado en la sesión (≈1.79 en 20e–20g; opus 4.11, sonnet 0.64) | sesión principal (opus) | ciberseguridad opus/medium en 20g (re-verificación acotada) |

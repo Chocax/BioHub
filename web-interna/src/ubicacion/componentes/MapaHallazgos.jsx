@@ -1,18 +1,18 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useEffect, useRef } from 'react';
-import { MapContainer, Marker, TileLayer, useMap } from 'react-leaflet';
+import { MapContainer, Marker, useMap } from 'react-leaflet';
 import { etiquetaEstado, normalizarEstado } from '../utilidades/formato.js';
+import TeselasGateway from './TeselasGateway.jsx';
 
 export const CENTRO_COLOMBIA = [4.5, -74.1];
 export const ZOOM_INICIAL = 5;
-/** Máximo acercamiento: limita lo que las teselas de OSM pueden revelar (02 §7.3). */
+/** Máximo acercamiento: limita lo que las teselas pueden revelar (02 §7.3). Es el mismo tope del gateway (11 §7). */
 export const ZOOM_MAXIMO = 12;
 /** Zoom máximo del ajuste automático: con pocos puntos no se acerca tanto (SEC-J-04). */
 export const ZOOM_AJUSTE_UN_PUNTO = 8;
 export const ZOOM_AJUSTE_VARIOS = 10;
 export const MAX_ERRORES_TESELAS = 3;
-const URL_TESELAS = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const ATRIBUCION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
 // Iconos DOM (enfocables con teclado). Forma distinta por estado: no se depende solo del color.
@@ -32,20 +32,22 @@ function AjustarVista({ puntos }) {
   return null;
 }
 
-/** Mapa Leaflet con teselas OSM. Recibe puntos ya convertidos a [lat, lon]. */
-export default function MapaHallazgos({ puntos, seleccionadoId, onSeleccionar, onTeselasFallidas }) {
+/**
+ * Mapa Leaflet. Recibe puntos ya convertidos a [lat, lon]. Las teselas (datos de OpenStreetMap) se piden al
+ * gateway con el JWT a través de `cliente.getBlob` (SEC-J-04): el navegador nunca contacta a OSM.
+ * `alSesionVencida` se llama una vez si el gateway responde 401.
+ */
+export default function MapaHallazgos({ cliente, puntos, seleccionadoId, onSeleccionar, onTeselasFallidas, alSesionVencida }) {
   const errores = useRef(0);
-  const manejadores = {
-    tileerror: () => {
-      errores.current += 1;
-      if (errores.current === MAX_ERRORES_TESELAS + 1) onTeselasFallidas?.();
-    },
+  const alErrorTesela = () => {
+    errores.current += 1;
+    if (errores.current === MAX_ERRORES_TESELAS + 1) onTeselasFallidas?.();
   };
   return (
     <div role="region" aria-label="Mapa de hallazgos" className="ub-mapa">
       <p className="ub-solo-lectores">Mapa con {puntos.length} hallazgos</p>
       <MapContainer center={CENTRO_COLOMBIA} zoom={ZOOM_INICIAL} maxZoom={ZOOM_MAXIMO} minZoom={3} scrollWheelZoom keyboard style={{ height: '100%', width: '100%' }}>
-        <TileLayer url={URL_TESELAS} attribution={ATRIBUCION} referrerPolicy="no-referrer" maxZoom={ZOOM_MAXIMO} eventHandlers={manejadores} />
+        <TeselasGateway cliente={cliente} attribution={ATRIBUCION} maxZoom={ZOOM_MAXIMO} alErrorTesela={alErrorTesela} alSesionVencida={alSesionVencida} />
         <AjustarVista puntos={puntos} />
         {puntos.map((p) => (
           <Marker

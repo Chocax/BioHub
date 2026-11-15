@@ -11,42 +11,72 @@ export class ErrorApi extends Error {
 }
 
 /**
- * Cliente HTTP inyectable. Contrato mínimo que espera el módulo:
- *   cliente.get(ruta, { signal }) -> Promise<json>   (rechaza con un error que tenga `.status`)
+ * Cliente HTTP inyectable. Contrato que espera el módulo:
+ *   cliente.get(ruta, { signal })     -> Promise<json>   (JSON de la API)
+ *   cliente.getBlob(ruta, { signal, sinCache }) -> Promise<Blob>   (teselas del mapa, SEC-J-04;
+ *                                     con sinCache: true no debe usar la caché, SEC-J-24/D57)
+ * Ambos rechazan con un error que tenga `.status` (0 = sin respuesta; 401, 403, 429, 5xx...) y,
+ * si lo conocen, `.codigo`. Un AbortError del `signal` se propaga tal cual.
+ * Un cliente propio (no el de `crearClienteUbicacion`) DEBE implementar también
+ * `getBlob(ruta, { signal, sinCache })` y, con `sinCache: true`, no guardar la respuesta en caché
+ * (SEC-J-24). Sin `getBlob` el mapa base no cargará (la vista Lista seguirá funcionando).
  * `crearClienteUbicacion` da una implementación lista con `fetch`; Santiago solo aporta
  * `apiUrl` y `obtenerToken` (por ejemplo: async () => { await keycloak.updateToken(30); return keycloak.token; }).
  */
 export function crearClienteUbicacion({ apiUrl, obtenerToken }) {
+  /** Petición autenticada común: devuelve la respuesta OK o lanza ErrorApi / AbortError. */
+  async function pedir(ruta, { signal, accept, opciones = {} }) {
+    let token;
+    try {
+      token = await obtenerToken();
+    } catch {
+      throw new ErrorApi(401);
+    }
+    let r;
+    try {
+      // `opciones` va primero: nada puede sobrescribir el token, `credentials` ni la señal (SEC-J-I25).
+      r = await fetch(`${apiUrl}${ruta}`, {
+        ...opciones,
+        headers: { Authorization: `Bearer ${token}`, Accept: accept },
+        credentials: 'omit',
+        signal,
+      });
+    } catch (e) {
+      if (e?.name === 'AbortError') throw e;
+      throw new ErrorApi(0);
+    }
+    if (!r.ok) {
+      let codigo = null;
+      try {
+        codigo = (await r.json())?.codigo ?? null;
+      } catch {
+        // el 401 no lleva cuerpo
+      }
+      throw new ErrorApi(r.status, codigo);
+    }
+    return r;
+  }
+
   return {
     async get(ruta, { signal } = {}) {
-      let token;
+      const r = await pedir(ruta, { signal, accept: 'application/json', opciones: { cache: 'no-store' } });
+      return r.json();
+    },
+    /**
+     * Binarios (teselas PNG). Por defecto respeta la caché del navegador (el gateway manda
+     * `private, max-age=86400`). Con `sinCache: true` usa `cache: 'no-store'`: ni se lee ni se
+     * guarda en la caché HTTP, para que las teselas de zoom alto no queden en disco (SEC-J-24).
+     */
+    async getBlob(ruta, { signal, sinCache = false } = {}) {
+      const r = await pedir(ruta, { signal, accept: 'image/png', opciones: sinCache ? { cache: 'no-store' } : {} });
+      let blob;
       try {
-        token = await obtenerToken();
-      } catch {
-        throw new ErrorApi(401);
-      }
-      let r;
-      try {
-        r = await fetch(`${apiUrl}${ruta}`, {
-          headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-          cache: 'no-store',
-          credentials: 'omit',
-          signal,
-        });
+        blob = await r.blob();
       } catch (e) {
         if (e?.name === 'AbortError') throw e;
-        throw new ErrorApi(0);
+        throw new ErrorApi(0); // se cortó la descarga
       }
-      if (!r.ok) {
-        let codigo = null;
-        try {
-          codigo = (await r.json())?.codigo ?? null;
-        } catch {
-          // el 401 no lleva cuerpo
-        }
-        throw new ErrorApi(r.status, codigo);
-      }
-      return r.json();
+      return blob;
     },
   };
 }

@@ -2,17 +2,19 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const sim = vi.hoisted(() => ({ fitBounds: vi.fn(), eventosTeselas: null, propsMapa: null, propsTeselas: null }));
+const sim = vi.hoisted(() => ({ fitBounds: vi.fn(), propsMapa: null, propsTeselas: null }));
+
+vi.mock('../componentes/TeselasGateway.jsx', () => ({
+  default: (p) => {
+    sim.propsTeselas = p;
+    return <div data-testid="teselas" />;
+  },
+}));
 
 vi.mock('react-leaflet', () => ({
   MapContainer: ({ children, ...p }) => {
     sim.propsMapa = p;
     return <div data-testid="mapa-leaflet">{children}</div>;
-  },
-  TileLayer: (p) => {
-    sim.propsTeselas = p;
-    sim.eventosTeselas = p.eventHandlers;
-    return <div data-testid="teselas" />;
   },
   Marker: ({ position, eventHandlers, title }) => (
     <button type="button" data-testid="marcador" data-posicion={JSON.stringify(position)} onClick={() => eventHandlers.click({ target: { getElement: () => null } })}>
@@ -88,9 +90,8 @@ describe('PaginaMapa: alto rango', () => {
     expect(sim.propsTeselas.maxZoom).toBe(12);
     expect(sim.propsTeselas.attribution).toMatch(/OpenStreetMap<\/a> contributors/);
     expect(sim.propsTeselas.attribution).toContain('https://www.openstreetmap.org/copyright');
-    expect(sim.propsTeselas.url).toBe('https://tile.openstreetmap.org/{z}/{x}/{y}.png');
+    expect(sim.propsTeselas.cliente).toBe(cliente); // las teselas salen por el cliente (gateway), no por OSM
     expect(sim.fitBounds).toHaveBeenCalledWith([[5.1, -73.1]], expect.objectContaining({ maxZoom: 8, padding: [32, 32] }));
-    expect(sim.propsTeselas.referrerPolicy).toBe('no-referrer');
   });
 
   it('con varios hallazgos el ajuste automático usa maxZoom 10', async () => {
@@ -226,12 +227,22 @@ describe('PaginaMapa: alto rango', () => {
     expect(conAtributo).toHaveLength(0);
   });
 
+  it('pasa el cliente y alSesionVencida a las teselas: un 401 de tesela cierra la sesión', async () => {
+    const cliente = clienteFalso(() => mapa([feature('a', -73.1, 5.1)]));
+    const alSesionVencida = vi.fn();
+    render(<PaginaMapa cliente={cliente} roles={ALTO} alSesionVencida={alSesionVencida} />);
+    await screen.findByTestId('marcador');
+    expect(sim.propsTeselas.cliente).toBe(cliente);
+    act(() => sim.propsTeselas.alSesionVencida());
+    expect(alSesionVencida).toHaveBeenCalledTimes(1);
+  });
+
   it('teselas caídas (más de 3 errores): aviso y cambio a la vista Lista con las coordenadas', async () => {
     const cliente = clienteFalso(() => mapa([feature('a', -73.1234567, 5.1234567)]));
     render(<PaginaMapa cliente={cliente} roles={ALTO} />);
     await screen.findByTestId('marcador');
     act(() => {
-      for (let i = 0; i < 4; i++) sim.eventosTeselas.tileerror();
+      for (let i = 0; i < 4; i++) sim.propsTeselas.alErrorTesela();
     });
     expect(await screen.findByText('No se pudo cargar el mapa base. Los hallazgos siguen disponibles en la vista Lista.')).toBeInTheDocument();
     expect(screen.queryByTestId('mapa-leaflet')).toBeNull();
