@@ -14,6 +14,7 @@ Todo pasa por `api-gateway` (8080). Los servicios escuchan solo en `127.0.0.1`.
 | Visitante (`web-publica`) | `GET /api/publica/**` | Nada | 120 peticiones por minuto por IP |
 | Universidad u ONG | `GET /api/v1/externa/fichas/**` | Cabecera `X-API-Key` | Key válida y 60 peticiones por minuto por consumidor |
 | Administrador | `/api/gateway/{consumidores,keys,usuarios}/**` | JWT | Rol `administrador` |
+| Mapa de `web-interna` | `GET /api/gateway/teselas/{z}/{x}/{y}.png` | JWT | Uno de los 5 roles y 600 teselas por minuto por usuario (§7) |
 
 Lo que no aparece en esa tabla se deniega. El gateway hace el control grueso. **El control fino es de cada servicio**: qué rol puede usar cada endpoint.
 
@@ -33,6 +34,7 @@ Las rutas con `*` son propuestas: el dueño las confirma y actualiza esta tabla.
 | Ver y generar reportes | `/api/reportes/***` | No | No | No | Sí | No | Nicolás |
 | API Keys y límites | `/api/gateway/consumidores/**`, `/keys/**` | No | No | No | No | Sí | Santiago (hecho) |
 | Usuarios y roles | `/api/gateway/usuarios/**` | No | No | No | No | Sí | Santiago (hecho) |
+| Fondo del mapa (teselas) | `GET /api/gateway/teselas/**` | Sí | Sí | Sí | Sí | Sí | Santiago (hecho) |
 
 `administrador` nunca recibe coordenadas (RF12) ni edita datos científicos.
 
@@ -70,6 +72,7 @@ Las rutas con `*` son propuestas: el dueño las confirma y actualiza esta tabla.
 - [ ] Confirma si 120 por minuto por IP alcanza. Un campus entero puede compartir IP.
 - [ ] Cambia a `denyAll` en `servicio-consulta-publica` y, con Hernando, en `servicio-cientifico`.
 - [ ] `web-publica` debe mostrar el aviso de 429 usando `Retry-After`: el gateway ya lo envía y lo expone por CORS.
+- [ ] Cierra SEC-J-04: `MapaHallazgos.jsx` debe pedir las teselas al gateway y no a `tile.openstreetmap.org`. El cambio y el código están en §7.
 
 ### Plantilla de `SecurityConfig` para un servicio
 
@@ -111,3 +114,64 @@ La tarea `rabbitmq-usuarios` del compose puede crear `cientifico_mq`, `consulta_
 ## 6. Pendiente de la parte de acceso
 
 Las pantallas de `web-interna` van al final, cuando existan los endpoints de negocio: router y menú por rol, montaje de `src/ubicacion/`, y pantallas de API Keys y usuarios. El backend de esas pantallas ya está listo. Contrato: `04-contrato-api.md`.
+
+Sin hacer, a propósito:
+
+- **MFA para `cientifico_alto_rango` (SEC-J-09).** El SRS no lo pide, y obligaría a configurar OTP a ese usuario de prueba.
+- **Compose de los servicios en contenedores (SEC-J-I19, SEC-J-18, ARQ-24).** Hoy cada integrante corre los servicios en su equipo (D34). Si algún día se despliega en contenedores, ese compose debe cumplir tres cosas:
+  - Ningún puerto de servicio publicado en el host.
+  - Una red `internal` compartida solo con el gateway.
+  - Un volumen para `/app/logs` y `cpus`/`mem_limit` por servicio.
+
+## 7. Teselas del mapa por el gateway (SEC-J-04)
+
+**Problema:** el mapa de `web-interna` pedía las teselas directamente a `tile.openstreetmap.org`. Así, OpenStreetMap veía tres cosas juntas: la IP del científico, la hora y las teselas alrededor de un hallazgo protegido. Con eso puede deducir el área del hallazgo.
+
+**Solución:** el navegador pide la tesela al gateway, y el gateway la pide a OSM. OSM solo ve al gateway. La caché es compartida, así que una tesela que ya pidió otro usuario ni siquiera sale a internet.
+
+| Regla | Valor | Por qué |
+|---|---|---|
+| Quién | JWT con uno de los 5 roles | Si fuera abierto, cualquiera usaría el gateway como relé hacia OSM |
+| Qué | Solo teselas que existen, con zoom de 0 a 12 | El mismo tope `ZOOM_MAXIMO` del mapa. Fuera de rango: 400 `PARAMETRO_INVALIDO` |
+| Cuánto | 600 teselas por minuto por usuario | Una vista usa entre 20 y 40. Con ese tope nadie descarga el mapa entero. Si se pasa: 429 `LIMITE_EXCEDIDO` con `Retry-After` |
+| Hacia OSM | 2 descargas a la vez y `User-Agent` de BioHub, sin Referer, IP, token ni cookies | Lo pide la política de uso de OSM |
+| Caché | En memoria, 64 MB y 7 días; el navegador la guarda 1 día con `private` | No va en Redis: con `volatile-lru`, las teselas podrían expulsar las marcas de revocación |
+| Fallos | Circuit breaker (D52): 503 `SERVICIO_NO_DISPONIBLE`. Respuesta que no es imagen: 502 `TESELA_NO_DISPONIBLE` | Un OSM caído no ocupa hilos del gateway |
+| Log | Nunca registra z/x/y | Esas coordenadas delatarían el área del hallazgo |
+
+**Cambio pendiente en el front (dueña: Juanita, `MapaHallazgos.jsx`).** Leaflet carga las teselas con `<img>`, y un `<img>` no puede enviar `Authorization`. Por eso la capa tiene que pedirlas con `fetch`:
+
+```js
+import L from 'leaflet';
+import { createLayerComponent } from '@react-leaflet/core';
+
+// Pide cada tesela al gateway con el token y la muestra como blob.
+const CapaTeselasGateway = L.TileLayer.extend({
+  createTile(coords, listo) {
+    const img = document.createElement('img');
+    img.alt = '';
+    fetch(this.getTileUrl(coords), { headers: { Authorization: `Bearer ${this.options.obtenerToken()}` } })
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`tesela ${r.status}`))))
+      .then((blob) => {
+        img.onload = () => { URL.revokeObjectURL(img.src); listo(null, img); };
+        img.src = URL.createObjectURL(blob);
+      })
+      .catch((error) => listo(error, img)); // dispara tileerror: onTeselasFallidas sigue funcionando
+    return img;
+  },
+});
+
+export const TeselasGateway = createLayerComponent(
+  ({ url, ...opciones }, ctx) => ({ instance: new CapaTeselasGateway(url, opciones), context: ctx }),
+);
+
+// En MapaHallazgos.jsx, en lugar de <TileLayer url={URL_TESELAS} ...>:
+// <TeselasGateway url={`${GATEWAY}/api/gateway/teselas/{z}/{x}/{y}.png`} obtenerToken={() => keycloak.token}
+//   attribution={ATRIBUCION} maxZoom={ZOOM_MAXIMO} eventHandlers={manejadores} />
+```
+
+`keycloak` sale de `src/auth/keycloak.js`. `@react-leaflet/core` ya llega con `react-leaflet` 5, pero conviene declararlo en `package.json`. Este código todavía no se ha probado en el navegador: se valida cuando se monte el mapa. El backend sí está probado de punta a punta.
+
+La atribución a OpenStreetMap se mantiene: la licencia la exige aunque la tesela llegue por el gateway. Si se agrega una CSP a `web-interna` (SEC-J-07), debe incluir `img-src 'self' blob:` y `connect-src` hacia el gateway.
+
+**Configuración** (`application.yml`, `biohub.gateway.teselas`): `GATEWAY_TESELAS_URL` para usar otro servidor de teselas, `GATEWAY_TESELAS_AGENTE`, `GATEWAY_TESELAS_POR_USUARIO` y `GATEWAY_TESELAS_CACHE`. Código: `TeselasController`, `ServicioTeselas`, `OrigenTeselasHttp`.
