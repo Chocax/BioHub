@@ -633,6 +633,25 @@ Nicolás (reportes) recibe los mismos eventos por su cola `reportes.eventos` y p
 | `/api/v1/externa/fichas/**` (API externa, D16) | consulta-publica, **reescribiendo** a `/api/publica/fichas/**` | No (API Key) | **Hecho.** Ver §9 |
 | CORS | – | – | `Access-Control-Expose-Headers: Retry-After` **hecho**. **Falta** el origen de web-publica en Vercel cuando exista |
 | Cabeceras de respuesta | – | – | **Hecho.** `Cache-Control` pasa sin filtrar, salvo en la API externa, donde `public` pasa a `private` (D47) |
+| `GET /api/gateway/teselas/{z}/{x}/{y}.png` (fondo del mapa, SEC-J-04, D56) | El gateway, que la pide a OSM | Sí, uno de los 5 roles | **Hecho.** Ver §8.1. **Falta** que `MapaHallazgos.jsx` lo use (`11-seguridad-y-acceso.md` §7) |
+
+### 8.1 Teselas del mapa
+
+- **Entrada:** `z` entre 0 y 12, y `x`, `y` entre 0 y 2^z − 1, en el esquema XYZ de OSM. Solo `GET`, con `Authorization: Bearer <JWT>`.
+- **200:** la imagen (`image/png`) con `Cache-Control: max-age=86400, private`.
+- **Errores:**
+
+| Estado | Código | Cuándo |
+|---|---|---|
+| 400 | `PARAMETRO_INVALIDO` | La tesela no existe o el zoom pasa de 12 |
+| 401 | – | Sin token |
+| 403 | `ROL_INSUFICIENTE` | El usuario no tiene ninguno de los 5 roles |
+| 429 | `LIMITE_EXCEDIDO` | Más de 600 teselas en un minuto; trae `Retry-After` |
+| 502 | `TESELA_NO_DISPONIBLE` | El origen respondió algo que no es una imagen |
+| 502 | – | El origen no responde |
+| 503 | `SERVICIO_NO_DISPONIBLE` | Circuito abierto o descargas saturadas; trae `Retry-After` |
+
+- **Privacidad:** el gateway no reenvía nada del navegador al origen, ni IP, ni token, ni cookies, ni Referer. Tampoco escribe z/x/y en el log.
 
 ## 9. API externa (HU-08, RF14, RNF11, RNF12)
 

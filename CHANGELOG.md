@@ -25,6 +25,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 ### Fixed (acceso y gateway)
 - El proxy dejaba vacíos los adjuntos multipart.
 
+### Added (acceso y gateway, 3)
+- Proxy de teselas del mapa en el gateway (`GET /api/gateway/teselas/{z}/{x}/{y}.png`): OpenStreetMap deja de ver la IP del científico junto con el área de un hallazgo protegido (SEC-J-04). Exige JWT con rol, limita por usuario y guarda las teselas en memoria.
+- Prueba de carga k6 de ASR8 (`pruebas-carga/k6/gateway-limite-api-externa.js`): un consumidor abusivo recibe 429 sin afectar a los demás, y una key revocada se rechaza desde la petición siguiente.
+
 ### Added (iteración 15)
 - Perfiles Spring `local` (MySQL del docker-compose) y `aiven` (MySQL administrado con SSL y verificación del CA) en `servicio-cientifico` y `servicio-consulta-publica`; `.env.example` por servicio.
 

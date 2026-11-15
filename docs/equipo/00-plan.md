@@ -158,10 +158,20 @@ Despliegue de bases, Redis y RabbitMQ en VMs locales con una VPN de malla, y su 
 | 16f | API externa `/api/v1/externa/fichas/**` (ASR9) | Hecho |
 | 16g | Usuarios contra Keycloak y revocación inmediata (HU-10, RF19) | Hecho |
 | 16h | Usuarios RabbitMQ por servicio (SEC-04) y `maxmemory` en Redis | Hecho; falta que cada servicio migre su `.env` |
-| 16i | Gateway en CI y carpeta Bruno `gateway/` | Hecho; el workflow no se ha ejecutado en GitHub |
+| 16i | Gateway en CI y carpeta Bruno `gateway/` | Hecho; en verde en GitHub desde el PR #7 (`develop`, run 42533445668) |
 | 16j | Router, menú por rol, montaje de `src/ubicacion/`, pantallas de API Keys y usuarios | Pendiente, al final |
 | 16k | Circuit breaker en el gateway (ARQ-20, D52) | Hecho |
-| 16l | Acciones de GitHub en versiones con Node 24 (`checkout@v5`, `setup-java@v5`, `setup-node@v5`, `upload-artifact@v6`) | Hecho; falta verlo en una corrida de GitHub |
+| 16l | Acciones de GitHub en versiones con Node 24 (`checkout@v5`, `setup-java@v5`, `setup-node@v5`, `upload-artifact@v6`) | Hecho; verificado en GitHub (PR #7) |
+| 16m | Proxy de teselas del mapa en el gateway (SEC-J-04, D56) | Hecho en el gateway; falta que `MapaHallazgos.jsx` lo use (Juanita, `11-seguridad-y-acceso.md` §7) |
+| 16n | Prueba de carga k6 de ASR8: abuso, cumplidores y revocación (`pruebas-carga/k6/gateway-limite-api-externa.js`) | Hecho; 2 corridas en verde (`10-verificacion-sad.md`) |
+
+**Verificación (2026-11-14, 16m y 16n):**
+- `mvn -pl api-gateway test`: 200 pruebas, 0 fallos, 0 omitidas (32 nuevas de teselas).
+- Entorno desechable, con credenciales ficticias y sin Aiven:
+  - Tesela real de OSM a través del gateway: 401 sin token, 403 sin rol, 400 con zoom 13 y 200 `image/png`. La segunda petición sale de la caché (12 ms frente a 816 ms).
+  - En el log hay 0 menciones de las coordenadas de la tesela y 0 API Keys completas.
+- k6 de ASR8 con A a 20 y a 200 req/s: todos los umbrales se cumplen (`resultados/asr8-gateway.json`, `asr8-gateway-abuso200.json`).
+
 
 **Verificación (2026-11-05):**
 - `mvn -pl api-gateway test`: 156 pruebas, 0 fallos, 0 omitidas (168 tras 16k) (Testcontainers con MySQL con reglas de Aiven, Redis y Keycloak con el realm real).

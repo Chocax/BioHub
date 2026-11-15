@@ -252,6 +252,42 @@ Supuesto de trabajo: `r` ≈ 60–150 ms desde Bogotá hacia una región de Nort
 
 ---
 
+## Parte de Santiago: gateway (iteraciones 16 y 19, 2026-11-14)
+
+Las tablas de §3 y §5 son la línea base del 2026-11-04 y no se reescriben. Estado actual de lo que es de Santiago:
+
+| ID | Estado | Evidencia |
+|---|---|---|
+| **ASR8** (RNF11) | **Cumple, con evidencia de carga** | Filtro `ApiKeyRateLimitFilter` con ventana fija en Redis (D46) y límite por consumidor configurable por API. k6 `pruebas-carga/k6/gateway-limite-api-externa.js`, resultados abajo |
+| **ASR9** (RNF12) | **Cumple** | URL estable `/api/v1/externa/fichas/**`, reescrita a `/api/publica/fichas/**` (D45). Destinos por variable (`SERVICIO_*_URL`). `ProxyServiceTest` y Bruno `gateway/` |
+| ARQ-03 | **Cerrado** | API Keys con hash (D47), límite en Redis con respaldo en memoria (D46), 429 + `Retry-After`, límite por IP del portal. `GatewayIntegracionTest`, `ApiKeyRateLimitFilterTest` |
+| ARQ-20 | **Cerrado** | Circuit breaker por destino (D52). `CircuitoServiciosTest`, `ProxyServiceTest`, `GatewayIntegracionTest` |
+| ARQ-21 | **Cerrado** | `failureFactor: 3` en el realm. `KeycloakAdminAdapterIntegracionTest` |
+| ARQ-24 | **Abierto, condicionado** | No hay compose de servicios (D34). Las condiciones para cuando exista están en `11-seguridad-y-acceso.md` §6 |
+| ASR1, barrera de rate limit | **Disponible** | El portal ya tiene 120 por minuto por IP. Ojo: la prueba de ASR1 va directo a NGINX y no pasa por el gateway. Si el pico x60 pasara por el gateway desde una sola IP, recibiría 429, y eso es lo esperado (D16) |
+
+### Evidencia de carga de ASR8 (HU-08 c.2 y HU-12 c.2)
+
+Entorno desechable local (D30): gateway y consulta-publica con perfil `local`, con MySQL 8.4 (`sql_require_primary_key`), Redis 7.4 y Keycloak 26.8.1 con el realm real. k6 2.3.0 en Docker. Commit base `f63c6fa` más los cambios de esta iteración (`-sin-commit` en el JSON). Fases: base de 60 s, abuso de 120 s y post de 30 s.
+
+- El consumidor A abusa con el límite por defecto (60/min).
+- B tiene un límite configurado de 120/min y pide a 1 req/s.
+- C usa el límite por defecto y pide a 0,5 req/s.
+- El portal pide a 1 req/s sin key.
+- D pide a 0,5 req/s, y el administrador revoca su key a los 20 s del abuso.
+
+| Corrida | Peticiones | A: 200 (máx. permitido) | A: 429 (sin `Retry-After`) | A: otros | B / C / portal en 200 | p95 cumplidores base → abuso | D tras revocar |
+|---|---|---|---|---|---|---|---|
+| `resultados/asr8-gateway.json` (A a 20 req/s) | 2.962 | 120 (180) | 2.281 (0) | 0 | 100 % / 100 % / 100 % | 21,4 → 13,4 ms | 100 % 401, 0 aceptadas |
+| `resultados/asr8-gateway-abuso200.json` (A a 200 req/s) | 24.562 | 120 (180) | 23.881 (0) | 0 | 100 % / 100 % / 100 % | 11,5 → 10,4 ms | 100 % 401, 0 aceptadas |
+
+**Lectura:**
+
+- A recibe exactamente 60 respuestas 200 por cada ventana de un minuto. El abuso no sube la latencia de los demás: el p95 de abuso queda por debajo del de base, porque la primera ventana incluye el calentamiento.
+- La revocación se aplica desde la petición siguiente.
+- No se descartó ninguna iteración, y no hubo ningún 5xx.
+- **Límite de la prueba:** los cinco clientes salen de la misma IP (k6). Por eso D va a 0,5 req/s, por debajo del bloqueo por IP de 20 keys inválidas por minuto. Ese bloqueo afectaría a consumidores legítimos detrás de la misma NAT, y es una consecuencia aceptada (`04` §9).
+
 ## Iteración 15h – verificación final (2026-11-04)
 
 **Autor:** arquitecto-software (tarea 15h) · **Base:** `8cab133` + working tree **sin commit** (refactor de patrones en `servicio-cientifico` y `servicio-consulta-publica`, `pruebas-carga/`). Todo lo que se cita del working tree es evidencia **provisional hasta que se haga commit** (misma regla que `trazabilidad.md`).

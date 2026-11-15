@@ -11,6 +11,7 @@ import org.springframework.test.context.TestPropertySource;
 
 import co.edu.unbosque.biohub.gateway.config.GatewayProperties;
 import co.edu.unbosque.biohub.gateway.config.PropiedadesLimites;
+import co.edu.unbosque.biohub.gateway.config.PropiedadesTeselas;
 import co.edu.unbosque.biohub.gateway.config.RutasGateway;
 import co.edu.unbosque.biohub.gateway.config.SecurityConfig;
 import co.edu.unbosque.biohub.gateway.infrastructure.filtro.ApiKeyRateLimitFilter;
@@ -22,7 +23,7 @@ import co.edu.unbosque.biohub.gateway.infrastructure.filtro.RevocacionTokenFilte
 @Retention(RetentionPolicy.RUNTIME)
 @Import({SecurityConfig.class, RutasGateway.class, EscritorProblema.class, ApiKeyRateLimitFilter.class,
         RevocacionTokenFilter.class})
-@EnableConfigurationProperties({GatewayProperties.class, PropiedadesLimites.class})
+@EnableConfigurationProperties({GatewayProperties.class, PropiedadesLimites.class, PropiedadesTeselas.class})
 @TestPropertySource(properties = {
         "biohub.gateway.rutas.cientifico=http://cientifico",
         "biohub.gateway.rutas.equipos=http://equipos",
