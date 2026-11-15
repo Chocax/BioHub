@@ -29,7 +29,10 @@ export class ErrorHttp extends Error {
 
 /** Cliente simulado: `responder(ruta)` devuelve el JSON o lanza. */
 export function clienteFalso(responder) {
-  return { get: vi.fn((ruta, op) => Promise.resolve().then(() => responder(ruta, op))) };
+  return {
+    get: vi.fn((ruta, op) => Promise.resolve().then(() => responder(ruta, op))),
+    getBlob: vi.fn(() => Promise.reject(new ErrorHttp(0))),
+  };
 }
 
 export const feature = (id, lon, lat, extra = {}) => ({
