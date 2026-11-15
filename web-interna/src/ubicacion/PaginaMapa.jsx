@@ -140,6 +140,8 @@ export default function PaginaMapa({ cliente, roles = [], hallazgoId = null, alS
           <div className="ub-mapa-grid">
             {vista === 'mapa' ? (
               <MapaHallazgos
+                cliente={cliente}
+                alSesionVencida={() => refSesion.current?.()}
                 puntos={puntos}
                 seleccionadoId={seleccionadoId}
                 onSeleccionar={seleccionar}
