@@ -590,3 +590,106 @@ Ninguno nuevo (no se abre BUG-J20-3 ni posteriores). Siguen abiertos BUG-J20-1 y
 ### Veredicto 20f: APROBADO CON OBSERVACIONES
 
 SEC-J-24 queda corregido en el código: el umbral 9, la opción `no-store` y la conservación de token, `omit` y señal están cubiertos con pruebas, `get` no cambió y no hay regresiones (86/86 recibido, 91/91 con mis casos, build OK). Las observaciones son de verificación en navegador real y de entradas antiguas en caché.
+
+---
+
+# Iteración 21 – arnés, E2E de ubicación y CI de web-interna (21c)
+
+Alcance: cambios sin commit de 21a (arnés `src/ubicacion/dev/`, E2E `src/ubicacion/e2e/*.e2e.js`, `playwright.config.js`, `package.json`/lock, correcciones de `MapaHallazgos.jsx`, README) y 21b (`.github/workflows/ci.yml`). No toqué código de producción, pruebas existentes, `ci.yml` ni `package.json`; las mutaciones se aplicaron con copia de respaldo y se restauraron (verificado con `sha256sum`: los cuatro archivos tocados quedaron idénticos). Mis pruebas de apoyo están fuera del repo (scratchpad de la sesión).
+
+## Comandos ejecutados y resultados
+
+| Comando | Resultado |
+|---|---|
+| `cd web-interna && npx vitest run` | 6 archivos, **92 pruebas aprobadas, 0 fallidas** (coincide con el reporte del agente) |
+| `npm run build` | OK, 21 módulos; `dist/` = `index.html`, `assets/index-*.css` (0.65 kB), `assets/index-fygnyAIi.js` (248.30 kB, 77.42 kB gzip: mismo tamaño que en 20b/20f). `grep -ril "arnes\|simulado\|token-simulado\|sesionSimulada\|Playwright\|__llamadasFetch\|localhost:5175" dist` sin resultados: **nada del arnés en `dist/`** |
+| `E2E_SIN_WEBKIT=1 npm run test:e2e` (3 corridas seguidas, local, Chromium + Firefox) | **78 aprobadas, 0 fallidas, 0 inestables** en las 3 (35.4 s, 35.4 s, 34.9 s). 39 por motor |
+| `E2E_SIN_WEBKIT=1 npx playwright test --repeat-each=3 --workers=8` | **234 aprobadas, 0 fallidas** (1.6 min) |
+| Igual con carga: 4 procesos `yes` ocupando CPU, `--repeat-each=2 --workers=16` | **156 aprobadas, 0 fallidas** (1.6 min) |
+| Docker `mcr.microsoft.com/playwright:v1.64.1-noble`, `CI=1` (retries=1, reporter html), 3 motores, 2 corridas | **117/117 aprobadas en las dos** (47.3 s y 56.0 s); sin línea de "inestables" (`retries` no se usó). WebKit corre en la imagen |
+| `npm audit --omit=dev --audit-level=high` | 0 vulnerabilidades |
+| `TZ=America/Bogota mvn -B -ntp -pl servicio-consulta-publica -am test -DargLine=-Duser.timezone=America/Bogota` | BUILD SUCCESS, **364 pruebas, 0 fallos, 0 errores**; el XML de Surefire muestra `user.timezone=America/Bogota` (35 archivos). `ValidadorDatosHallazgoTest`: 20 pruebas |
+| Igual con `TZ=UTC` y `-DargLine=-Duser.timezone=UTC` | 364 / 0 / 0; `user.timezone=UTC` |
+| Humo del modo real del arnés (no es WI-13) | `http://localhost:5173/src/ubicacion/dev/arnes.html?pantalla=mapa` redirige al Keycloak de Compose y muestra el formulario "Sign in to BioHub". En el puerto 5175 Keycloak responde "Parámetro no válido: redirect_uri" (solo acepta 5173, como dice el README). No inicié sesión: queda pendiente |
+| Cobertura | No configurada |
+
+No se ejecutó: el job de GitHub Actions (no hay forma local; revisado por lectura y con `yaml.safe_load`, que lista los 4 jobs y las 5 entradas de la matriz), el modo real con login (WI-13) y la guía manual de caché (WI-15 manual), WebKit en el equipo (faltan librerías del sistema; sí en Docker).
+
+Incidente propio, sin efecto en el código: `npm ci --dry-run` **borró `web-interna/node_modules`** (comportamiento conocido de npm). Lo restauré con `npm ci` y repetí Vitest (92/92). `git status` no cambió. No usar `--dry-run` para "ver" si el lockfile es consistente.
+
+Inestabilidad observada: **ninguna** en 78+78+234+156 ejecuciones locales y 234 en Docker, con y sin carga. Las E2E esperan por condiciones (`expect`, `expect.poll`); quedan 4 `waitForTimeout`: `mapa.e2e.js:78` y `:209` (esperas negativas, "no debe aparecer ningún error"), `mapa.e2e.js:201` y `seguridad.e2e.js:12` (400 ms entre clics del zoom). Los dos últimos están en un bucle que termina por el estado del botón ("+" deshabilitado), así que una máquina lenta alarga la prueba pero no la rompe; el helper está duplicado en los dos archivos.
+
+## Mutaciones (código de producción, temporales; Vitest y Playwright Chromium, 39 pruebas)
+
+| # | Mutación | Vitest | E2E (Chromium) | Veredicto |
+|---|---|---|---|---|
+| M1 | `keydown:` -> `keydownX:` en `MapaHallazgos.jsx` (quita el Enter del marcador) | 1 falla (la nueva de Enter/Espacio) | 1 falla: WI-05 teclado | Detectada por las dos capas |
+| M2 | `ZOOM_SIN_CACHE` 9 -> 10 | 2 fallan | 1 falla: WI-15 (`no-store` a zoom 9) | Detectada |
+| M2b | `ZOOM_SIN_CACHE` 9 -> 8 | 2 fallan | 1 falla: WI-15 (zoom 8 no debe llevar `cache`) | Detectada |
+| M3 | `TeselasGateway.jsx` usa `L.tileLayer("https://tile.openstreetmap.org/...")` en vez de la capa del gateway | 8+ fallan | **7 fallan**: WI-15 (los dos), WI-14, WC-12, WC-13 (los 3 casos) | Detectada |
+| M5 | `ZOOM_MAXIMO` 12 -> 13 | 1 falla | 2 fallan: WI-14 y WI-15 | Detectada |
+| M6 | `esAltoRango()` devuelve siempre `true` | 8+ fallan | **9 fallan**: WI-02 (4 roles) y WI-06 (4 roles + sin rol) | Detectada |
+| M8 | `console.log(JSON.stringify(puntos))` en el mapa | 0 fallan | 1 falla: WI-10 (consola) | Detectada solo por la E2E (aporta valor sobre Vitest) |
+| M4 | Quitar `<CerrarZoomAlQuitar />` (volver al error `_leaflet_pos`) | 0 fallan | **0 fallan en la corrida completa** | **Detectada solo a veces**: ver abajo y BUG-J21-1 |
+| M9 | Quitar `!this._sesionAvisada` (un `alSesionVencida` por tesela) | 3 fallan | **0 fallan** | **No detectada por la E2E** (BUG-J21-2); sí por Vitest |
+| M10 | Quitar `' '` de `esTeclaDeActivacion` | 1 falla (Espacio) | no aplica (la E2E solo prueba Enter) | Detectada por Vitest |
+| M11 | Quitar `e.originalEvent.preventDefault()` del `keydown` | 0 fallan | 0 fallan | **No detectada** (BUG-J21-3) |
+
+Detalle de M4: la prueba "Saltar el mapa y ver la lista" de `mapa.e2e.js` sí reproduce el error, pero a veces. Con la corrección quitada y solo esa prueba con `--repeat-each=6` (Chromium y Firefox): **8 fallos y 4 aciertos de 12** (el `pageerror` `Cannot read properties of undefined (reading '_leaflet_pos')`, en Firefox `can't access property "_leaflet_pos", el is undefined`). En la corrida completa pasó. Con la corrección puesta, esa misma prueba pasó en todas las ejecuciones (cientos). Con una prueba mía que pulsa "Lista" a 0, 10, 30, 60, 100, 150 y 200 ms después de que aparecen los marcadores (3 repeticiones, 2 motores): sin la corrección falla en **25 de 42**, con la corrección en **0 de 42**.
+
+## Calidad de las E2E, caso por caso
+
+- **Fuertes** (comprueban lo que el caso pide; ver mutaciones): WI-02, WI-05 (marcadores, ratón y Enter/Esc con foco), WI-06 (0 peticiones al gateway medidas en la red, no solo en el mock), WI-10 (URL, título, almacenamiento, cookies, consola), WI-12, WI-14, WI-15 (red completa sin OSM ni hosts externos, Bearer, `fetch` en vez de `<img>`, `no-store` solo desde zoom 9, 429/503/sin red sin respaldo a OSM) y WC-13.
+- **Suficientes**: WI-01, WI-03, WI-07, WI-08 y WI-09 (afirman textos y la petición con filtros/`hallazgoId`).
+- **Débiles**: WI-04 y WC-12 (BUG-J21-2) y la parte "Lista durante el zoom" (BUG-J21-1).
+- **Límites que el propio README declara y confirmo**: las cabeceras `Cache-Control`/`Pragma` de las teselas solo se registran como anotación (Playwright desactiva la caché con rutas interceptadas), así que "no queda en disco" no es verificable en E2E y sigue en la guía manual. El WI-04 de las E2E prueba que la UI pide iniciar sesión, no la redirección real de Keycloak (eso es WI-13).
+- **Puertos**: 5175 fijo con `--strictPort` y `reuseExistingServer: !CI`. En CI no hay reutilización y falla ruidosamente si el puerto está ocupado; en local, un servidor ajeno en 5175 se reutilizaría (con `.env.development` apuntando a 8080 no rompe). 8080 no es un puerto que se use: es solo el origen interceptado (`page.route`); con un gateway real escuchando en 8080 las pruebas siguen sin tocarlo.
+- La constante `ZOOM_SIN_CACHE = 9` está copiada en `seguridad.e2e.js:3`: es deliberada, así M2 y M2b se detectan.
+
+## Las dos correcciones de `MapaHallazgos.jsx`
+
+- **Enter/Espacio (`keydown`)**: correcta. Leaflet 1.9.4 no convierte `keypress` en `click` (`Map.js` solo reenvía el evento), por eso Enter no abría el detalle; M1 lo demuestra. Verificado con una prueba mía en Chromium y Firefox: Espacio sobre el marcador abre el detalle y llega con `defaultPrevented = true`, otra tecla (`a`) no hace nada, Tab pasa al siguiente marcador y Enter abre el suyo, sin errores de página. La prueba unitaria nueva cubre Enter, Espacio y una tecla que no cuenta (M10 la rompe). No cubre `preventDefault` ni `'Spacebar'` (BUG-J21-3). Una pulsación mantenida repite `onSeleccionar`, que es idempotente.
+- **`CerrarZoomAlQuitar`**: correcta y mínima. Sin ella el error ocurre de verdad (reproducido arriba); con ella hay 0 errores en 42 + 156 + 234 ejecuciones. `Map._onZoomTransitionEnd` (Leaflet 1.9.4, `Map.js:1718`) sale si `_animatingZoom` es falso, que es justo lo que se aprovecha. Pasar a Lista, volver a Mapa y StrictMode no se rompen (efecto con dependencia `[mapa]`; en el doble montaje de StrictMode el cierre inicial pone `false`, que ya era el valor).
+- **Riesgo de `_animatingZoom`**: es un campo interno, no API. `package.json` declara `leaflet ^1.9.4`: dentro de 1.x no cambia (1.9.4 es la última), y 2.x no entra con ese rango. Si una versión futura lo renombrara, la asignación crearía una propiedad nueva sin error, el defecto volvería en silencio y la única red de seguridad sería la prueba de BUG-J21-1, que hoy es probabilística. Misma clase de riesgo que `_tiles` en `CapaTeselasGateway.js`. Aceptable si se estabiliza esa prueba y se anota la versión en el README (ya lo hace el comentario del código).
+
+## CI (21b)
+
+- **Lógica del YAML**: correcta. `hashFiles('web-interna/playwright.config.js')` se evalúa desde la raíz del workspace, no desde `working-directory` (el comentario lo dice bien). Los tres pasos condicionales lo usan; el del artefacto combina `failure() && hashFiles(...)`. Nombres de artefactos únicos: `playwright-report-web-interna` (frente a `playwright-report` de web-publica) y `surefire-<servicio>-utc|bogota` (la expresión `matrix.tz == 'UTC' && 'utc' || 'bogota'` es válida porque `'utc'` no es falso). Las 5 entradas de la matriz y sus nombres (`backend (servicio, tz)`) son únicos.
+- **Coincide con lo que necesitan las E2E**: `npx playwright install --with-deps chromium firefox webkit` (instala los 3 motores y las librerías del sistema que a mí me faltan para WebKit), `npm run test:e2e` (la config usa `CI` para `retries: 1`, `forbidOnly` y reporte `html` en `web-interna/playwright-report`, que es la ruta que sube el artefacto). Versión de Playwright fijada en 1.64.1 igual que la imagen con que probé; `package-lock.json` coherente y `npm audit` en 0. `npm test` no recoge los `*.e2e.js` (Vitest: 92, ya comprobado).
+- **Zona horaria**: `TZ` a nivel de job y `-DargLine=-Duser.timezone=<tz>` son efectivos: el XML de Surefire lo demuestra en las dos zonas, y ningún `pom.xml` define `argLine` ni usa Failsafe (todas las pruebas, incluidas las de integración, corren en Surefire, que lee la propiedad). Con la máquina del equipo ya en America/Bogota la corrida "Bogota" no distingue por sí sola; por eso confirmé la zona efectiva en el XML y repetí con UTC.
+- Observaciones de CI (no bloquean): (1) la condición `hashFiles` hace que, si alguien borra o renombra `playwright.config.js`, las E2E se salten en silencio; según `00-plan.md` el Tech Lead ya decidió quitarla antes del commit (SEC-J-I29). (2) `retries: 1` en CI deja pasar una prueba inestable con éxito y solo lo anota en el log; conviene revisar a mano si aparece "flaky". (3) La CI no comprueba que `dist/` esté libre del arnés; un paso `! grep -rilE "arnes|token-simulado" dist` lo dejaría vigilado. (4) El artefacto de Surefire solo toma `target/surefire-reports`; hoy sirve porque no hay Failsafe. (5) Los archivos `web-interna/playwright.config.js`, `web-interna/.gitignore`, `dev/` y `e2e/` están sin seguir en git: hay que añadirlos (`git add`) o el job `web-interna` correrá sin E2E y sin avisar. (6) Los nombres de los jobs de backend cambiaron: hay que actualizar cualquier "check requerido" de protección de ramas si algún día se configura (hoy no hay).
+
+## Bugs y observaciones
+
+### BUG-J21-1 (Bajo) La E2E que protege contra `_leaflet_pos` detecta la regresión solo en ~2 de 3 ejecuciones
+- Responsable sugerido: frontend (E2E).
+- Archivo: `web-interna/src/ubicacion/e2e/mapa.e2e.js:62-80` (prueba "Saltar el mapa y ver la lista").
+- Pasos: quitar `<CerrarZoomAlQuitar />` de `MapaHallazgos.jsx:76` y correr `E2E_SIN_WEBKIT=1 npx playwright test -g "Saltar el mapa" --repeat-each=6`.
+- Esperado: falla siempre. Obtenido: 8 fallos y 4 aciertos de 12; en `npm run test:e2e` completo pasó (0 fallos). Evidencia: `pageerror: Cannot read properties of undefined (reading '_leaflet_pos')`.
+- Causa: el clic llega en un instante variable respecto de la animación de `fitBounds` (250 ms); a veces ya terminó.
+- Corrección sugerida: provocar la animación de forma determinista (por ejemplo pulsar "Lista" nada más contar los marcadores con `page.getByRole('button', { name: 'Lista' })`, que en mis pruebas rompía 25/42 veces sin la corrección, o añadir una unitaria con Leaflet real en jsdom: `fitBounds` con animación, desmontar y avanzar 300 ms con temporizadores falsos).
+
+### BUG-J21-2 (Bajo) La aserción "una sola vez" de WC-12 y WI-04 no detecta llamadas repetidas
+- Responsable sugerido: frontend (E2E).
+- Archivos: `mapa.e2e.js:170` (WC-12), `:162` (WI-04 mapa) y `busqueda.e2e.js:145` (WI-04 búsqueda): `toContainText('(1)')`.
+- Pasos: en `CapaTeselasGateway.js:61` cambiar `error?.status === 401 && !this._sesionAvisada` por `error?.status === 401` y correr las E2E.
+- Esperado: WC-12 falla (el contador llegaría a (2), (3)...). Obtenido: 39/39 aprobadas en Chromium; Vitest sí falla (3 pruebas).
+- Causa: Playwright acepta el primer `(1)` antes de que llegue el segundo aviso, y `toContainText('(1)')` también casaría con "(10)".
+- Corrección sugerida: tras esperar que carguen las teselas (o que aparezca el aviso de mapa base), exigir el texto completo con `toHaveText(/\(1\)\. En modo real/)` dentro de `expect.poll` con una espera de estabilidad, o contar las peticiones de teselas del mock y comparar con el contador.
+
+### BUG-J21-3 (Bajo) Nada prueba que el `keydown` de Espacio evite el desplazamiento de la página
+- Responsable sugerido: frontend (pruebas).
+- Archivo: `web-interna/src/ubicacion/componentes/MapaHallazgos.jsx:89` (`e.originalEvent.preventDefault()`).
+- Pasos: quitar esa línea y correr Vitest y la E2E: 92/92 y 39/39.
+- Esperado: alguna prueba falla (Espacio con `defaultPrevented` falso desplaza la página al usar el teclado). Obtenido: ninguna.
+- Verificado a mano que hoy sí funciona (Chromium y Firefox: `defaultPrevented = true` para Espacio y `false` para otras teclas).
+- Corrección sugerida: en la unitaria, `const e = createEvent.keyDown(marcador, { key: ' ' }); fireEvent(marcador, e); expect(e.defaultPrevented).toBe(true)`; y una E2E de Espacio con un `window.addEventListener('keydown', ...)` que registre `defaultPrevented`.
+
+### Observaciones (no son bugs)
+- WebKit no se pudo correr en el equipo (faltan librerías del sistema); se cubrió con la imagen oficial de Playwright (117/117 dos veces). El primer intento con Docker montando el `node_modules` del equipo falló (`ERR_MODULE_NOT_FOUND`: binarios nativos de otro sistema): hay que ejecutar `npm ci` dentro del contenedor.
+- La guía manual del README tiene un paso (6) que se apoya en la pestaña Red del navegador; nada de eso se ejecutó, ver WI-13/WI-15 en `06-plan-pruebas.md` (P14).
+- Docs al día: 03 (D58), 09 (CI), 00-plan describen lo que hay; `00-plan.md` dice "local web-interna 91/91" y hoy son 92 (la prueba de Enter/Espacio se añadió después); trivial.
+
+## Veredicto Iteración 21c: APROBADO CON OBSERVACIONES
+
+Se cumple lo declarado: Vitest 92/92, `dist/` sin ningún rastro del arnés, E2E 78/78 en local (3 corridas, además de 234 y 156 repetidas con y sin carga), 117/117 dos veces en la imagen de Playwright con los 3 motores y sin inestabilidad. De las 11 mutaciones, 10 son detectadas por alguna capa (M4 solo de forma intermitente por la E2E, M9 y M10 solo por Vitest) y solo sobrevive M11; las E2E aportan valor propio (M3, M6, M8, M2). Las dos correcciones de `MapaHallazgos.jsx` son correctas y no rompen nada. El YAML del CI es coherente con lo que necesitan las E2E y el cambio de zona horaria es efectivo (364/0/0 en UTC y en Bogotá). Quedan tres hallazgos Bajos, todos de calidad de las pruebas y ninguno de producción (BUG-J21-1 a 3), y verificación pendiente en navegador real: WI-13 y la parte manual de WI-15 (guía del README), más Edge para WI-11. Ninguno bloquea el commit.
