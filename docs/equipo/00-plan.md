@@ -282,11 +282,20 @@ Despliegue de bases, Redis y RabbitMQ en VMs locales con una VPN de malla, y su 
 **Cambios de modelo:** frontend-senior sonnet/**high** (matriz: sonnet/medium) en 20a: maneja el token y la privacidad de las coordenadas.
 
 **Pendientes tras la iteración 20:**
-- Usuaria: decidir SEC-J-24 (no-store para z ≥ 9 en el front o en el gateway, o aceptarlo como riesgo residual de R6).
+- ~~Usuaria: decidir SEC-J-24~~ → decidido: zoom ≥ 9 sin caché en el front (D57, tareas 20e–20g).
 - De Juanita (Bajos/informativos): BUG-J20-1, SEC-J-I25 (validar tipo del blob; `...opciones` antes de `headers`), SEC-J-I26 (`referrerPolicy: 'no-referrer'` en `pedir`; nota de proxies en `09`), SEC-J-I27 (fijar `leaflet` 1.9.4, coordinar con Santiago porque `package.json` es suyo). Prueba manual WI-15 en navegador para cerrar SEC-J-04.
-- Santiago: montar `src/ubicacion/` en `App.jsx` (16j); CSP de SEC-J-07 con `img-src 'self' data: blob:`; crear el `cliente` una sola vez; si inyecta un cliente propio, implementar `getBlob`.
+- Santiago: SEC-J-25 (recargar en `pageshow` con `persisted` tras cerrar sesión); opcional `Clear-Site-Data: "cache"` al cerrar sesión; montar `src/ubicacion/` en `App.jsx` (16j); CSP de SEC-J-07 con `img-src 'self' data: blob:`; crear el `cliente` una sola vez; si inyecta un cliente propio, implementar `getBlob`.
+
+| # | Tarea | Responsable | Modelo | Estado |
+|---|---|---|---|---|
+| 20e | SEC-J-24: `ZOOM_SIN_CACHE = 9`, `getBlob(..., { sinCache })` con `no-store`; `...opciones` antes de `headers` (SEC-J-I25); D57; pruebas | Tech Lead | opus/medium | Hecho (sin commit): Vitest 86/86, build OK; mutación `>=`→`>` detectada por la prueba |
+| 20f | QA de 20e | qa-tester | sonnet/medium | Hecho: APROBADO CON OBSERVACIONES, sin bugs nuevos. Vitest 91/91 (5 casos más en `qa-teselas.test.jsx`), build OK. Nota: BUG-J20-2 ya estaba corregido (WI-05) |
+| 20g | Re-verificación de SEC-J-24 | ciberseguridad | opus/**medium** | Hecho: APROBADO CON OBSERVACIONES. SEC-J-24 cerrado (falta verlo en navegador junto con WI-15); SEC-J-I25 parcial (orden de `...opciones` cerrado; queda `blob.type` y png/jpeg en el gateway); SEC-J-I28 (doc) corregido por el Tech Lead antes del commit; SEC-J-25 nuevo (Bajo, bfcache tras cerrar sesión, de Santiago) |
+
+**Cambios de modelo:** 20e la hizo el Tech Lead (cambio de ~40 líneas; no justificaba lanzar un agente). Ciberseguridad opus/**medium** (matriz: high) en 20g: re-verificación de un diff acotado de su propio hallazgo, como en 18d y 18f.
 
 **Modelos y consumo (iteración 20):**
 | Fase | USD | Agente que más consumió | Cambios de modelo (motivo) |
 |---|---:|---|---|
 | 20a–20d (sesión 2026-11-15) | 2.96 acumulado en la sesión (≈2.27 en la iteración 20; opus 2.44, sonnet 0.52) | sesión principal (opus, 1.62); ciberseguridad 0.82; frontend-senior 0.34; qa-tester 0.18 | frontend-senior sonnet/**high** (matriz: medium): token y privacidad de coordenadas |
+| 20e–20g (SEC-J-24, D57) | 4.75 acumulado en la sesión (≈1.79 en 20e–20g; opus 4.11, sonnet 0.64) | sesión principal (opus) | ciberseguridad opus/medium en 20g (re-verificación acotada) |

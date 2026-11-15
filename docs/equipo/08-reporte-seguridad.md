@@ -2017,3 +2017,112 @@ Hallazgos nuevos: **0 Críticos, 0 Altos, 0 Medios, 1 Bajo (SEC-J-24), 4 Informa
 - **SEC-J-I14: Cerrado** (el navegador ya no habla con OSM).
 - **SEC-J-24** (Bajo, S): no bloquea. Hay que decidir si se corrige o se acepta.
 - **SEC-J-I24 a SEC-J-I27** (Informativos, XS): no bloquean. Conviene corregir SEC-J-I24 en los documentos antes de que Santiago escriba la CSP.
+
+---
+
+## 20g – re-verificación de SEC-J-24 (2026-11-15)
+
+**Revisor:** ciberseguridad · **Rama:** `feature/ubicacion-consulta-publica` (HEAD `8bba7ed` + cambios sin commit de D57) · **Alcance:** `web-interna/src/ubicacion/api/ubicacionApi.js`, `componentes/CapaTeselasGateway.js`, sus dos archivos de prueba, `src/ubicacion/README.md`, `11-seguridad-y-acceso.md` §7 y D57. Como contexto: `MapaHallazgos.jsx`, `TeselasGateway.jsx`, `src/auth/keycloak.js`, `App.jsx`, `vite.config.js`, `keycloak-js` 26.2.4 (`node_modules/keycloak-js/lib/keycloak.js`), `TeselasController.java`, `ServicioTeselas.java` y `SecurityConfig.java`.
+
+### Resumen
+
+| ID | Estado |
+|---|---|
+| **SEC-J-24** | **Cerrado** (corregido según D57). Desde el zoom 9 las teselas no se leen ni se escriben en la caché HTTP del navegador. Las de zoom 0 a 8 siguen en caché 1 día: es un riesgo aceptado en D57 y no revelan más que el departamento, que ya ven todos los roles internos. La comprobación en navegador real se suma a la prueba manual que ya estaba pendiente para SEC-J-04 |
+| **SEC-J-I25** | **Parcialmente cerrado.** La segunda parte (orden de `...opciones` en `pedir`) está **cerrada** y no tiene efectos colaterales. La primera parte sigue **abierta**: comprobar `blob.type` en el front, y que `OrigenTeselasHttp` acepte solo `image/png` y `image/jpeg` (Santiago) |
+
+Hallazgos nuevos: **0 Críticos, 0 Altos, 0 Medios, 1 Bajo (SEC-J-25), 1 Informativo (SEC-J-I28).**
+
+### Cómo se revisó
+- **Lectura:** `git diff` completo, mi ficha SEC-J-24 (20c) y D57.
+- **Búsquedas en `web-interna`:** `serviceWorker`, `workbox`, `vite-plugin-pwa`, `caches.`, `pageshow`/`persisted`, `unload`, `logout` en `src`, `index.html`, `public/`, `vite.config.js` y `package.json`.
+- **Comandos:** `npx vitest run src/ubicacion` (**5 archivos, 89/89 en verde**) y `npm audit --omit=dev` (**found 0 vulnerabilities**). `package.json` y `package-lock.json` no cambian.
+- **Sin navegador:** el punto 1 se basa en la especificación Fetch y en el comportamiento documentado de los tres motores. No se levantó el gateway ni se modificó código.
+
+### 1. ¿`cache: 'no-store'` evita leer y escribir en la caché HTTP aunque el gateway mande `private, max-age=86400`?
+
+**Sí.** El modo de caché de la petición manda sobre las cabeceras de la respuesta.
+- **Especificación Fetch (HTTP-network-or-cache fetch):** con el modo `"no-store"`, la caché HTTP se trata como si no existiera. No se consulta antes de la petición y la respuesta no se guarda después, diga lo que diga `Cache-Control`. `max-age` solo cuenta cuando el modo permite almacenar.
+- **Motores:** Chromium (desactiva la caché para esa carga), Gecko (evita la caché y además impide guardar la respuesta) y WebKit (no usa ninguna caché para esa petición) implementan `RequestInit.cache` desde hace años. En los tres, una respuesta pedida con `no-store` no aparece en la caché de disco (`Cache_Data` en Chrome, `about:cache?storage=disk` en Firefox, `NetworkCache` en Safari).
+- **Efecto secundario revisado:** la especificación añade `Cache-Control: no-cache` y `Pragma: no-cache` a la petición. Los pone el navegador, no el autor, así que no entran en `Access-Control-Request-Headers` y no cambian el preflight. Lo importante es que **el gateway no los interpreta**: ni `TeselasController` ni `ServicioTeselas` leen cabeceras de caché de la petición. La caché Caffeine sigue sirviendo, y D57 no genera descargas extra hacia OSM, lo que respeta su política de uso. Un CDN delante del gateway sí podría saltarse su caché por esa cabecera. Eso solo afecta al rendimiento, y SEC-J-I26 ya desaconseja ese CDN.
+- **Entradas antiguas:** `no-store` no borra lo que ya estaba guardado. No pesa en producción, porque `src/ubicacion/` todavía no está montado en `App.jsx` y ningún usuario real tiene teselas de antes de D57 en caché. En los equipos de desarrollo caducan en 24 h como mucho.
+- **Pruebas:** `ubicacionApi.test.js` comprueba que con `sinCache` se manda `cache: 'no-store'` sin perder el token, `credentials` ni la señal, y que sin la opción no se manda `cache`. `CapaTeselasGateway.test.jsx` comprueba el corte en z 8/9. La decisión se toma con `coords.z`, que es el z real de la URL, así que sigue siendo correcta si algún día se usa `zoomOffset` o `detectRetina`.
+- **Comprobación manual que propongo** (añadir al punto 1 de "Qué queda para cerrar SEC-J-04"): con el gateway levantado, acercar a z ≥ 9, recargar y verificar en DevTools → Network que esas teselas **nunca** muestran "(disk cache)" ni "(memory cache)". En Firefox, revisar además `about:cache?storage=disk`: solo deben aparecer URL `/teselas/0..8/`.
+
+### 2. Otras vías por las que una tesela de zoom ≥ 9 podría persistir tras cerrar sesión
+
+| Vía | Qué pasa | Clasificación |
+|---|---|---|
+| **Service worker / Cache API** | No hay ninguno: no aparecen `navigator.serviceWorker`, `caches.`, Workbox ni `vite-plugin-pwa`; `public/` está vacío y `vite.config.js` solo usa `plugin-react` | **No aplica** |
+| **Caché de memoria de imágenes** (MemoryCache de Blink, caché de imágenes decodificadas) | La clave es el object URL (`blob:<origen>/<uuid>` aleatorio, sin z/x/y). Vive en el proceso de la pestaña y desaparece al cerrarla. Otra página no puede llegar a ella: el URL está ligado al origen y se revoca en cuanto carga | **No residual** |
+| **Object URL y blobs** | Se revocan en los cinco caminos (20c §3). Chrome solo pasa blobs a disco (`blob_storage` del perfil) cuando la memoria total de blobs supera su cuota. Una tesela pesa decenas de KB y vive milisegundos, y esos archivos se borran al liberar el blob o al arrancar el navegador | **No residual** (despreciable) |
+| **Caché de preflight CORS** | Se indexa por URL (con z/x/y) durante `max-age=3600` (`SecurityConfig.java:117`; Chrome lo limita a 2 h). Está **solo en memoria**, no la expone ninguna interfaz del navegador y desaparece al cerrarlo. `no-store` no la afecta porque es una caché distinta | **No residual** |
+| **Historial, autocompletado** | Los `fetch` no entran en el historial | **No aplica** |
+| **bfcache** | Al cerrar sesión, `keycloak-js` 26 envía un **POST con un formulario** (`logoutMethod` por defecto), que es una navegación normal: la página del mapa queda en el historial. Si el usuario no cierra la pestaña, quien use el equipo después puede pulsar "Atrás" en los minutos siguientes y recuperar la página **desde la bfcache**: teselas ya pintadas y, más grave, el estado de React con las coordenadas exactas de los hallazgos | **Residual, fuera del alcance de D57.** Ver SEC-J-25 |
+
+### 3. ¿Es razonable el umbral 9?
+
+**Sí.** Ancho de una tesela a la latitud de Colombia (unos 4°, con cos ≈ 1; 40 075 km / 2^z):
+
+| z | Ancho de tesela | Qué delata |
+|---|---|---|
+| 8 | ~156 km | Escala de departamento |
+| 9 | ~78 km | Subregión |
+| 10 | ~39 km | Pocos municipios |
+| 12 (`ZOOM_MAXIMO`) | ~10 km | Zona concreta |
+
+- **`ZOOM_AJUSTE_VARIOS = 10`:** el ajuste automático con varios puntos queda por encima del umbral y no se guarda. Correcto.
+- **`ZOOM_AJUSTE_UN_PUNTO = 8`:** "Ver en el mapa" de un solo hallazgo queda en z8, **justo por debajo** del umbral. Esas teselas sí se guardan, centradas en el punto. Con el rango de teselas cacheadas y la hora de cada entrada se acota el centro de la vista a ±1 tesela de z9, unos 80 a 150 km. Aun así, lo considero aceptable:
+  1. Esa precisión equivale a un departamento, y `aHallazgo` ya muestra `departamento` y `region` a **todos** los roles internos.
+  2. La caché no relaciona la vista con un hallazgo ni con una especie: `/mapa?hallazgoId=` se pide con `get`, que siempre usa `no-store`.
+  3. Bajar el umbral a 8 casi no añade privacidad y sí añade peticiones en la vista de país y departamento.
+- **Opcional, no es hallazgo:** si el grupo considera que el departamento de un hallazgo protegido también es sensible, basta con `ZOOM_SIN_CACHE = 8`. Cubre "Ver en el mapa" y apenas cuesta: solo cambia la vista inicial de un punto.
+- **Invariantes:** con `zoomSnap` 1 (valor por defecto, `MapContainer` no lo cambia), `fitBounds` y la rueda dan zooms enteros. Las animaciones de zoom no piden teselas intermedias. Así, ningún z ≥ 9 se cuela por redondeo. La prueba fija `ZOOM_SIN_CACHE === 9`, de modo que subirlo por encima de 10 rompería el build.
+- **Costo:** volver a una zona ya vista con z ≥ 9 vuelve a pedir sus teselas, salvo las que Leaflet conserva en el DOM (`keepBuffer`). El preflight sigue cacheado en memoria y no gasta cupo. Con 20 a 40 teselas por vista, 600/min permite de 15 a 30 cambios de zoom por minuto. D57 ya acepta el riesgo de 429 con un uso muy intenso, y en ese caso el paso a la vista Lista corta la cascada.
+
+### 4. Orden de `...opciones` (SEC-J-I25, segunda parte)
+
+**Cerrado y sin efectos colaterales.**
+- Ahora `headers` (con `Authorization` y `Accept`), `credentials: 'omit'` y `signal` van después de `...opciones` (`ubicacionApi.js:37-41`), así que ninguna opción puede sobrescribirlos.
+- Los únicos llamadores son `get` (`{ cache: 'no-store' }`) y `getBlob` (`{ cache: 'no-store' }` o `{}`). Ninguno pasaba `headers`, `credentials` ni `signal` en `opciones`, así que el comportamiento actual no cambia. Las 89 pruebas pasan, incluida la nueva, que verifica token, `credentials` y señal junto con `no-store`.
+- Único efecto, buscado: si una llamada futura pasara `headers` en `opciones`, se descartarían en silencio. Es lo correcto para este cliente.
+- Lo que `opciones` todavía puede fijar (`cache`, `redirect`, `mode`, `referrerPolicy`) no compromete el token ni las cookies. `pedir` es interna y no se exporta.
+
+### Hallazgos nuevos
+
+#### SEC-J-25 · Bajo · A04 (tras cerrar sesión, "Atrás" puede recuperar el mapa con coordenadas desde la bfcache)
+- **Archivos:** `web-interna/src/auth/keycloak.js:33-35` (`keycloak.logout({ redirectUri })` con el método por defecto, POST por formulario en `keycloak-js` 26.2.4, `lib/keycloak.js:322-345`). No hay ningún manejador de `pageshow` en `web-interna/src`.
+- **Problema:** el cierre de sesión es una navegación normal, así que la página de la app queda en el historial. Si es apta para la bfcache (no tiene manejadores `unload`, `checkLoginIframe: false`, y el `index.html` del hosting no manda `Cache-Control: no-store`), Chrome, Firefox y Safari la guardan congelada en memoria durante unos minutos (en Chrome, hasta 10). Si el siguiente usuario de un equipo compartido pulsa "Atrás", vuelve a ver la pantalla tal como estaba: el mapa con sus teselas, los marcadores y la lista con latitud y longitud exactas. El token está en memoria, pero no importa: la página no necesita pedir nada al gateway para mostrar lo que ya tenía.
+- **Por qué es Bajo:** hace falta acceso físico **en los minutos siguientes** y que la pestaña siga abierta. Al cerrar la pestaña o el navegador, la entrada desaparece, a diferencia de la caché de disco de SEC-J-24. No es una regresión de D57 ni de las teselas: afecta a cualquier pantalla de web-interna con datos protegidos. Pero entra en el mismo modelo de amenaza que motivó D57 (equipos compartidos) y expone más que las teselas.
+- **Corrección** (Santiago, en `main.jsx` o junto a `iniciarSesion`). Si la página vuelve de la bfcache, se recarga. Al recargar, `onLoad: 'login-required'` exige iniciar sesión, porque Keycloak ya cerró la sesión SSO:
+  ```js
+  // web-interna/src/main.jsx
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) window.location.reload();
+  });
+  ```
+  Complemento opcional: servir `index.html` con `Cache-Control: no-store` en `09-despliegue.md`. Así la página deja de ser apta para la bfcache en la mayoría de los navegadores, pero no en todos, porque Chrome está ampliando la bfcache a páginas `no-store`. El manejador de `pageshow` es la defensa fiable.
+- **Prueba sugerida (QA, manual):** abrir el mapa, cerrar sesión y pulsar "Atrás" dos veces. No debe verse el mapa ni la lista; debe aparecer el login de Keycloak.
+- **Esfuerzo:** XS. **Responsable sugerido:** Santiago (montaje y cierre de sesión). **No bloquea.**
+
+#### SEC-J-I28 (la documentación sigue diciendo que `getBlob` nunca usa `no-store`)
+Quedaron cuatro textos sin actualizar, y uno de ellos contradice D57:
+- `docs/equipo/11-seguridad-y-acceso.md:144`: "*y no usa `cache: 'no-store'` para que el navegador reutilice la tesela*". Contradice la tabla de la misma sección (l. 138) y D57. Propuesta: "*y solo usa `cache: 'no-store'` con `sinCache` (zoom ≥ 9, D57); las de zoom 0 a 8 se reutilizan (`private, max-age=86400`)*".
+- `web-interna/src/ubicacion/README.md:35`: "*`getBlob` sin él para que el navegador reutilice las teselas*". La viñeta siguiente lo matiza, pero conviene añadir "salvo con `sinCache`".
+- `web-interna/src/ubicacion/api/ubicacionApi.js:16`: el contrato resumido aún dice `getBlob(ruta, { signal })`. Debe decir `{ signal, sinCache }`, como el párrafo de debajo.
+- `web-interna/src/ubicacion/componentes/CapaTeselasGateway.js:16`: lo mismo en las opciones de la capa. Esto importa porque **un cliente propio que ignore `sinCache` reabre SEC-J-24 en silencio**, y el contrato es la única barrera (la opción 2 de SEC-J-24, en el gateway, sí lo cubriría).
+
+**Esfuerzo:** XS. **Responsable sugerido:** Juanita.
+
+### Bien hecho
+- Es el cambio mínimo y en el sitio correcto: la capa decide según el z real de la tesela, el cliente traduce la decisión a `no-store`, y el gateway y su caché Caffeine siguen igual (OSM no recibe más peticiones).
+- `get` sigue con `no-store` siempre, así que ni el GeoJSON ni la relación hallazgo–vista llegan nunca a la caché.
+- La reordenación de `...opciones` se hizo en el mismo cambio y tiene prueba propia.
+- Las pruebas cubren los dos lados del umbral (0, 5, 8, 9, 10, 12) y que no se pierden el token, `credentials` ni la señal.
+
+### Veredicto (20g)
+**APROBADO CON OBSERVACIONES.** No hay Críticos ni Altos.
+- **SEC-J-24: Cerrado.** Corregido según D57. La comprobación en navegador real se añade a la prueba manual pendiente de SEC-J-04.
+- **SEC-J-I25: Parcialmente cerrado.** El orden de `...opciones` está cerrado. Siguen abiertos la comprobación de `blob.type` en el front (Juanita) y la lista de tipos permitidos en `OrigenTeselasHttp` (Santiago).
+- **SEC-J-25** (Bajo, XS, Santiago): bfcache tras cerrar sesión. No bloquea.
+- **SEC-J-I28** (Informativo, XS, Juanita): documentación desalineada con D57. Conviene corregirla antes del commit, sobre todo `11` §7 l. 144, que contradice la decisión.
