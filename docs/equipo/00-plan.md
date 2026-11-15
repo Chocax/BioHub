@@ -253,7 +253,7 @@ Despliegue de bases, Redis y RabbitMQ en VMs locales con una VPN de malla, y su 
 |---|---|---|---|---|
 | 19a | Mezcla de prueba con `origin/develop` en una copia aparte: sin conflictos (solo 5 documentos de `docs/equipo/` en común), sin decisiones duplicadas; `verify` con TZ=UTC: api-gateway 200/0, científico 458/0 (2 omitidas), consulta-pública 364/0 | Tech Lead | opus/medium | Hecho |
 | 19b | Borrar la copia de trabajo y la rama sobrantes `worktree-agent-a81b33dc5352a050a` (sus 2 commits ya estaban en la rama como b4053c3 y d9a9031) | Tech Lead | — | Hecho |
-| 19c | Merge de `origin/develop` en la rama (9ed29ec), push, CI y merge del PR #8 en `develop` | Tech Lead | opus/medium | En curso |
+| 19c | Merge de `origin/develop` en la rama (9ed29ec), push, CI y merge del PR #8 en `develop` | Tech Lead | opus/medium | Hecho: CI del PR verde en b171bf0 (5/5 trabajos); PR #8 mezclado en `develop` (060f5e5, merge sin squash); la rama sigue abierta |
 
 **Pendientes tras la iteración 19:**
 - De Juanita: `MapaHallazgos.jsx` debe pedir las teselas a `/api/gateway/teselas/{z}/{x}/{y}.png` con el JWT (`11-seguridad-y-acceso.md` §7; parte front de SEC-J-04). SEC-04, SEC-J-I23, entrada del CI con `TZ: America/Bogota`, k6 de D42.
