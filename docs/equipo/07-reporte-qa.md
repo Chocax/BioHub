@@ -553,3 +553,40 @@ Alcance del cambio: `git status` fuera de `web-interna/src/ubicacion/**` solo mu
 ## Veredicto Iteración 20b: APROBADO CON OBSERVACIONES
 
 El cambio cumple lo declarado: las teselas van solo al gateway con Bearer a través del `cliente` inyectado, cero peticiones a OSM, abortos y object URL bien manejados, aviso y paso a Lista intactos, sin regresiones (84/84 pruebas, build OK) y sin salirse del reparto. Quedan dos hallazgos Bajos (BUG-J20-1, BUG-J20-2) y la verificación en navegador real pendiente (WI-15), que no bloquean el commit.
+
+---
+
+## Iteración 20f – verificación de SEC-J-24 (zoom ≥ 9 sin caché)
+
+Alcance: cambios sin commit de la tarea 20e (`ubicacionApi.js`: `getBlob(ruta, { signal, sinCache })` y orden de `...opciones`; `CapaTeselasGateway.js`: `ZOOM_SIN_CACHE = 9`; pruebas, README, `11` §7, D57).
+
+### Comandos y resultados
+
+| Comando (en `web-interna`) | Resultado |
+|---|---|
+| `npx vitest run` (estado recibido) | 6 archivos, **86 pruebas aprobadas, 0 fallidas** (coincide con el Tech Lead; antes 84) |
+| `npm run build` | OK, 21 módulos, `index-*.js` 248.30 kB (77.42 kB gzip) |
+| `npx vitest run` (con mis 5 casos nuevos en `qa-teselas.test.jsx`) | 6 archivos, **91 pruebas aprobadas, 0 fallidas** |
+| Cobertura | No configurada |
+
+### Qué se comprobó
+
+- Umbral: la prueba nueva de `CapaTeselasGateway.test.jsx` cubre zooms 0, 5, 8 (`sinCache: false`) y 9, 10, 12 (`true`) y la constante `ZOOM_SIN_CACHE === 9`. Suficiente.
+- `ubicacionApi.test.js`: con `sinCache` el `fetch` lleva `cache: 'no-store'`, `Authorization: Bearer`, `credentials: 'omit'` y la misma `signal`; sin la opción no existe la propiedad `cache`. Suficiente.
+- Regresión por mover `...opciones`: `get` sigue con `cache: 'no-store'` (prueba existente `envía Bearer, no-store...` pasa y mi prueba nueva lo reafirma con headers exactos y `omit`). Con `opciones` primero ya nada puede sobrescribir `headers`, `credentials` ni `signal`; hoy `opciones` solo trae `cache`, así que no hay cambio observable. Las 11 pruebas previas de `qa-teselas.test.jsx` siguen pasando.
+- Huecos cubiertos por mí en `web-interna/src/ubicacion/pruebas/qa-teselas.test.jsx` (5 pruebas nuevas, todas pasan): mapa Leaflet real + cliente real con `fetch` simulado a zoom 8, 9 y 12 (cada petición: URL `http://gw/api/gateway/teselas/{z}/x/y.png`, `no-store` solo desde 9, Bearer, `Accept: image/png`, `omit` y `AbortSignal`); `sinCache: false` y `undefined` explícitos no mandan `cache`; `get` conserva `no-store` y headers exactos; con `sinCache` un 401 sigue traduciéndose a `ErrorApi` 401. Los tests del desarrollador probaban capa y cliente por separado; estos prueban la cadena completa.
+- Alcance: sin dependencias nuevas, sin cambios fuera de `web-interna/src/ubicacion/**` y docs. No toqué código de producción.
+
+### Bugs
+
+Ninguno nuevo (no se abre BUG-J20-3 ni posteriores). Siguen abiertos BUG-J20-1 y BUG-J20-2 de la 20b, sin relación con este cambio.
+
+### Observaciones (no bloquean)
+
+- `no-store` en la petición evita leer y guardar, pero NO borra entradas de zoom ≥ 9 que ya estén en disco de versiones anteriores (hasta 24 h por el `max-age=86400`). Es transitorio; el `Clear-Site-Data: "cache"` al cerrar sesión (opcional, Santiago) lo resolvería.
+- El umbral usa `coords.z` de Leaflet; con `zoomOffset` o capas retina distintos de 0 habría que revisarlo (hoy no se usan).
+- La no escritura real en la caché HTTP solo se puede comprobar en navegador real (pestaña Network / `chrome://cache`): las pruebas verifican la opción enviada a `fetch`, no el comportamiento del navegador. Pendiente manual junto con WI-15.
+
+### Veredicto 20f: APROBADO CON OBSERVACIONES
+
+SEC-J-24 queda corregido en el código: el umbral 9, la opción `no-store` y la conservación de token, `omit` y señal están cubiertos con pruebas, `get` no cambió y no hay regresiones (86/86 recibido, 91/91 con mis casos, build OK). Las observaciones son de verificación en navegador real y de entradas antiguas en caché.
