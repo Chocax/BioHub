@@ -2126,3 +2126,160 @@ Quedaron cuatro textos sin actualizar, y uno de ellos contradice D57:
 - **SEC-J-I25: Parcialmente cerrado.** El orden de `...opciones` está cerrado. Siguen abiertos la comprobación de `blob.type` en el front (Juanita) y la lista de tipos permitidos en `OrigenTeselasHttp` (Santiago).
 - **SEC-J-25** (Bajo, XS, Santiago): bfcache tras cerrar sesión. No bloquea.
 - **SEC-J-I28** (Informativo, XS, Juanita): documentación desalineada con D57. Conviene corregirla antes del commit, sobre todo `11` §7 l. 144, que contradice la decisión.
+
+---
+
+# Iteración 21 – arnés, E2E y CI de web-interna (21d)
+
+**Fecha:** 2026-11-15 · **Revisor:** ciberseguridad · **Rama:** `feature/ubicacion-consulta-publica` (HEAD `03e909d` + cambios sin commit de 21a y 21b) · **Alcance:**
+- **21a:** `web-interna/src/ubicacion/dev/` (los 6 archivos), `src/ubicacion/e2e/` (4 archivos), `web-interna/playwright.config.js`, `web-interna/.gitignore`, `package.json` y `package-lock.json`, `componentes/MapaHallazgos.jsx`, `pruebas/PaginaMapa.test.jsx` y `src/ubicacion/README.md`.
+- **21b:** `.github/workflows/ci.yml` y la tabla de CI de `09-despliegue.md` §10.
+
+**Contexto leído:** D17, D57 y D58; 20c y 20g de este reporte; `11-seguridad-y-acceso.md` §7; `src/auth/keycloak.js`; `vite.config.js`; `infra/keycloak/realm-biohub.json` (cliente `web-interna` y usuarios); `.dockerignore`; `docker-compose.yml`; `api-gateway` (`SecurityConfig.java`, `application.yml`, `ProxyService.java`).
+
+## Resumen
+
+Hallazgos nuevos: **0 Críticos, 0 Altos, 0 Medios, 0 Bajos y 5 Informativos (SEC-J-I29 a SEC-J-I33).** No se usa ningún ID `SEC-J-2x` nuevo. El siguiente libre sigue siendo **SEC-J-26**.
+
+**El arnés es seguro tal como está.** No llega a `dist/`, el modo simulado no se puede activar fuera del servidor de desarrollo de Vite y, aunque se activara, su token falso no sirve contra el gateway real.
+
+## Cómo se revisó
+- **Lectura:** `git diff` completo y todos los archivos nuevos (`git status`).
+- **Build de producción:** `vite build` con la configuración del repo, hacia un directorio temporal para no tocar `web-interna/dist/`. Resultado: 21 módulos, solo `index.html`, un `.js` y un `.css`. Búsqueda de `arnes|arnés|simulad|token-simulado|usuario-simulado|e2e|playwright|ubicacion/dev`: **0 coincidencias**. El módulo `src/ubicacion/` todavía no está montado en `App.jsx`, así que tampoco entra en el bundle.
+- **Build forzado del arnés (defensa en profundidad):** configuración temporal fuera del repo con `arnes.html` como única entrada, en modo producción y sin minificar. Resultado: `iniciar()` queda reducida a `mostrarMensaje("El arnés de ubicación solo funciona en desarrollo.")`. **Ni `sesionSimulada.js` ni `sesionReal.js` (ni keycloak-js) entran en el bundle.** La única aparición de "simulado" está en el comentario de cabecera de `arnes.jsx`, que se elimina al minificar.
+- **Comandos:** `npx vitest run src/ubicacion` (**5 archivos, 90/90 en verde**); `npm audit` (**0 vulnerabilidades**); `npm audit --omit=dev` (**0 vulnerabilidades**); `npm ls @playwright/test playwright playwright-core`; `npm view` para comparar las integridades con las del registro. `npm audit signatures` falla con `EEXPIREDSIGNATUREKEY` en `dequal@2.0.3`: es un problema de las claves que trae la versión local de npm, no de este cambio. Por eso las integridades se compararon a mano.
+- **No se ejecutaron las E2E.** Levantan Vite en el puerto 5175 con `--strictPort`, y QA trabaja en paralelo con ese mismo puerto. El análisis de las trazas se basa en la configuración y en el comportamiento documentado de Playwright.
+
+## 1. ¿El arnés o el modo simulado pueden llegar a producción?
+
+**No.** Hay tres barreras independientes y una cuarta circunstancial:
+
+| Barrera | Evidencia |
+|---|---|
+| `vite build` solo usa `index.html` como entrada | `vite.config.js` no define `rollupOptions.input`. Ningún archivo fuera de `dev/` y `e2e/` importa `dev/`, y `src/ubicacion/index.js` no lo exporta (comprobado con grep). El build real no contiene ningún rastro |
+| `if (!import.meta.env.DEV) return` al inicio de `iniciar()` (`arnes.jsx:27-31`) y `import.meta.env.DEV &&` antes del `import()` dinámico (`arnes.jsx:34`) | En el build forzado, el código muerto se elimina: el chunk de la sesión simulada ni se genera |
+| `crearSesionSimulada` vuelve a comprobar `DEV` (`sesionSimulada.js:22`) | Tercera línea de defensa |
+| No hay despliegue que sirva `vite dev` ni `src/` | `09-despliegue.md:241` dice "No hay despliegue de las webs (Vercel) en esta iteración". Los Dockerfile son solo de servicios Java, y `.dockerignore` excluye `web-interna/` y `**/src/`. `docker-compose.yml` no menciona `web-interna`. El plan previsto (D11, Vercel) ejecuta `vite build` y sirve `dist/` |
+
+**`vite preview`:** sirve solo `dist/`, que no contiene el arnés. Aunque alguien lo construyera a mano, vería el mensaje "solo funciona en desarrollo".
+
+**`import.meta.env.DEV` fuera de `vite dev`:** solo vale `true` en un build si se ejecuta `NODE_ENV=development vite build`. `--mode development` no basta, porque `DEV` depende de `NODE_ENV` y no del modo. Aun así, ese build tampoco incluiría `arnes.html` sin cambiar `vite.config.js`. Para llegar al modo simulado fuera de un servidor de desarrollo habría que hacer las dos cosas a propósito.
+
+**Riesgo residual con `vite dev`:** cualquier servidor de desarrollo de Vite, incluido uno expuesto con `--host` en una red de laboratorio, sirve el arnés y su modo simulado. **El impacto es nulo** (ver §2): solo se obtiene una interfaz vacía que recibe 401 del gateway. Ver SEC-J-I33 para dejarlo por escrito.
+
+## 2. Modo simulado
+
+- **¿Se puede activar fuera de DEV?** No (§1).
+- **¿El token falso se puede confundir con uno real?** No:
+  - `'token-simulado-e2e'` no tiene forma de JWT: no tiene tres segmentos base64url.
+  - No se guarda en ningún sitio: no usa `localStorage`, `sessionStorage` ni cookies. Solo lo devuelve el `obtenerToken` en memoria.
+  - No se escribe en la consola.
+  - Ningún camino mezcla un token real con roles falsos. En modo simulado, `keycloak.js` ni siquiera se importa, y en modo real los roles salen de `keycloak.tokenParsed`, no de la URL.
+- **¿El gateway lo rechaza?** Sí:
+  - `SecurityConfig.java:74-78` usa `oauth2ResourceServer().jwt()` con `issuer-uri` y `audiences` (`application.yml:48-49`). Spring Security valida la firma contra el JWKS de Keycloak, además de `iss`, `exp` y `aud`.
+  - Una cadena que no es un JWT da 401 `invalid_token` en `BearerTokenAuthenticationFilter`, antes de llegar a cualquier controlador.
+  - El gateway no registra la cabecera `Authorization`: no hay ningún log de token en `src/main`, y `ProxyService` solo la reenvía.
+- **Abuso por parámetros de URL:**
+
+| Parámetro | Tratamiento | Riesgo |
+|---|---|---|
+| `roles` | Lista blanca de los 5 roles (`sesionSimulada.js:23-26`), igual que `rolesUsuario()` | Solo cambia la interfaz. La autorización real la hace el backend, que rechaza el token |
+| `usuario` | Se muestra como texto de React (`Arnes.jsx:39`) | Sin XSS: React lo escapa, y no hay `innerHTML`, `dangerouslySetInnerHTML`, `bindPopup` ni `eval` en `src/ubicacion` |
+| `pantalla` | Comparación estricta con `'mapa'` (`arnes.jsx:51`) | Ninguno |
+| `hallazgo` | Llega a `obtenerMapa`, que lo codifica con `URLSearchParams` (`ubicacionApi.js:89-95`) | Sin inyección en la ruta ni en la consulta |
+| `token=vencido` | Solo hace que `obtenerToken` rechace | Ninguno |
+| `modo` | Solo se tiene en cuenta bajo `DEV` | Ninguno |
+
+## 3. Modo real
+
+- **`keycloak.js` no cambia** (`git diff` vacío para `src/auth/`). `sesionReal.js` llama a `iniciarSesion()` (Authorization Code con PKCE S256, `checkLoginIframe: false`), `rolesUsuario()` y `cerrarSesion()`. El token se pide con `keycloak.updateToken(30)` y se devuelve desde memoria. El arnés no lo muestra ni lo guarda. Solo pinta `preferred_username` y los roles de negocio, que son datos que el propio usuario ya conoce.
+- **Realm:** **no hace falta ningún cambio.** El cliente `web-interna` ya es público, solo tiene `standardFlowEnabled`, sin flujo implícito ni `directAccessGrants`, y ya declara `redirectUris: ["http://localhost:5173/*"]`, `webOrigins: ["http://localhost:5173"]`, `post.logout.redirect.uris: "http://localhost:5173/*"` y `pkce.code.challenge.method: S256`. La ruta `/src/ubicacion/dev/arnes.html?...` entra en el comodín. El puerto 5175 de Playwright no necesita estar en el realm porque las E2E no usan Keycloak.
+- **Open redirect:** no hay. El arnés no lee ninguna URL de destino de los parámetros. `keycloak-js` usa como `redirectUri` la URL actual, que Keycloak valida contra la lista del cliente. El logout vuelve a `window.location.origin`.
+- **Comodín `/*`:** ya existía y solo afecta a desarrollo. El realm de producción, cuando exista, debe declarar las URI exactas del dominio desplegado (hoy `11` no lo menciona; se puede añadir junto con SEC-J-I33). No es un hallazgo de esta iteración.
+
+## 4. E2E
+
+- **Sin secretos:** las E2E no tienen contraseñas, claves ni tokens reales. `fixtures.js` solo contiene el token falso, IDs UUID inventados, coordenadas centinela y un PNG de 1x1. `investigador1` aparece como valor del campo `investigador`, e `investigador2` ni siquiera existe en el realm.
+- **Usuarios del realm en la guía manual del README:** `cientifico1`, `investigador1`, `auditor1`, `analista1`, `admin1` y `sinrol1` ya eran públicos en `infra/keycloak/realm-biohub.json` y en el `README.md` de la raíz. La contraseña se remite a `KEYCLOAK_TEST_USERS_PASSWORD` del `.env` de cada uno: placeholder `${...}` en el realm y `.env` no versionado. Correcto.
+- **Aislamiento de red:** el fixture `red` aborta cualquier petición que no vaya a `localhost` o `127.0.0.1` (`fixtures.js:213`). Las pruebas nunca salen a internet ni contactan con OSM.
+- **Artefactos:**
+  - En CI, `trace: 'retain-on-failure'` y el reporter `html` meten las trazas de los fallos en `playwright-report/data`. Ese es el artefacto que se sube (`ci.yml:77-84`), y solo si algo falla.
+  - Una traza guarda las cabeceras de las peticiones (`Authorization: Bearer token-simulado-e2e`), el DOM y capturas con las coordenadas centinela. **Todo es sintético**, así que hoy no se filtra nada.
+  - El job no usa secretos, y Vite solo recibe `VITE_API_URL=http://localhost:8080`.
+  - Retención de 7 días y `if-no-files-found: ignore`.
+  - Ver SEC-J-I30 para el caso futuro de una E2E con Keycloak real.
+- **`.gitignore`** de web-interna: excluye `test-results/`, `playwright-report/` y `blob-report/`. `dist/` ya estaba en el `.gitignore` de la raíz.
+
+## 5. Dependencias
+
+- `npm audit` (todas): **0**. `npm audit --omit=dev`: **0**.
+- **Lockfile:** solo **añade** 3 entradas: `@playwright/test`, `playwright` y `playwright-core`, las tres en 1.64.1, `dev: true`, `engines.node >=20` y `resolved` en `registry.npmjs.org`. No cambia ninguna otra versión: el diff no tiene ninguna línea `-"version"`.
+- **Integridades:** coinciden con las que publica el registro (`npm view ... dist.integrity`) para los tres paquetes.
+- **Procedencia:** `@playwright/test`, del repositorio `github.com/microsoft/playwright`, mantenido por cuentas de Microsoft.
+- **Superficie de instalación:** `playwright-core` no tiene dependencias, y ninguno de los tres declara scripts `postinstall`.
+- **Versión:** 1.64.1 se publicó el 2026-10-14. La última es 1.65.1, del 2026-11-13. Es **adecuada**:
+  - fijada exacta (sin `^`), como en `web-publica/package.json:20`, lo que permite compartir la caché de navegadores en CI;
+  - sin avisos conocidos;
+  - posterior a la corrección de la verificación de descargas de navegadores (CVE-2025-59288, corregida en 1.55.1).
+  - Conviene subir **las dos webs a la vez** en una iteración posterior. No es un hallazgo.
+
+## 6. CI (21b)
+
+- `permissions: contents: read` se mantiene a nivel de workflow (`ci.yml:8-9`), y el job nuevo no lo amplía. **No usa secretos.**
+- **Disparadores:** `push` y `pull_request`, sin `pull_request_target` ni `workflow_run`. Una PR desde un fork se ejecuta con un token de solo lectura y sin secretos, así que no hay código no confiable con privilegios.
+- **Acciones:** `actions/checkout@v5`, `actions/setup-node@v5` y `actions/upload-artifact@v6`, en las mismas versiones mayores que el resto del workflow. Fijarlas a un SHA sería más estricto, pero es una decisión de todo el workflow, no de este cambio.
+- **Descarga de navegadores:**
+  - `npx playwright install --with-deps` usa el binario local 1.64.1 instalado por `npm ci` con el lockfile, no uno descargado al momento.
+  - Los navegadores vienen de la CDN oficial de Playwright.
+  - `--with-deps` usa `apt-get` con `sudo` en un runner efímero de GitHub.
+  - Es igual que el job `frontend`, que ya existía. No añade riesgo.
+- **Matriz de backend:**
+  - `TZ` y `-DargLine=-Duser.timezone=${{ matrix.tz }}` (`ci.yml:122`) se interpolan desde valores **literales** de `matrix.include`. No hay entrada controlada por un atacante, como títulos de PR o nombres de rama, así que no hay inyección de expresiones.
+  - Las comillas protegen `America/Bogota`.
+  - Nadie define `argLine` en los pom, como dice `09` §10, así que no se pisa ninguna configuración de seguridad de Surefire.
+- **Nombres de artefactos:** `playwright-report-web-interna`, `surefire-<servicio>-utc` y `surefire-<servicio>-bogota`. Son literales, sin ramas, usuarios ni datos.
+- Ver SEC-J-I29 (pasos de E2E condicionales) y SEC-J-I31 (endurecimiento opcional).
+
+## 7. `MapaHallazgos.jsx`
+
+- **`keydown` en los marcadores (`MapaHallazgos.jsx:85-92`):** llama al **mismo** `onSeleccionar(p.id, elemento)` que el `click`. No añade ningún dato nuevo a la página: el detalle y la regla de roles siguen en `PaginaMapa`, que ni siquiera pide `/mapa` sin `cientifico_alto_rango` (lo cubren WI-06 en E2E y las pruebas unitarias). `preventDefault` solo actúa con Enter o Espacio. El `title` del marcador sigue sin coordenadas. La prueba nueva (`PaginaMapa.test.jsx`) comprueba que otra tecla no abre el detalle.
+- **`CerrarZoomAlQuitar` (`MapaHallazgos.jsx:33-38`):**
+  - solo pone `_animatingZoom = false` al desmontar, así que el temporizador de 250 ms de Leaflet (`leaflet-src.js:4827`) sale en `_onZoomTransitionEnd` (`:4831`) sin tocar el mapa ya quitado;
+  - no cambia la carga de teselas, que se abortan igual en `onRemove` de la capa (20c), ni el umbral de D57;
+  - no expone coordenadas.
+  - Sin impacto en seguridad ni en privacidad. Su único efecto es de mantenimiento (SEC-J-I32).
+
+## Hallazgos nuevos (Informativos)
+
+- **SEC-J-I29 (los pasos de E2E condicionales permiten que una PR desactive en silencio las pruebas de seguridad):** `ci.yml:72, 75, 78` ejecutan las E2E solo si existe `web-interna/playwright.config.js`. Eso tenía sentido mientras no existían, pero una vez estén en el repo, una PR que borre o renombre el archivo dejaría la CI en verde sin ejecutar WI-15 (ninguna petición a OSM, SEC-J-04) ni WI-10 (coordenadas fuera del DOM). **Corrección:** en el mismo commit que añade `playwright.config.js`, quitar los tres `if: hashFiles(...)` y dejar solo `if: failure()` en la subida del informe, como en el job `frontend`. Así, quitar el archivo rompe la CI en vez de saltarse las pruebas. **Esfuerzo:** XS. **Responsable sugerido:** Juanita (21b).
+- **SEC-J-I30 (las trazas y el informe de Playwright guardan cabeceras, DOM y capturas):** hoy no se filtra nada porque todo es sintético. Pero si alguna E2E futura usa Keycloak real (por ejemplo, con `CI_USUARIOS_PRUEBA_PASSWORD` del job `bruno`) o un gateway con datos reales, la traza guardaría la contraseña tecleada, el JWT real en `Authorization` y coordenadas exactas en capturas y DOM, dentro de un artefacto que cualquier usuario con acceso de lectura al repo puede descargar. **Corrección:** dejarlo como regla en `playwright.config.js`. Por ejemplo:
+  ```js
+  // Las trazas guardan cabeceras (Authorization), DOM y capturas. Solo con datos sintéticos y el modo simulado.
+  // Un proyecto con Keycloak real o datos reales debe usar trace: 'off', screenshot: 'off' y no subir artefactos.
+  use: { baseURL: `http://localhost:${PUERTO}`, locale: 'es-CO', trace: 'retain-on-failure' },
+  ```
+  **Esfuerzo:** XS. **Responsable sugerido:** Juanita.
+- **SEC-J-I31 (endurecimiento opcional del job `web-interna`):**
+  - (a) `actions/checkout@v5` deja el `GITHUB_TOKEN` (de solo lectura) en `.git/config` mientras se ejecutan `npm ci` y las dependencias de desarrollo. `with: { persist-credentials: false }` lo evita, porque el job no necesita hacer push.
+  - (b) La CI solo audita producción (`--omit=dev`), y Playwright no entra en esa auditoría. Un paso adicional `npm audit --audit-level=critical`, sin `--omit=dev`, detectaría una dependencia de desarrollo comprometida que se ejecuta en el runner.
+  - Las dos cosas también aplican a `frontend` y no son una regresión de 21b.
+  - **Esfuerzo:** XS. **Responsable sugerido:** quien mantenga la CI (Juanita o Tech Lead).
+- **SEC-J-I32 (segundo interno de Leaflet con rango `^`):** `CerrarZoomAlQuitar` depende de `_animatingZoom`, igual que `CapaTeselasGateway` depende de `_tiles` y `_tileZoom`. `package.json:17` sigue con `"leaflet": "^1.9.4"`, así que SEC-J-I27 sigue abierto. Una 1.x futura que renombre el campo volvería a lanzar el error al desmontar, pero no afectaría a la privacidad. **Corrección:** la misma de SEC-J-I27: fijar `"leaflet": "1.9.4"`, o una prueba con `expect(L.version).toBe('1.9.4')`. **Esfuerzo:** XS. **Responsable sugerido:** Juanita, coordinando con Santiago porque `package.json` es suyo (D58).
+- **SEC-J-I33 (dejar por escrito que web-interna solo se despliega desde `dist/`):** hoy no hay ningún despliegue que sirva `vite`, pero `09-despliegue.md` no lo prohíbe de forma explícita. **Corrección:** añadir a `09` una línea como esta: "*web-interna y web-publica se despliegan solo como estáticos de `npm run build` (`dist/`). Nunca `vite`/`npm run dev`/`vite preview` en un servidor accesible, ni `vite --host` en redes compartidas: el servidor de desarrollo expone `src/` y el arnés de D58.*" El modo simulado no daría acceso a nada (§2), pero el servidor de desarrollo sirve el código fuente y no tiene las cabeceras de seguridad que se esperan en producción (SEC-J-07). **Esfuerzo:** XS. **Responsable sugerido:** Santiago o Tech Lead.
+
+## Bien hecho (esta iteración)
+- **Defensa en profundidad real, y verificada:** el arnés no es una entrada del build; `DEV` se comprueba antes del `import()` dinámico y dentro de `crearSesionSimulada`; y un build forzado no contiene ni la sesión simulada ni Keycloak. Lo que dice el README coincide con lo que obtuve.
+- **El modo simulado está aislado del real:** carga dinámica separada, no carga keycloak-js, el token no tiene forma de JWT, y los roles pasan por la misma lista blanca de 5. No hay forma de mezclar un token real con roles de la URL.
+- **`keycloak.js` no se modifica** (D17). El modo real conserva PKCE S256 y el token solo en memoria, y no necesita cambios en el realm.
+- **E2E pensadas para seguridad:** bloquean cualquier petición fuera de localhost; comprueban `Bearer` en cada petición al gateway, 0 peticiones a OSM y `no-store` desde z9 con un espía de `fetch` (honesto sobre el límite de que Playwright desactiva la caché); y buscan coordenadas centinela en URL, título, `localStorage`, `sessionStorage`, cookies y consola (WI-10).
+- **Sin secretos en specs, fixtures ni guía.** La guía manual remite al `.env` local y solo nombra usuarios que ya eran públicos.
+- **Dependencia mínima y bien fijada:** versión exacta, solo de desarrollo, solo 3 paquetes en el lockfile, la misma versión que web-publica y 0 vulnerabilidades.
+- **CI sin regresiones de seguridad:** se mantiene `contents: read`, sin secretos, sin `pull_request_target`, con acciones en versiones mayores fijas y artefactos de 7 días con nombres literales.
+- **`MapaHallazgos.jsx`:** el teclado reutiliza exactamente el camino del `click` y tiene prueba propia.
+
+## Veredicto (iteración 21, 21d)
+**APROBADO CON OBSERVACIONES.** No hay Críticos, Altos, Medios ni Bajos.
+- **El arnés es seguro tal como está** y puede entrar en el commit.
+- **SEC-J-I29** (XS): conviene aplicarlo en el mismo commit que añade `playwright.config.js`, para que las E2E de seguridad no se puedan desactivar en silencio.
+- **SEC-J-I30 a SEC-J-I33** (XS): no bloquean.
+- **Estados anteriores:** sin cambios. SEC-J-04 sigue pendiente solo de la prueba manual en navegador, que la guía nueva del README (pasos 5 y 6) ya describe. SEC-J-25, SEC-J-I25 (primera parte), SEC-J-I27 y SEC-J-07 siguen abiertos.

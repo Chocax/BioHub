@@ -239,6 +239,7 @@ Pendiente de sus dueños (Nicolás: equipos y reportes; Santiago: gateway): crea
 - El tráfico a Aiven va cifrado y verificado, pero depende de la lista de IP permitidas y de la contraseña del usuario.
 - Con dos servicios de Aiven en cuentas distintas, cada integrante necesita el CA de cada servicio que use en su truststore (4.5).
 - No hay despliegue de las webs (Vercel) en esta iteración.
+- Cuando se desplieguen, las webs se sirven **solo desde `dist/`** (`npm run build`). Nunca con `vite dev`, `vite preview` ni `--host` en redes compartidas: el servidor de desarrollo expone el arnés de `web-interna/src/ubicacion/dev/` y su modo simulado (D58, SEC-J-I33).
 
 ## 10. CI (GitHub Actions) y pruebas de API con Bruno
 
@@ -246,9 +247,12 @@ Workflow: `.github/workflows/ci.yml`, en cada `push` y `pull_request` (permisos 
 
 | Job | Qué hace | Falla si |
 |---|---|---|
-| `frontend` | `web-publica`: Node 22, `npm ci`, `npm run build`, `npm test` (vitest), `npm audit --omit=dev --audit-level=high` | build, tests o auditoría fallan |
-| `backend` (matriz) | `mvn -B -pl <servicio> -am verify` para `servicio-cientifico` y `servicio-consulta-publica`, Java 21 Temurin, caché Maven. Los tests usan Testcontainers: `ubuntu-latest` ya trae Docker. Para sumar servicios, añadirlos a la matriz (hay un comentario en el archivo) | compilación o tests fallan |
+| `frontend` | `web-publica`: Node 22, `npm ci`, `npm run build`, `npm test` (vitest), `npm audit --omit=dev --audit-level=high`, y E2E Playwright (Chromium, Firefox, WebKit) | build, tests, auditoría o E2E fallan |
+| `web-interna` ("web-interna (build y tests)") | Igual que `frontend` sobre `web-interna`: Node 22, `npm ci`, `npm run build`, `npm test` (vitest), `npm audit --omit=dev --audit-level=high`. Los pasos de E2E (`npx playwright install --with-deps chromium firefox webkit` y `npm run test:e2e`) son **condicionales**: solo corren si existe `web-interna/playwright.config.js` (`if: hashFiles(...) != ''`), así la CI sirve antes y después de que lleguen las E2E. Las E2E no usan backend ni Keycloak: levantan `vite` y simulan la API con `page.route`. Si fallan, sube el artefacto `playwright-report-web-interna` | build, tests, auditoría o E2E fallan |
+| `backend` (matriz de 5 entradas) | `mvn -B -pl <servicio> -am verify` con Java 21 Temurin y caché Maven. Entradas: `servicio-cientifico`, `servicio-consulta-publica` y `api-gateway` en **UTC** (zona de los runners), más `servicio-cientifico` y `servicio-consulta-publica` en **America/Bogota**. Los nombres de los jobs llevan la zona: `backend (servicio-cientifico, UTC)`, `backend (servicio-cientifico, America/Bogota)`, etc. Los tests usan Testcontainers: `ubuntu-latest` ya trae Docker. Para sumar servicios, añadir una entrada a `matrix.include` (hay un comentario en el archivo) | compilación o tests fallan |
 | `bruno` | MySQL 8.4, RabbitMQ 4.1 y Redis 7.4 como service containers; Keycloak 26.8.1 con `docker run` e importando `infra/keycloak/realm-biohub.json`; crea las bases con `infra/ci/init-mysql.sql`; arranca los jars con el perfil `local` (Flyway migra); siembra hallazgos con `infra/ci/SembrarHallazgos.java`; espera los healthchecks de actuator; ejecuta `@usebruno/cli@4.3.0 run --env ci` | cualquier test de la colección falla |
+
+**Zona horaria en el backend.** `ValidadorDatosHallazgoTest` fallaba entre las 00:00 y las 05:00 UTC porque mezclaba la zona del servidor con la de Bogotá (ver `00-plan.md`, iteración 17). Las entradas `America/Bogota` de la matriz lo cubren: cada job define `TZ: ${{ matrix.tz }}` y el comando Maven pasa `-DargLine=-Duser.timezone=<tz>`. Se eligió `argLine` y no `MAVEN_OPTS` porque las pruebas corren en una JVM hija de Surefire/Failsafe: `MAVEN_OPTS` solo afecta a la JVM de Maven. `TZ` ya lo hereda la JVM hija en Linux; `-Duser.timezone` lo deja explícito y no requiere tocar ningún `pom.xml` (ninguno define `argLine`; si alguno la define algún día, hay que concatenar `@{argLine}`/`${argLine}`). `api-gateway` queda solo en UTC: no maneja fechas locales. Comprobación local: `TZ=America/Bogota mvn -B -ntp -q -pl servicio-consulta-publica -am test -Dtest=ValidadorDatosHallazgoTest -Dsurefire.failIfNoSpecifiedTests=false` (el XML de Surefire muestra `user.timezone=America/Bogota`). Los artefactos de informes fallidos se llaman `surefire-<servicio>-utc` y `surefire-<servicio>-bogota`.
 
 El job `bruno` sube el artefacto `bruno-resultados` (JUnit XML, informe HTML sin cuerpos ni cabeceras, y los logs de los dos servicios).
 

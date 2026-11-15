@@ -23,6 +23,30 @@ const ICONOS = Object.fromEntries(
   ]),
 );
 
+/**
+ * Leaflet 1.9 no cancela, al quitar el mapa, el temporizador de 250 ms que cierra una animación de zoom:
+ * si el mapa se desmonta a mitad de un zoom animado (p. ej. pasar a "Lista" mientras se ajusta la vista),
+ * ese temporizador corre sobre un mapa ya quitado y lanza "Cannot read properties of undefined
+ * (reading '_leaflet_pos')". Al desmontar se da la animación por terminada (`_animatingZoom` es interno de
+ * Leaflet 1.9, como `_tiles` en CapaTeselasGateway), y `_onZoomTransitionEnd` sale sin hacer nada.
+ */
+function CerrarZoomAlQuitar() {
+  const mapa = useMap();
+  useEffect(() => () => {
+    mapa._animatingZoom = false;
+  }, [mapa]);
+  return null;
+}
+
+/**
+ * Leaflet hace enfocable el marcador (`keyboard: true`, tabindex 0 y role="button"), pero Enter sobre él
+ * dispara `keydown`/`keypress` y no `click`. El diseño pide que Enter abra el detalle (02 §Teclado);
+ * también se acepta Espacio, como en cualquier botón.
+ */
+export function esTeclaDeActivacion(evento) {
+  return evento?.key === 'Enter' || evento?.key === ' ' || evento?.key === 'Spacebar';
+}
+
 function AjustarVista({ puntos }) {
   const mapa = useMap();
   useEffect(() => {
@@ -49,6 +73,7 @@ export default function MapaHallazgos({ cliente, puntos, seleccionadoId, onSelec
       <MapContainer center={CENTRO_COLOMBIA} zoom={ZOOM_INICIAL} maxZoom={ZOOM_MAXIMO} minZoom={3} scrollWheelZoom keyboard style={{ height: '100%', width: '100%' }}>
         <TeselasGateway cliente={cliente} attribution={ATRIBUCION} maxZoom={ZOOM_MAXIMO} alErrorTesela={alErrorTesela} alSesionVencida={alSesionVencida} />
         <AjustarVista puntos={puntos} />
+        <CerrarZoomAlQuitar />
         {puntos.map((p) => (
           <Marker
             key={p.id}
@@ -57,7 +82,14 @@ export default function MapaHallazgos({ cliente, puntos, seleccionadoId, onSelec
             keyboard
             title={`${p.nombreCientifico} (${etiquetaEstado(p.estadoConservacion)})`}
             zIndexOffset={p.id === seleccionadoId ? 1000 : 0}
-            eventHandlers={{ click: (e) => onSeleccionar(p.id, e.target.getElement?.()) }}
+            eventHandlers={{
+              click: (e) => onSeleccionar(p.id, e.target.getElement?.()),
+              keydown: (e) => {
+                if (!esTeclaDeActivacion(e.originalEvent)) return;
+                e.originalEvent.preventDefault(); // Espacio no desplaza la página
+                onSeleccionar(p.id, e.target.getElement?.());
+              },
+            }}
           />
         ))}
       </MapContainer>
