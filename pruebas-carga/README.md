@@ -11,12 +11,13 @@ un despliegue). Miden la consulta pública (ASR1/RNF1, pico x60) y su comportami
 |---|---|
 | `construir-imagen.sh` | Construye `biohub/servicio-consulta-publica:carga` a partir del jar ya compilado (`mvn -DskipTests package` en `servicio-consulta-publica/`). No toca el Dockerfile ni `target/`. |
 | `compose-carga.yml` | Compose **efímero**: N réplicas de `servicio-consulta-publica` (con límite de CPU y memoria) detrás de NGINX (`nginx-carga.conf`, puerto `127.0.0.1:18080`). Reutiliza `mysql-lectura`, `redis` y `rabbitmq` del compose raíz (red `biohub_default`), que deben estar arriba. |
-| `datos/sembrar.sh` + `semilla-fichas.sql` | Siembra 2.000 fichas sintéticas en `mysql-lectura` (UUID `c0a9a000-0000-4000-8000-<12 hex>`, sin coordenadas). Idempotente. |
+| `datos/sembrar.sh` + `semilla-fichas.sql` | Siembra fichas sintéticas en `mysql-lectura` (UUID `c0a9a000-0000-4000-8000-<12 hex>`, sin coordenadas, 20 % `EN_PELIGRO`; 20 géneros/17 familias, 30 epítetos y 33 departamentos). **2.000 por defecto**; `FICHAS=10000 ./datos/sembrar.sh` cambia el volumen (1 a 99999). Idempotente. |
 | `datos/limpiar.sh` | Borra lo que dejó la carga: fichas con prefijo `c0a9a000`, claves de caché `biohub:publica:*` en Redis y, en RabbitMQ, el exchange temporal `biohub.eventos.carga` y la cola de carga con su DLQ. No toca la cola ni la DLQ de desarrollo. |
 | `correr-k6.sh` | Ejecuta un script k6 con la imagen `grafana/k6` (versión fija en `K6_VERSION`) y deja el JSON en `resultados/`. |
 | `k6/consulta-publica-pico.js` | **ASR1/RNF1.** Perfil de tasa constante: base N req/s, rampa, pico N x `MULT` (60 por defecto), bajada y post-pico. Mide % de 200, 5xx/timeouts, p95 por fase y por ventana de 15 s, y la estabilización tras la rampa. Mezcla 60 % fichas (85 % "virales", caché caliente) y 40 % búsquedas. |
 | `k6/carga-cientifica-simultanea.js` | **ASR4/RNF5 (CG-04).** Mide la lectura pública con y sin carga científica (`CIENTIFICA=0|1`). La carga son eventos `hallazgo.registrado`/`hallazgo.reclasificado` publicados a RabbitMQ y consumidos por consulta-publica (SELECT ... FOR UPDATE + INSERT/UPDATE e invalidación de caché). Al final comprueba que la **DLQ de carga esté vacía** (umbral `dlq_mensajes`) y reporta eventos publicados, procesados (ack) y pendientes. |
 | `k6/gateway-limite-api-externa.js` | **ASR8/RNF11, HU-08 c.2, HU-12 c.2.** Va contra el **api-gateway**, no contra NGINX. Un consumidor abusivo (A) recibe 429 con `Retry-After` y como máximo 60 respuestas 200 por minuto. Mientras tanto, otros dos consumidores (uno con límite configurado) y el portal siguen en 200 sin perder latencia. Además, una key revocada a mitad de la prueba recibe 401 desde la petición siguiente. Ver la sección siguiente. |
+| `k6/busqueda-publica-fria.js` + `correr-hu06-frio.sh` + `resumir-hu06.sh` + `datos/vaciar-cache.sh` | **HU-06 c.3 / CG-02 (RNF5).** Búsqueda del portal con 10.000 fichas y la caché vacía: fase A (100 búsquedas distintas, 1 VU) y fase B (100 distintas, 10 VUs); el script vacía `biohub:publica:*` antes de cada fase y `resumir-hu06.sh` calcula la mediana de las corridas. Ver la sección "HU-06 c.3 / CG-02". |
 | `k6/registro-hallazgo.js` | **Pendiente** (depende de HU-01, módulo registro). Esqueleto para RNF2/RNF4. |
 | `k6/lib/comun.js` | Utilidades compartidas (mezcla de peticiones, ids de la semilla, ventanas). |
 | `resultados/` | JSON de cada corrida. Los que empiezan por `descartado-` documentan fallos del banco de pruebas y **no cuentan como evidencia** (D42). |
@@ -55,6 +56,48 @@ Parámetros de `consulta-publica-pico.js`: `BASE_URL` (por defecto `http://127.0
 `T_PICO`, `T_BAJA`, `T_POST`, `MAX_VUS`, `POOL`, `SALIDA`. De `carga-cientifica-simultanea.js`: `R` (req/s públicas),
 `EV` (eventos/s), `DUR`, `CIENTIFICA`, `COLA`, `RMQ_URL`, `SALIDA`. Variables del compose: `CARGA_CPUS` (CPU por réplica,
 2 por defecto) y `COLA_CARGA` (cola de carga, `consulta-publica.carga.eventos`).
+
+### HU-06 c.3 / CG-02: búsqueda en frío con 10.000 fichas
+
+Mide el criterio 3 de HU-06.4 (RNF5): con 10.000 fichas en `mysql-lectura` y la caché vacía, el p95 de la búsqueda pública es
+<= 2 s. Va **directo al servicio por NGINX** (no por el gateway: con su límite de 120/min por IP mediría el limitador, riesgo RQ-6).
+
+```bash
+# 1. Jar, imagen y compose de carga con UNA réplica (CARGA_CPUS = CPU por réplica, 2 por defecto; mem_limit 1g)
+(cd ../servicio-consulta-publica && mvn -DskipTests package) && ./construir-imagen.sh
+CARGA_CPUS=2 docker compose -p biohub-carga -f compose-carga.yml --env-file ../.env up -d --scale consulta-publica=1
+# 2. 10.000 fichas (comprueba el conteo con SQL; correr-hu06-frio.sh también lo exige)
+FICHAS=10000 ./datos/sembrar.sh
+# 3. Una corrida = calentamiento + [vaciar caché, fase A] + [vaciar caché, fase B]. RUN es también la semilla de las búsquedas
+for r in 1 2 3; do RUN=$r ./correr-hu06-frio.sh; done
+./resumir-hu06.sh            # tabla y resultados/hu06-resumen-medianas.json (mediana de las 3)
+# 4. Apagar y limpiar (en este orden, como arriba)
+docker compose -p biohub-carga -f compose-carga.yml --env-file ../.env down -v
+./datos/limpiar.sh
+```
+
+- **Caché fría:** `datos/vaciar-cache.sh` hace `SCAN` + `DEL` solo de `biohub:publica:*` (nunca `FLUSHALL`: el Redis es el del compose raíz,
+  compartido con el desarrollo) y falla si quedan claves. La clave de caché incluye q, familia, departamento, page y size, así que
+  100 búsquedas distintas son 100 fallos de caché; el propio script lo comprueba: al vaciar antes de la fase siguiente hay exactamente
+  100 claves (una por búsqueda). Antes de la fase A se hacen 24 peticiones de calentamiento con `size` 7/11/13 (ninguna coincide con las
+  medidas) y se vacía la caché; `WARMUP=0` lo omite.
+- **Las 200 búsquedas** (100 por fase, sin repetirse entre fases ni dentro de ellas) las genera `busqueda-publica-fria.js` con la `SEED`
+  (= `RUN`), por cuotas por fase: q por género (10), epíteto (12), género+epíteto (12), prefijo (8), nombre común (6), familia (8),
+  departamento por código o nombre (8), q+familia (8), q+departamento (8), familia+departamento (6), páginas profundas hasta el tope de
+  10.000 (8), prefijos del número de ficha (4) y q de 2 letras (`LIKE`, 2). El JSON lista cada búsqueda con su latencia, su `total` y los
+  elementos devueltos.
+- **Umbrales** (por fase; `umbrales_cumplidos` en el JSON y código de salida 99 de k6 si no): p95 <= 2000 ms, 0 respuestas 5xx o sin
+  respuesta, 100 % de 200, 100 iteraciones, **ninguna búsqueda vacía** (`total` > 0 y página con elementos) y ninguna respuesta con
+  `modoDegradado: true` (no mediría la búsqueda completa).
+- **D42:** `parametros` registra fase, VUs, semilla, fichas sembradas, réplicas y CPU/memoria **leídas del contenedor en marcha**, commit
+  (`-sin-commit` si el árbol tiene cambios sin commitear), red de k6 (`biohub_default`) y fecha. Los JSON son
+  `resultados/hu06-corrida<N>-fase-{a,b}.json` y la mediana `hu06-resumen-medianas.json`. Los `hu06-informativo-*` y
+  `hu06-control-*` son controles (JVM recién reiniciada y sin calentamiento; las mismas búsquedas con la caché caliente) y **no entran**
+  en la mediana. Si una corrida falla por el banco de pruebas, renómbrala a `descartado-...` y explica el motivo aquí.
+- **Alcance:** mide `servicio-consulta-publica` + NGINX + `mysql-lectura` + Redis locales, en una misma máquina compartida con k6 (que va en
+  la red de Docker). MySQL y Redis son los del compose raíz (sin límites de CPU/memoria). No incluye el gateway ni la red de un despliegue.
+  Los límites de la réplica (2 CPU y 1 GiB) son los de `compose-carga.yml` (ARQ-24): ningún compose de despliegue del repositorio declara
+  `cpus`/`mem_limit` (el de `deploy/backend/` se retiró con IT-01).
 
 ### ASR8: límite por consumidor en el gateway
 
