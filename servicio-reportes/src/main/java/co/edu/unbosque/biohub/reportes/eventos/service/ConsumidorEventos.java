@@ -8,11 +8,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import co.edu.unbosque.biohub.reportes.eventos.domain.EventoSobre;
+import co.edu.unbosque.biohub.reportes.service.ProyectorHallazgosService;
 
 /**
  * Consume la cola de eventos de este servicio. Valida el sobre; si es inválido lo rechaza sin reencolar
@@ -23,22 +25,38 @@ public class ConsumidorEventos {
 
     private static final Logger log = LoggerFactory.getLogger(ConsumidorEventos.class);
 
-    /** Tipos conocidos. Los eventos reales (hallazgo.*) se agregan aquí al implementarlos. */
-    static final Set<String> TIPOS_CONOCIDOS = Set.of("prueba.ping", "hallazgo.registrado");
+    static final Set<String> TIPOS_CONOCIDOS = Set.of(
+        "prueba.ping",
+        "hallazgo.registrado",
+        "hallazgo.reclasificado",
+        "hallazgo.actualizado"
+    );
     static final int TAMANO_MAXIMO_BYTES = 64 * 1024;
     static final int MENSAJE_PRUEBA_MAX = 200;
 
     private final ObjectMapper objectMapper;
     private final AlmacenEventosRecibidos almacen;
+    private final ProyectorHallazgosService proyector;
 
     public ConsumidorEventos(ObjectMapper objectMapper, AlmacenEventosRecibidos almacen) {
+        this(objectMapper, almacen, null);
+    }
+
+    @Autowired
+    public ConsumidorEventos(ObjectMapper objectMapper,
+                             AlmacenEventosRecibidos almacen,
+                             ProyectorHallazgosService proyector) {
         this.objectMapper = objectMapper;
         this.almacen = almacen;
+        this.proyector = proyector;
     }
 
     @RabbitListener(queues = "${biohub.eventos.cola}")
     public void recibir(Message mensaje) {
         EventoSobre evento = interpretar(mensaje);
+        if (evento.tipo().startsWith("hallazgo.") && proyector != null) {
+            proyector.proyectar(evento);
+        }
         almacen.agregar(evento);
         log.info("Evento recibido id={} tipo={} origen={}", evento.id(), evento.tipo(), evento.origen());
     }
@@ -55,7 +73,7 @@ public class ConsumidorEventos {
             throw new EventoInvalidoException("Evento con JSON inválido", e);
         }
         if (evento == null || evento.id() == null || evento.fecha() == null
-                || esVacio(evento.tipo()) || esVacio(evento.origen())) {
+            || esVacio(evento.tipo()) || esVacio(evento.origen())) {
             throw new EventoInvalidoException("Evento con sobre incompleto");
         }
         if (!TIPOS_CONOCIDOS.contains(evento.tipo())) {
@@ -69,8 +87,8 @@ public class ConsumidorEventos {
             validarPrueba(evento);
         }
         return evento.datos() == null
-                ? new EventoSobre(evento.id(), evento.tipo(), evento.origen(), evento.fecha(), evento.usuario(), Map.of())
-                : evento;
+            ? new EventoSobre(evento.id(), evento.tipo(), evento.origen(), evento.fecha(), evento.usuario(), Map.of())
+            : evento;
     }
 
     private static void validarPrueba(EventoSobre evento) {
