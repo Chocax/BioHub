@@ -97,6 +97,21 @@ biohub:
       # ARQ-20: tras estos fallos de conexión seguidos, el servicio recibe 503 inmediato durante tiempo-abierto.
       fallos-para-abrir: ${GATEWAY_CIRCUITO_FALLOS:5}
       tiempo-abierto: ${GATEWAY_CIRCUITO_TIEMPO_ABIERTO:10s}
+    teselas:
+      # SEC-J-04: el mapa de web-interna pide las teselas al gateway y el gateway a OSM. OSM solo ve al gateway.
+      url-origen: ${GATEWAY_TESELAS_URL:https://tile.openstreetmap.org/{z}/{x}/{y}.png}
+      # La política de uso de OSM exige un User-Agent que identifique a la aplicación (sin datos personales).
+      agente-usuario: ${GATEWAY_TESELAS_AGENTE:BioHub-api-gateway/0.1 (+https://github.com/JuaniMP/BioHub)}
+      # Igual a ZOOM_MAXIMO de web-interna/src/ubicacion/componentes/MapaHallazgos.jsx.
+      zoom-maximo: 12
+      por-usuario: ${GATEWAY_TESELAS_POR_USUARIO:600}
+      cache-maximo: ${GATEWAY_TESELAS_CACHE:64MB}
+      vida-cache: 7d
+      vida-navegador: 1d
+      descargas-simultaneas: 2
+      tamano-maximo: 512KB
+      timeout-conexion: 3s
+      timeout-lectura: 10s
     identidad:
       # Cuenta de servicio del gateway ante Keycloak (HU-10). Sin secreto, /api/gateway/usuarios responde 503.
       keycloak-url: ${KEYCLOAK_ADMIN_URL:http://localhost:${KEYCLOAK_PORT:8180}}
@@ -105,3 +120,8 @@ biohub:
       client-secret: ${KEYCLOAK_GATEWAY_CLIENT_SECRET:}
       # Igual a accessTokenLifespan del realm: cuánto hay que recordar que un usuario cambió de rol.
       vida-token: 5m
+
+logging:
+  level:
+    # Caffeine avisa con traza completa cada descarga de tesela fallida; el gateway ya lo registra en una línea.
+    com.github.benmanes.caffeine.cache.LocalAsyncCache: ERROR
