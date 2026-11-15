@@ -340,7 +340,7 @@ Despliegue de bases, Redis y RabbitMQ en VMs locales con una VPN de malla, y su 
 |---|---|---|---|---|
 | 22a | HU-06 c.3 / CG-02: siembra parametrizable a 10.000, `k6/busqueda-publica-fria.js`, 3 corridas | qa-tester | sonnet/**high** | Hecho: **CUMPLE**. p95 en caché fría con 10.000 fichas: fase A 14,2 ms y fase B (10 VUs) 58,6 ms (medianas de 3 corridas; umbral 2.000 ms); 0 errores; FULLTEXT e índices en uso. 1 réplica con 2 CPU y 1 GiB, local y sin gateway (RQ-6) |
 | 22b | HU-13 c.3 / CG-08: `BusquedaInterna10kRendimientoTest` (10.000 hallazgos cifrados, descifrados ≤ size, EXPLAIN), 3 corridas | qa-tester | sonnet/**high** | Hecho: **CUMPLE**. p95 ≤ 28,2 ms en los 6 casos (el Tech Lead lo repitió: ≤ 29,5 ms); descifrados = size; investigador sin coordenadas. DB-J22-1 (Baja): plan degradado por estadísticas del catálogo sin `ANALYZE` |
-| 22c | Consolidar resultados, trazabilidad, commit y PR | Tech Lead | opus/medium | Hecho: `07` §22, `trazabilidad.md` (HU-06 y HU-13 → Cumple) |
+| 22c | Consolidar resultados, trazabilidad, commit y PR | Tech Lead | opus/medium | Hecho: `07` §22, `trazabilidad.md` (HU-06 y HU-13 → Cumple); CI 8/8; PR #12 mezclado en `develop` (0698756, sin squash) |
 
 **Cambios de modelo:** qa-tester sonnet/**high** (matriz equilibrado: medium) en 22a y 22b, porque el método de medición tiene que ser riguroso para que cuente como evidencia (D42). Si no se cumple un umbral, la causa la analiza el dba antes de tocar índices.
 
