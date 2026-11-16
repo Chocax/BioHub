@@ -33,7 +33,7 @@ public class GatewayCustodioAdapter implements ValidadorCustodioPort {
             if (dto == null) {
                 throw new CustodioInvalidoException("No se pudo verificar el custodio en Keycloak.");
             }
-            return new CustodioValidado(dto.id(), dto.usuario(), dto.activo());
+            return new CustodioValidado(dto.id(), dto.usuario(), dto.activo(), dto.roles());
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
                 throw new CustodioInvalidoException("El custodio especificado no existe.");
