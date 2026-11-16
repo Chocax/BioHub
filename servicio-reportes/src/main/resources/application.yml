@@ -66,6 +66,12 @@ management:
         enabled: true
 
 biohub:
+  reportes:
+    # HU-09 / SD-08: cola interna de solicitudes de reporte (solo este servicio publica y consume).
+    exchange: biohub.reportes
+    cola-solicitudes: reportes.solicitudes
+    # Reporte mensual automático del mes anterior (cron de Spring, hora de Bogotá).
+    programacion: ${REPORTES_PROGRAMACION:0 0 3 1 * *}
   eventos:
     exchange: biohub.eventos
     dlx: biohub.eventos.dlx

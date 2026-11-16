@@ -44,7 +44,9 @@ crear "$RABBITMQ_CONSULTA_USER" "$RABBITMQ_CONSULTA_PASSWORD" \
   '^(biohub\\.eventos\\.dlx|consulta-publica\\.eventos(\\.dlq)?)$' \
   '^(biohub\\.eventos|biohub\\.eventos\\.dlx|consulta-publica\\.eventos(\\.dlq)?)$'
 
+# Reportes además publica sus propias solicitudes de reporte (HU-09, SD-08) en biohub.reportes y las consume de
+# reportes.solicitudes: es una cola interna suya y nadie más escribe ahí.
 crear "$RABBITMQ_REPORTES_USER" "$RABBITMQ_REPORTES_PASSWORD" \
-  '^(biohub\\.eventos|biohub\\.eventos\\.dlx|reportes\\.eventos(\\.dlq)?)$' \
-  '^(biohub\\.eventos\\.dlx|reportes\\.eventos(\\.dlq)?)$' \
-  '^(biohub\\.eventos|biohub\\.eventos\\.dlx|reportes\\.eventos(\\.dlq)?)$'
+  '^(biohub\\.eventos|biohub\\.eventos\\.dlx|biohub\\.reportes|reportes\\.(eventos|solicitudes)(\\.dlq)?)$' \
+  '^(biohub\\.eventos\\.dlx|biohub\\.reportes|reportes\\.(eventos|solicitudes)(\\.dlq)?)$' \
+  '^(biohub\\.eventos|biohub\\.eventos\\.dlx|biohub\\.reportes|reportes\\.(eventos|solicitudes)(\\.dlq)?)$'

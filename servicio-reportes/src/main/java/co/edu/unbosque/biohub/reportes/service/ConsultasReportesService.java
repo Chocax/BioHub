@@ -148,7 +148,7 @@ public class ConsultasReportesService {
         return (s == null || s.isBlank()) ? null : s.trim();
     }
 
-    private static String escaparCsv(String valor) {
+    static String escaparCsv(String valor) {
         if (valor == null) {
             return "";
         }
@@ -158,7 +158,7 @@ public class ConsultasReportesService {
         return requiereComillas ? "\"" + limpio + "\"" : limpio;
     }
 
-    private static String sanitizarAscii(String texto) {
+    static String sanitizarAscii(String texto) {
         if (texto == null) {
             return "";
         }
@@ -169,7 +169,7 @@ public class ConsultasReportesService {
             .replaceAll("[^\\x20-\\x7E]", "?");
     }
 
-    private static byte[] construirPdfSimple(List<String> lineas) {
+    static byte[] construirPdfSimple(List<String> lineas) {
         StringBuilder flujo = new StringBuilder();
         flujo.append("BT\n/F1 10 Tf\n40 790 Td\n14 TL\n");
         for (int i = 0; i < lineas.size(); i++) {
