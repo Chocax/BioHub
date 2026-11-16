@@ -93,10 +93,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Para agregar otro servicio, anade una entrada con su carpeta y tz: UTC, por ejemplo:
-        #   - { servicio: servicio-equipos, tz: UTC }
-        #   - { servicio: servicio-reportes, tz: UTC }
-        # Anade tambien una de America/Bogota solo si el servicio maneja fechas/horas locales.
+        # Cada servicio con su carpeta y tz: UTC. Se anade tambien America/Bogota cuando el servicio maneja
+        # fechas u horas locales (reportes: periodo mensual y tarea programada en hora de Bogota).
         # (los tests de integracion usan Testcontainers: ubuntu-latest ya trae Docker)
         include:
           - { servicio: servicio-cientifico, tz: UTC }
@@ -104,6 +102,9 @@ jobs:
           - { servicio: servicio-consulta-publica, tz: UTC }
           - { servicio: servicio-consulta-publica, tz: America/Bogota }
           - { servicio: api-gateway, tz: UTC }
+          - { servicio: servicio-equipos, tz: UTC }
+          - { servicio: servicio-reportes, tz: UTC }
+          - { servicio: servicio-reportes, tz: America/Bogota }
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
