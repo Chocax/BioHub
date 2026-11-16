@@ -699,3 +699,144 @@ Requieren JWT con rol `administrador`. `id` es el `sub` de Keycloak. Si Keycloak
 Usuario: `{ id, usuario, email, nombre, apellido, activo, roles }`. Valores de `rol`: `investigador_campo`, `auditor_cientifico`, `cientifico_alto_rango`, `analista_ambiental`, `administrador`.
 
 Un cambio de rol, quitar el rol o desactivar la cuenta invalidan los tokens anteriores desde la siguiente petición (el usuario recibe 401 y debe entrar de nuevo). Un administrador no puede cambiar su propio rol ni desactivarse: 409 `CONFLICTO`.
+
+---
+
+# Parte de Hernando: registro de hallazgos, fichas e historial
+
+Módulo `registro` de `servicio-cientifico` (HU-01, HU-02, HU-03, HU-05). Todas las rutas van bajo
+`/api/cientifico/**`, que el gateway ya enruta (§8), y exigen JWT. El rol lo valida además el propio
+servicio con `@PreAuthorize` (defensa en profundidad, RNF6).
+
+## 12. Convenciones
+
+- Errores en `application/problem+json` con el mismo formato de §2: `codigo` y `errores[{campo, mensaje}]`.
+- Fechas `YYYY-MM-DD`. Identificadores UUID en texto.
+- **Ninguna respuesta de registro devuelve coordenadas.** El mapa y las coordenadas exactas son de
+  ubicación, que aplica la política por rol (§5.2).
+
+## 13. Endpoints
+
+### 13.1 `POST /api/cientifico/hallazgos` — registrar un hallazgo (HU-01)
+Roles: `investigador_campo`, `cientifico_alto_rango`, `administrador`.
+
+```json
+{
+  "nombreCientifico": "Atelopus ebenoides",
+  "nombreComun": "Rana arlequín de Boyacá",
+  "familia": "Bufonidae",
+  "tipoEspecimen": "Adulto",
+  "fechaRecoleccion": "2026-03-14",
+  "departamento": "Boyacá",
+  "categoriaUicn": "EN",
+  "descripcion": "Anfibio endémico de páramo…",
+  "latitud": 5.53214,
+  "longitud": -73.36712,
+  "atributos": { "temperatura_agua": 12.5 }
+}
+```
+`201 Created` con `{ "hallazgoId": "...", "version": 1 }` y cabecera `Location`.
+
+| Campo | Obligatorio | Regla |
+|---|---|---|
+| `nombreCientifico` | Sí | 1–150, sin coordenadas en el texto |
+| `familia` | Sí | 1–100 |
+| `tipoEspecimen` | Sí | ≤ 80 (HU-01 lo exige; el evento lo admite vacío) |
+| `fechaRecoleccion` | Sí | no futura (`America/Bogota`) |
+| `departamento` | Sí | del catálogo de 33; lo valida ubicación |
+| `categoriaUicn` | No | `CR`, `EN`, `VU`, `NT`, `LC`, `DD`, `NE`; por defecto `NE` |
+| `nombreComun`, `descripcion` | No | ≤ 150 / ≤ 5000, sin coordenadas en el texto |
+| `latitud`, `longitud` | No | ambas o ninguna; se entregan a ubicación y **no** se guardan en registro |
+
+**Equivalencia UICN → `estadoConservacion`** (obligación 5 de §6, ya fijada en pruebas):
+`CR`, `EN` → `EN_PELIGRO` · `VU`, `NT`, `LC` → `NO_AMENAZADA` · `DD`, `NE` → `SIN_EVALUAR`.
+
+Errores: `400 DATOS_INVALIDOS` (campo del formulario), `400 UBICACION_INVALIDA` (lo rechazó ubicación;
+la transacción se revirtió entera), `403` si el rol no corresponde.
+
+### 13.2 `PUT /api/cientifico/hallazgos/{id}` — reclasificar (HU-03)
+Roles: `cientifico_alto_rango`, `administrador`.
+
+Mismo cuerpo que el alta **sin** `latitud`/`longitud`, más `justificacion` (obligatoria, ≤ 1000). Los
+campos nulos no se tocan. Devuelve `{ "hallazgoId": "...", "version": n }` con la versión nueva.
+
+Errores: `400 DATOS_INVALIDOS` (incluye la falta de justificación), `404 HALLAZGO_NO_ENCONTRADO`,
+`409 UBICACION_NO_REGISTRADA`.
+
+### 13.3 `GET /api/cientifico/hallazgos/{id}` — consultar
+Roles: `investigador_campo`, `cientifico_alto_rango`, `auditor_cientifico`, `administrador`.
+Devuelve el hallazgo **sin coordenadas**.
+
+### 13.4 `PUT /api/cientifico/fichas/{nombreCientifico}/atributos` — configurar la plantilla (HU-02)
+Roles: `cientifico_alto_rango`, `administrador`.
+
+Se envía la lista completa tal como debe quedar; cada llamada crea una **versión nueva** de la plantilla
+y las anteriores no se tocan, de modo que los hallazgos ya registrados no se alteran.
+
+```json
+[
+  { "clave": "temperatura_agua", "etiqueta": "Temperatura del agua", "tipo": "NUMERO",
+    "obligatorio": false, "habilitado": true, "unidad": "°C" }
+]
+```
+`clave`: `^[a-z][a-z0-9_]{0,59}$`, estable (renombrar cambia solo `etiqueta`). `tipo`: `TEXTO`,
+`NUMERO`, `ENTERO`, `BOOLEANO`, `FECHA`. Retirar un atributo es enviarlo con `habilitado: false`:
+nunca se borra, porque los hallazgos antiguos conservan su valor. Máximo 50 por plantilla.
+
+### 13.5 `GET /api/cientifico/fichas/{nombreCientifico}/atributos` — plantilla vigente (HU-02)
+Es lo que el formulario usa para dibujar y validar los campos personalizados.
+`404 PLANTILLA_NO_ENCONTRADA` si la especie no tiene ninguna.
+
+### 13.6 `GET /api/cientifico/hallazgos/{id}/versiones` — historial (HU-05)
+Roles: `auditor_cientifico`, `cientifico_alto_rango`, `administrador`.
+Versiones de la más reciente a la más antigua, cada una con su `snapshot`, `justificacion` y `autor`.
+
+### 13.7 `GET /api/cientifico/hallazgos/{id}/auditoria` — cambios campo a campo (HU-05)
+Cada fila: `campo`, `valorPrevio`, `valorNuevo`, `justificacion`, `autor`, `fecha`.
+
+### 13.8 `GET /api/cientifico/hallazgos/{id}/comparar?desde=1&hasta=2` — comparar versiones (HU-05)
+Devuelve **solo los campos que cambiaron**, que es lo que el auditor necesita resaltar. El orden de los
+parámetros no importa. `400` si ambos son iguales; `404` si alguna versión no existe.
+
+## 14. Garantías que registro cumple del contrato
+
+1. El hallazgo se inserta **antes** de avisar a ubicación, en la misma `@Transactional`; si ubicación
+   falla, se revierte todo y se responde `400` con el campo (§6, obligación 1).
+2. Las coordenadas **no** se guardan en ninguna tabla de registro, ni en el historial, ni en la
+   auditoría, ni en el evento público. Los DTO que las transportan enmascaran su `toString()`
+   (§6, obligación 2). Hay una prueba de esquema que lo verifica contra MySQL.
+3. `hallazgoId` es UUID en `BINARY(16)` y PK de la tabla `hallazgo`, lista para la FK futura de
+   ubicación (doc 05 §6).
+4. `version` crece estrictamente por hallazgo y es el mismo valor en `UbicacionService` y en el evento.
+5. Ningún texto publicable puede contener coordenadas escritas: se valida **antes** de publicar
+   (§7.3), con reglas que no confunden fechas, medidas ni altitudes.
+6. El evento se publica con `@TransactionalEventListener(AFTER_COMMIT)`, después del commit
+   (§7.5, obligación 1). *Pendiente*: outbox transaccional; hoy, si el broker falla tras el commit,
+   queda un log de error para republicar.
+
+## 15. Historial inmutable (ASR7) — qué está garantizado hoy
+
+`hallazgo_version` y `hallazgo_auditoria` son append-only **por código y por esquema**:
+
+1. Los repositorios no exponen ninguna operación de modificación ni de borrado.
+2. Un `CHECK` impide guardar una versión ≥ 2 sin justificación, y un `UNIQUE` impide repetir una versión.
+
+**Lo que todavía NO está garantizado:** el criterio 2 de HU-05 pide bloquear *físicamente* `UPDATE` y
+`DELETE`. La vía habitual —triggers— se probó y **no es viable**: MySQL con binary logging exige
+`SUPER` para crearlos (ERROR 1419) y ningún usuario del proyecto tiene `SUPER` ni `TRIGGER` (doc 05
+§11). Se comprobó contra MySQL 8.4 real: la migración fallaba y el servicio no arrancaba, así que se
+retiró.
+
+Queda la vía de permisos, pero choca con el aprovisionamiento actual: `cientifico_app` tiene
+`UPDATE, DELETE` sobre `cientifico`.*, y en MySQL los privilegios **se suman**, de modo que no se
+puede restar el permiso a dos tablas concretas. Hay que bajar el permiso de base y devolverlo tabla
+por tabla.
+
+La propuesta está escrita y **probada** en `deploy/aiven/03-registro-historial-append-only.sql.example`;
+`MigracionesRegistroTest` crea un usuario con ese reparto y verifica que `UPDATE` y `DELETE` sobre el
+historial fallan mientras el resto sigue funcionando.
+
+> **Decisión pendiente del equipo:** aplicarlo tiene un costo, cada tabla nueva con escritura necesitará
+> su línea en ese script, mientras que hoy el aprovisionamiento es por base para no tener que tocarlo.
+> Mientras no se aplique, la inmutabilidad protege contra un error de programación, pero no contra
+> alguien que use la credencial de la aplicación.
