@@ -132,3 +132,57 @@ Cada acceso a coordenadas exactas (y cada 403 sobre los endpoints de ubicación)
 | Observer | `ObservadorUbicacion` (`@EventListener` síncrono, misma transacción) escucha `HallazgoRegistrado` y `HallazgoReclasificado` de `cientifico.eventos.domain` y llama a `UbicacionService` (`MANDATORY`) |
 
 Para registro: en lugar de llamar a `UbicacionService`, publica el evento con `ApplicationEventPublisher.publishEvent(new HallazgoRegistrado(...))` dentro de su transacción (ver el javadoc de los eventos).
+
+## Módulo `registro` (Hernando): hallazgos, fichas e historial
+
+Cubre HU-01 (registro de hallazgos), HU-02 (fichas con atributos flexibles), HU-03 (reclasificación) y
+HU-05 (auditoría histórica). Los endpoints y sus reglas están en
+[docs/equipo/04-contrato-api.md](../docs/equipo/04-contrato-api.md), sección 10.
+
+### Tablas
+
+| Tabla | Para qué |
+|---|---|
+| `hallazgo` | estado actual; `id` es `BINARY(16)` y `version` crece con cada cambio |
+| `hallazgo_version` | historial inmutable: un snapshot por versión, con justificación y autor |
+| `hallazgo_auditoria` | cambios campo a campo: valor previo, valor nuevo, justificación, autor y fecha |
+| `ficha_plantilla` | atributos configurables por especie; cada cambio es una versión nueva |
+| `hallazgo_evidencia` | metadatos de fotografías y audios (el archivo vive en el volumen) |
+
+Ninguna guarda coordenadas: viven solo cifradas en `ubicacion_hallazgo`. Hay una prueba de esquema
+(`MigracionesRegistroTest`) que lo verifica contra MySQL.
+
+### Patrones del SAD en `registro`
+
+| Patrón | Clases |
+|---|---|
+| Builder (§6.2.1) | `VersionHallazgo.Builder`: la única forma de crear una versión; `build()` exige el snapshot, el autor y, desde la versión 2, la justificación científica |
+| Observer (§6.4.2) | `HallazgoService` publica `HallazgoRegistrado`/`HallazgoReclasificado` con `ApplicationEventPublisher` dentro de su transacción; los escucha `ObservadorUbicacion` |
+
+### Cómo colabora con `ubicacion`
+
+`HallazgoService` inserta el hallazgo, luego publica el evento de dominio y ubicación cifra las
+coordenadas **en la misma transacción**. Si ubicación rechaza algo, la excepción revierte el registro
+completo y el controlador responde `400` con el campo que falló. Registro no importa ninguna clase
+interna de ubicación: solo `EstadoConservacion` y sus excepciones públicas, que es lo que el contrato
+permite (lo verifica `ModuloRegistroNoDependeDeUbicacionInternaTest`).
+
+### Inmutabilidad del historial (ASR7)
+
+Hoy la sostienen el código (los repositorios no exponen modificación ni borrado) y los `CHECK` de la
+migración. El bloqueo *físico* que pide HU-05 necesita permisos: la vía de los triggers se probó y no
+funciona, porque MySQL con binary logging exige `SUPER` para crearlos (ERROR 1419).
+
+La propuesta de permisos está en `deploy/aiven/03-registro-historial-append-only.sql.example` y
+`MigracionesRegistroTest` la verifica contra MySQL real. Aplicarla es una decisión del equipo: ver
+§15 del contrato de API.
+
+### Pruebas
+
+```bash
+# Unitarias (no necesitan Docker)
+mvn test -pl servicio-cientifico -Dtest='*Registro*,HallazgoServiceTest,FichaPlantillaServiceTest,HistorialServiceTest,VersionHallazgoBuilderTest,CategoriaUicnTest,ValidadorTextoPublicoTest'
+
+# De integración con MySQL real (requieren Docker en marcha)
+mvn test -pl servicio-cientifico -Dtest='MigracionesRegistroTest,RegistroConUbicacionTest'
+```
