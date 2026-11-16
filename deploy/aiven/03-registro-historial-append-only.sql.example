@@ -1,5 +1,5 @@
 -- =============================================================================
--- PROPUESTA (no aplicada todavia): hacer append-only el historial de registro
+-- PASO OBLIGATORIO del aprovisionamiento (D60): historial de registro append-only
 -- =============================================================================
 -- HU-05, criterio 2, pide "bloquear fisicamente cualquier instruccion de
 -- actualizacion o eliminacion directa sobre las tablas de auditoria" (ASR7).
@@ -14,15 +14,17 @@
 -- SUMAN: no existe forma de "restar" UPDATE a dos tablas concretas. Hay que bajar el
 -- permiso de base y volver a darlo tabla por tabla, salvo en las dos del historial.
 --
--- EFECTO SECUNDARIO QUE EL EQUIPO DEBE DECIDIR: a partir de aqui, cada tabla nueva
--- con escritura necesita su linea en este script. Hoy el aprovisionamiento es por
--- base justamente para no tener que tocarlo (doc 05 seccion 11).
+-- REGLA (D60): cada tabla nueva de `cientifico` con escritura necesita su linea en el
+-- paso 2. La prueba HistorialAppendOnlyScriptTest falla si una migracion crea una tabla
+-- que no esta aqui ni en la lista de historial/catalogos, asi que no se puede olvidar.
 --
--- Mientras no se aplique, la inmutabilidad se sostiene en el codigo (los repositorios
--- no exponen modificacion ni borrado) y en los CHECK de la migracion. Es suficiente
--- contra un error de programacion, pero no contra alguien con la credencial de la app.
+-- Sin este paso, la inmutabilidad se sostiene solo en el codigo (los repositorios no
+-- exponen modificacion ni borrado) y en los CHECK de la migracion: basta contra un error
+-- de programacion, pero no contra alguien con la credencial de la app.
+-- Repetirlo es seguro: hay que volver a correrlo cada vez que una migracion crea tablas.
 --
--- Ejecutar como avnadmin, DESPUES de que Flyway haya creado las tablas de registro.
+-- Ejecutar como avnadmin, DESPUES de que Flyway haya creado las tablas de registro
+-- (docs/equipo/09-despliegue.md 4.3, paso 5). No tiene contrasenas: se ejecuta tal cual.
 -- -----------------------------------------------------------------------------
 
 -- 1. Bajar el permiso de base a solo lectura y escritura de altas
