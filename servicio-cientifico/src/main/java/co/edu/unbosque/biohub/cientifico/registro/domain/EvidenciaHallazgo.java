@@ -54,6 +54,10 @@ public class EvidenciaHallazgo {
     @Column(name = "sha256", nullable = false, length = 64, columnDefinition = "char(64)")
     private String sha256;
 
+    /** Usuario que subió el archivo (HU-11 c.3), con el mismo identificador que el autor del historial (D59). */
+    @Column(name = "subido_por", length = 100)
+    private String subidoPor;
+
     @Column(name = "creado_en", insertable = false, updatable = false)
     private Instant creadoEn;
 
@@ -62,8 +66,15 @@ public class EvidenciaHallazgo {
 
     @SuppressWarnings("java:S107")
     public EvidenciaHallazgo(UUID hallazgoId, String nombre, TipoEvidencia tipo, String contentType,
-                             long tamanoBytes, String ruta, String sha256) {
-        this.id = UUID.randomUUID();
+                             long tamanoBytes, String ruta, String sha256, String subidoPor) {
+        this(UUID.randomUUID(), hallazgoId, nombre, tipo, contentType, tamanoBytes, ruta, sha256, subidoPor);
+    }
+
+    /** Con el id ya elegido: el archivo se guarda en disco con ese id antes de insertar la fila. */
+    @SuppressWarnings("java:S107")
+    public EvidenciaHallazgo(UUID id, UUID hallazgoId, String nombre, TipoEvidencia tipo, String contentType,
+                             long tamanoBytes, String ruta, String sha256, String subidoPor) {
+        this.id = id;
         this.hallazgoId = hallazgoId;
         this.nombre = nombre;
         this.tipo = tipo;
@@ -71,6 +82,7 @@ public class EvidenciaHallazgo {
         this.tamanoBytes = tamanoBytes;
         this.ruta = ruta;
         this.sha256 = sha256;
+        this.subidoPor = subidoPor;
     }
 
     public UUID getId() {
@@ -103,6 +115,10 @@ public class EvidenciaHallazgo {
 
     public String getSha256() {
         return sha256;
+    }
+
+    public String getSubidoPor() {
+        return subidoPor;
     }
 
     public Instant getCreadoEn() {

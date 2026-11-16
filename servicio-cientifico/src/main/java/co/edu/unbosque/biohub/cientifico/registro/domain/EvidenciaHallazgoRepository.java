@@ -1,6 +1,7 @@
 package co.edu.unbosque.biohub.cientifico.registro.domain;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,4 +12,6 @@ public interface EvidenciaHallazgoRepository extends JpaRepository<EvidenciaHall
     List<EvidenciaHallazgo> findByHallazgoIdOrderByCreadoEnAsc(UUID hallazgoId);
 
     boolean existsByHallazgoIdAndSha256(UUID hallazgoId, String sha256);
+
+    Optional<EvidenciaHallazgo> findByHallazgoIdAndSha256(UUID hallazgoId, String sha256);
 }
