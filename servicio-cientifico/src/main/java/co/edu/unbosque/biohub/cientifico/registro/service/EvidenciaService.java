@@ -1,6 +1,9 @@
 package co.edu.unbosque.biohub.cientifico.registro.service;
 
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
+import org.springframework.data.domain.PageRequest;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
@@ -114,6 +117,41 @@ public class EvidenciaService {
 
     public InputStream abrir(EvidenciaHallazgo evidencia) {
         return almacen.abrir(evidencia.getRuta());
+    }
+
+    /**
+     * Marca o desmarca una fotografía como visible en el portal público (D65). La decide quien registra: un
+     * audio nunca es público. Queda en el log quién lo hizo (HU-11 c.3).
+     */
+    @Transactional
+    public EvidenciaHallazgo marcarPublica(UUID hallazgoId, UUID evidenciaId, boolean publica, String usuario) {
+        EvidenciaHallazgo evidencia = obtener(hallazgoId, evidenciaId);
+        if (publica && evidencia.getTipo() != EvidenciaHallazgo.TipoEvidencia.FOTOGRAFIA) {
+            throw new DatosHallazgoInvalidosException("publica", "Solo una fotografía se puede mostrar en el portal público.");
+        }
+        evidencia.marcarPublica(publica);
+        log.info("Evidencia {} del hallazgo {} {} el portal público por {}", evidenciaId, hallazgoId,
+                publica ? "visible en" : "retirada de", usuario);
+        return evidencias.save(evidencia);
+    }
+
+    /**
+     * La foto pública más reciente de la especie, reducida a {@link FotoPublica#LADO_MAXIMO} px y en JPEG (D65):
+     * el portal no descarga archivos de varios MB y nunca recibe el original. Ya no trae metadatos (se limpiaron
+     * al subirla).
+     */
+    @Transactional(readOnly = true)
+    public Optional<byte[]> fotoPublicaDeEspecie(String nombreCientifico) {
+        return evidencias.fotosPublicasDeEspecie(nombreCientifico.trim(), PageRequest.of(0, 1)).stream()
+                .findFirst()
+                .flatMap(e -> {
+                    try (InputStream datos = almacen.abrir(e.getRuta())) {
+                        return FotoPublica.reducir(datos.readAllBytes());
+                    } catch (IOException | UncheckedIOException ex) {
+                        log.warn("No se pudo leer la foto pública {}: {}", e.getId(), ex.getClass().getSimpleName());
+                        return Optional.empty();
+                    }
+                });
     }
 
     /** Nombre para mostrar: sin carpetas ni caracteres de control, y con la extensión del formato real. */
