@@ -43,6 +43,30 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 - Web interna completa con el diseño "galería" (D64): inicio por rol, búsqueda y mapa, registrar hallazgo con atributos de la plantilla y evidencias, detalle, reclasificación, historial con comparación, plantillas, equipos, reportes con descarga de PDF y CSV, usuarios y roles, y API keys.
 - Menú y salas según el rol; una sala ajena explica por qué en vez de fallar.
 
+### Added (front, segunda revisión)
+- `levantar.ps1` (y `levantar.cmd`): levanta Docker, los 5 servicios y las 2 webs con un comando, muestra cada paso con su puerto y al final los usuarios de prueba. `-Sembrar` crea datos de ejemplo con fotos de Wikimedia Commons; `-Estado` y `-Detener`.
+- Catálogo por especie con foto en el portal y en la galería de fichas; listas desplegables de especies, familias e investigadores (D65).
+- El investigador decide qué foto sale en el portal («Mostrar en el portal»); el portal la muestra en la tarjeta y en la ficha, con los otros registros de la especie.
+- Mapa: leyenda de los marcadores, seleccionado con anillo, panel con foto y enlace a la ficha.
+- PDF del reporte con el diseño de BioHub: encabezado, cifras, zonas en alerta, tabla con barras y niveles, y cómo leerlo.
+- Inicio de sesión de Keycloak con el estilo de la web interna (tema `biohub`), favicon en las dos webs, iconos en menús y botones, pinturas que rotan con fundido y pie de página nuevo en el portal.
+
+### Added (front, tercera revisión)
+- Carrusel de inicio con flechas (y flechas del teclado) y dos diapositivas más; cada sala elige una pintura al azar de una colección más grande (Tequendama, temporada de lluvias, pasifloras).
+- Usuarios y roles: más ancha, indicadores, filtros por rol y estado con conteos, colores por rol, inactivo en rojo, aviso que confirma cada cambio y resalta la fila.
+- Cada sala muestra su nombre en serif gigante y vertical en el borde izquierdo, y una cartela con su número en el derecho (pantallas anchas).
+- El inicio de sesión alterna cuatro pinturas de fondo; los fondos de las dos webs cambian cada 18 a 25 s con un fundido de 3 s.
+
+### Fixed (front, tercera revisión)
+- Los reportes generados antes del PDF nuevo se descargaban con el formato viejo: ahora PDF y CSV se arman al descargar desde el resumen.
+- El CSV se abría en una sola columna en Excel en español: ahora usa `;` y coma decimal.
+- Fondos pixelados en la web pública: se usaba la versión de 800 px de los Andes a pantalla completa.
+
+### Fixed (front, segunda revisión)
+- Al escribir el nombre de un atributo de una ficha se perdía el foco en cada letra.
+- El panel de detalle del mapa salía sin márgenes.
+- En Windows, MySQL de Docker no creaba sus usuarios (script de inicio con fin de línea CRLF) y `rabbitmq-usuarios` podía fallar si arrancaba antes que la API de RabbitMQ.
+
 ### Changed (front)
 - Web pública rediseñada con cielo azul, blanco y verde, y la misma distribución que la interna.
 - El ping de prueba de la web interna se reemplaza por las pantallas reales.

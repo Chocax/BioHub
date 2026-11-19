@@ -245,6 +245,25 @@ Ruta en el gateway: `GET {gateway}/api/publica/fichas/{id}`. Ruta interna: `GET 
 ```
 **429** y **503**: como en §4.1 (si la ficha está en caché se sirve aunque mysql-lectura esté caída).
 
+### 4.4 Catálogo por especie, familias y foto pública (D65)
+Sin autenticación, como §4.1. Nunca traen coordenadas ni el investigador.
+
+| Método y ruta | Respuesta |
+|---|---|
+| `GET /api/publica/especies?q=&familia=&departamento=&page=&size=` | Una fila por `nombreCientifico`, con los mismos filtros, validaciones y modo degradado de §4.1 (`size` de 1 a 50). `Cache-Control: public, max-age=30` |
+| `GET /api/publica/especies/familias` | `{ "familias": ["Asteraceae", "Bufonidae", …] }`: las familias con registros públicos, en orden y sin repetir (tope 500) |
+| `GET /api/publica/especies/foto?nombre=Ara%20macao` | **200** `image/jpeg` (a lo sumo 1200 px, sin metadatos), `Cache-Control: public, max-age=600`, `nosniff`. **404** si la especie no tiene foto pública. **400** si `nombre` no es un nombre científico (letras, espacios, `.`, `'` y `-`, de 2 a 150) |
+
+Elemento del catálogo:
+```json
+{ "nombreCientifico": "Atelopus ebenoides", "nombreComun": "Rana arlequín de Boyacá", "familia": "Bufonidae",
+  "estadoConservacion": "EN_PELIGRO", "registros": 2, "departamentos": ["Boyacá", "Cundinamarca"],
+  "regiones": ["Andina"], "ultimaRecoleccion": "2026-05-02", "fichaId": "3f2a9c1e-…" }
+```
+`nombreComun`, `familia`, `estadoConservacion` y `fichaId` son los del registro más reciente; `fichaId` se abre con §4.2.
+
+La foto la pide consulta-publica al Servicio Científico (`GET /api/cientifico/publico/especies/foto`, §13.10) y la guarda en una caché en memoria acotada (120 fotos, 10 minutos; 2 minutos para "sin foto"). Si el científico no responde, el portal muestra una ilustración.
+
 ## 5. Endpoints internos (servicio-cientifico, módulo ubicacion)
 
 Autenticación: `Authorization: Bearer <JWT>` obligatorio (validado en el gateway y en el servicio). Respuestas siempre con `Cache-Control: no-store`.
@@ -806,13 +825,25 @@ parámetros no importa. `400` si ambos son iguales; `404` si alguna versión no 
 | `GET /api/cientifico/hallazgos/{id}/evidencias` | los 4 que consultan el hallazgo (todos menos `analista_ambiental`) | Lista en orden de subida |
 | `GET /api/cientifico/hallazgos/{id}/evidencias/{evidenciaId}` | los mismos | El archivo, siempre como adjunto (`Content-Disposition: attachment`), con `nosniff` y `no-store` |
 
-Evidencia: `{ id, nombre, tipo: FOTOGRAFIA|AUDIO, contentType, tamanoBytes, sha256, subidoPor, creadoEn }`. Nunca trae la ruta en disco.
+Evidencia: `{ id, nombre, tipo: FOTOGRAFIA|AUDIO, contentType, tamanoBytes, sha256, subidoPor, publica, creadoEn }`. Nunca trae la ruta en disco.
+
+`PUT /api/cientifico/hallazgos/{id}/evidencias/{evidenciaId}/publica` con `{ "publica": true|false }` (roles `investigador_campo` y `cientifico_alto_rango`) decide si la foto sale en el portal (D65). Por defecto ninguna es pública. Un audio no puede ser público (**400**).
 
 - **Formatos** (se reconocen por el contenido, no por la extensión): JPEG y PNG (fotos); WAV, MP3, OGG y FLAC (audio). WEBP, HEIC, MP4 y M4A no: pueden traer la ubicación del teléfono y no se limpian.
 - **Metadatos:** a las fotos se les quita el EXIF, el XMP y los comentarios antes de guardarlas, porque el EXIF trae las coordenadas GPS (RNF9). Lo que se descarga es la versión limpia.
 - **Tamaño:** máximo 9 MB por archivo (el cuerpo máximo del gateway es 10 MB con el sobre multipart).
 - **Errores:** `400 DATOS_INVALIDOS` (vacío, formato no admitido, imagen dañada o sin el campo `archivo`), `413 ARCHIVO_DEMASIADO_GRANDE`, `404 HALLAZGO_NO_ENCONTRADO`, `404 EVIDENCIA_NO_ENCONTRADA` (también si la evidencia es de otro hallazgo), `403`.
 - El front sube el hallazgo primero (13.1) y luego cada archivo con el `hallazgoId` que recibió.
+
+### 13.10 Galería de especies, listas para autocompletar y foto pública (D65)
+
+| Método y ruta | Roles | Respuesta |
+|---|---|---|
+| `GET /api/cientifico/especies?q=&familia=&page=&size=` | todos menos `analista_ambiental` | Página de especies (`size` de 1 a 48, por defecto 12): las de los hallazgos vigentes más las que solo tienen ficha. `q` busca en nombre científico y común |
+| `GET /api/cientifico/especies/sugerencias` | los 5 roles | `{ especies: [{ nombreCientifico, nombreComun, familia }], familias: [...], investigadores: [...] }` (tope 1000 cada una) |
+| `GET /api/cientifico/publico/especies/foto?nombre=` | **sin token** | La foto pública más reciente de la especie, en JPEG de a lo sumo 1200 px. **404** si no hay. Solo la usa consulta-publica (§4.4): el gateway exige rol en `/api/cientifico/**`, así que desde internet no se llega |
+
+Especie: `{ nombreCientifico, nombreComun, familia, estadoConservacion, categoriaUicn, registros, departamentos, ultimaRecoleccion, fichaVersion, atributosFicha, foto: { hallazgoId, evidenciaId, publica } | null }`. La foto prefiere una pública; si no hay, la más reciente. Se descarga con §13.9.
 
 ## 14. Garantías que registro cumple del contrato
 
@@ -882,7 +913,7 @@ Roles: `analista_ambiental` y `administrador`. Todo se calcula sobre la base ana
 | `POST /api/reportes/solicitudes` con `{ "periodo": "2026-03" }` | **202 Accepted** + `Location` + la solicitud en `PENDIENTE`. El reporte se genera en segundo plano (HU-09 c.1) |
 | `GET /api/reportes/solicitudes` | Las 20 más recientes |
 | `GET /api/reportes/solicitudes/{id}` | Estado: `PENDIENTE`, `EN_PROCESO`, `LISTO` o `FALLIDO`. Con `LISTO` trae `resumen` |
-| `GET /api/reportes/solicitudes/{id}/csv` · `/pdf` | El archivo (HU-09 c.3). **409 `REPORTE_NO_LISTO`** si todavía no está listo |
+| `GET /api/reportes/solicitudes/{id}/csv` · `/pdf` | El archivo (HU-09 c.3). **409 `REPORTE_NO_LISTO`** si todavía no está listo. Se arma al descargar desde el resumen guardado, así que un reporte viejo sale con el formato vigente. El CSV va para Excel en español: separador `;`, coma decimal, UTF-8 con BOM y encabezados legibles (`Departamento;Hallazgos;En peligro;…;Zona en alerta`) |
 
 Solicitud: `{ id, periodo, estado, origen: MANUAL|PROGRAMADO, solicitadoPor, solicitadoEn, iniciadoEn, terminadoEn,
 error, resumen }`. `resumen` es `{ periodo, totalHallazgos, totalEnPeligro, departamentos, zonasEnAlerta: [...],
