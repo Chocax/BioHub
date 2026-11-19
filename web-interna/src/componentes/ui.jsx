@@ -1,6 +1,8 @@
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { Frailejon, Hex } from './Ilustraciones.jsx';
+import { PINTURAS, pinturaAlAzar } from './pinturas.js';
+import { usePinturaSala } from './Marco.jsx';
 
 /** Pone el título de la pestaña y lleva el foco al encabezado de la página (lectores de pantalla). */
 export function useTitulo(titulo) {
@@ -29,9 +31,16 @@ export function useRevelar() {
   return ref;
 }
 
-export function CabeceraPagina({ eyebrow, titulo, pestana, descripcion, children }) {
+/**
+ * Encabezado de sala. Con `pintura` (una clave de PINTURAS, o 'auto' para una al azar) muestra un cuadro recortado con muescas, como en
+ * la portada: las salas de trabajo no quedan como un formulario suelto sobre el fondo.
+ */
+export function CabeceraPagina({ eyebrow, titulo, pestana, descripcion, children, pintura }) {
   const ref = useTitulo(pestana ?? (typeof titulo === 'string' ? titulo : eyebrow));
-  return (
+  // "auto": una obra al azar de la colección cada vez que se abre la sala, para que no se repitan siempre.
+  const deLaSala = usePinturaSala();
+  const [elegida] = useState(() => (pintura === 'auto' ? (deLaSala ?? pinturaAlAzar()) : pintura));
+  const cabecera = (
     <header className="pagina__cabecera">
       <div>
         {eyebrow && <p className="eyebrow">{eyebrow}</p>}
@@ -40,6 +49,17 @@ export function CabeceraPagina({ eyebrow, titulo, pestana, descripcion, children
       </div>
       {children && <div className="acciones">{children}</div>}
     </header>
+  );
+  const cuadro = elegida && PINTURAS[elegida];
+  if (!cuadro) return cabecera;
+  return (
+    <div className="cabecera-sala">
+      {cabecera}
+      <figure className="cabecera-sala__cuadro muesca">
+        <img src={cuadro.chica} alt="" style={cuadro.encuadre ? { objectPosition: cuadro.encuadre } : undefined} />
+        <figcaption>{cuadro.titulo} · {cuadro.autor}</figcaption>
+      </figure>
+    </div>
   );
 }
 

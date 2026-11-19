@@ -1,12 +1,15 @@
-import { lazy, Suspense, useMemo } from 'react';
-import { Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { ArrowRight } from 'lucide-react';
+import { useSugerencias } from './api/sugerencias.js';
+import { FotoEvidencia } from './componentes/Foto.jsx';
+import { PINTURAS } from './componentes/pinturas.js';
+import { Link, Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router';
 import { crearClienteUbicacion } from './ubicacion/api/ubicacionApi.js';
 import { config } from './config.js';
-import { obtenerToken } from './api/cliente.js';
+import { api, obtenerToken } from './api/cliente.js';
 import { puede } from './auth/permisos.js';
-import Marco, { useSesion } from './componentes/Marco.jsx';
-import { SinPermiso } from './componentes/ui.jsx';
-import { Cargando } from './componentes/ui.jsx';
+import Marco, { usePinturaSala, useSesion } from './componentes/Marco.jsx';
+import { Cargando, SinPermiso } from './componentes/ui.jsx';
 import Inicio from './paginas/Inicio.jsx';
 import NoEncontrada from './paginas/NoEncontrada.jsx';
 
@@ -32,13 +35,48 @@ function Con({ capacidad, children }) {
   return puede(roles, capacidad) ? <Espera>{children}</Espera> : <SinPermiso />;
 }
 
+/** Las listas del módulo de ubicación solo necesitan los nombres. */
+function useSugerenciasUbicacion() {
+  const s = useSugerencias();
+  return useMemo(() => (s ? { especies: s.especies.map((e) => e.nombreCientifico), investigadores: s.investigadores } : undefined), [s]);
+}
+
+/** Foto del hallazgo (prefiere la marcada como pública) y enlace a su ficha, dentro del panel del mapa. */
+function ExtraDetalleMapa({ hallazgoId }) {
+  const [foto, setFoto] = useState(undefined);
+  useEffect(() => {
+    let vigente = true;
+    api.get(`/api/cientifico/hallazgos/${hallazgoId}/evidencias`)
+      .then((lista) => {
+        const fotos = lista.filter((e) => e.tipo === 'FOTOGRAFIA');
+        const elegida = fotos.find((e) => e.publica) ?? fotos[fotos.length - 1];
+        if (vigente) setFoto(elegida ? { hallazgoId, evidenciaId: elegida.id } : null);
+      })
+      .catch(() => { if (vigente) setFoto(null); });
+    return () => { vigente = false; };
+  }, [hallazgoId]);
+  return (
+    <>
+      <div className="detalle-mapa__foto">{foto !== undefined && <FotoEvidencia foto={foto} alt="Foto del hallazgo" />}</div>
+      <Link className="detalle-mapa__enlace" to={`/hallazgos/${encodeURIComponent(hallazgoId)}`}>
+        Abrir ficha completa <ArrowRight className="icono" aria-hidden="true" />
+      </Link>
+    </>
+  );
+}
+
 function Busqueda({ cliente, alSesionVencida }) {
   const { roles } = useSesion();
   const navegar = useNavigate();
+  const sugerencias = useSugerenciasUbicacion();
+  // La pintura junto al título del módulo de ubicación también cambia en cada visita (variable CSS, ver galeria.css).
+  const pintura = PINTURAS[usePinturaSala()] ?? PINTURAS.rio;
   return (
-    <PaginaBusqueda cliente={cliente} roles={roles} alSesionVencida={alSesionVencida}
+    <div className="envoltura-busqueda" style={{ '--pintura-busqueda': `url('${pintura.chica}')`, '--encuadre-busqueda': pintura.encuadre ?? '50% 50%' }}>
+    <PaginaBusqueda cliente={cliente} roles={roles} alSesionVencida={alSesionVencida} sugerencias={sugerencias}
       alVerEnMapa={puede(roles, 'verMapa') ? (id) => navegar(`/mapa?hallazgo=${encodeURIComponent(id)}`) : undefined}
       alVerDetalle={puede(roles, 'verHallazgo') ? (id) => navegar(`/hallazgos/${encodeURIComponent(id)}`) : undefined} />
+    </div>
   );
 }
 
@@ -46,8 +84,10 @@ function Mapa({ cliente, alSesionVencida }) {
   const { roles } = useSesion();
   const [parametros] = useSearchParams();
   const navegar = useNavigate();
+  const sugerencias = useSugerenciasUbicacion();
   return (
-    <PaginaMapa cliente={cliente} roles={roles} hallazgoId={parametros.get('hallazgo')}
+    <PaginaMapa cliente={cliente} roles={roles} hallazgoId={parametros.get('hallazgo')} sugerencias={sugerencias}
+      detalleExtra={(punto) => <ExtraDetalleMapa key={punto.id} hallazgoId={punto.id} />}
       alSesionVencida={alSesionVencida} alIrABusqueda={() => navegar('/buscar')} />
   );
 }
