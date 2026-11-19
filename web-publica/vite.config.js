@@ -19,7 +19,7 @@ function cspPlugin(modo) {
     transformIndexHtml: {
       order: 'pre',
       handler(html, ctx) {
-        if (ctx.server) return html.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>\s*/s, '');
+        if (ctx.server) return html.replace(/<meta\s+http-equiv="Content-Security-Policy"[^>]*>\s*/s, '');
         return html.replace('%CONNECT_SRC%', origen);
       },
     },

@@ -11,13 +11,17 @@ export default function App() {
     <>
       <EnlaceSaltar />
       <EncabezadoPublico />
-      <main id="contenido" className="contenedor">
+      <main id="contenido">
         <Routes>
           <Route path="/" element={<Inicio />} />
           <Route path="/especies/:id" element={<Ficha />} />
           <Route path="*" element={<NoEncontrada tipo="pagina" />} />
         </Routes>
       </main>
+      <footer className="pie-publico">
+        <span>BioHub · Instituto Nacional de Biodiversidad</span>
+        <span>Pinturas de dominio público: F. E. Church, M. J. Heade y círculo de J. Constable</span>
+      </footer>
     </>
   );
 }
