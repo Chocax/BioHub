@@ -19,12 +19,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.RabbitMQContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import co.edu.unbosque.biohub.reportes.config.RabbitConfig;
+import co.edu.unbosque.biohub.reportes.service.ProyectorHallazgosService;
 import co.edu.unbosque.biohub.reportes.eventos.service.AlmacenEventosRecibidos;
 import co.edu.unbosque.biohub.reportes.eventos.service.ConsumidorEventos;
 
@@ -40,6 +42,10 @@ import co.edu.unbosque.biohub.reportes.eventos.service.ConsumidorEventos;
         "spring.rabbitmq.listener.simple.retry.max-attempts=3",
         "spring.rabbitmq.listener.simple.retry.initial-interval=100ms"})
 class ConsumidorEventosRechazosIntegracionTest {
+
+    /** ConsumidorEventos proyecta los hallazgo.* en la base analítica; aquí solo importa el broker. */
+    @MockitoBean
+    ProyectorHallazgosService proyector;
 
     @Configuration
     @ImportAutoConfiguration({RabbitAutoConfiguration.class, JacksonAutoConfiguration.class})

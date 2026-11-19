@@ -694,3 +694,17 @@ Migración: `api-gateway/src/main/resources/db/migration/V20261105_1200__consumi
 - Los contadores no están en esta base: viven en Redis y duran 60 segundos.
 - Claves en Redis (todas vencen): `biohub:gateway:rl:*` (contadores), `biohub:gateway:key:<prefijo>` (caché de 60 s) y `biohub:gateway:revocado:<sub>` (6 minutos).
 - Fechas en UTC (D36). La URL del perfil `local` del gateway ahora fija la zona de la sesión.
+
+## 18. Cambios de la revisión general (2026-11-16)
+
+| Base | Migración | Cambio | Para qué |
+|---|---|---|---|
+| `cientifico` | `V20261116_1000__evidencia_subido_por.sql` | `hallazgo_evidencia.subido_por VARCHAR(100) NULL` | HU-11 c.3: quién subió cada evidencia (D59). `NULL` solo por filas anteriores |
+| `reportes` | `V20261116_1100__solicitudes_de_reporte.sql` | Tablas `solicitud_reporte` y `reporte_archivo` | Reporte mensual asíncrono (D61). Los archivos van en tabla aparte para que listar no los cargue |
+
+- `solicitud_reporte`: `periodo` `CHAR(7)` con `CHECK` `AAAA-MM`; `estado` y `origen` con `CHECK`; `resumen_json` `JSON` con los índices por departamento.
+- `reporte_archivo`: PK = FK a `solicitud_reporte`, `csv` y `pdf` en `MEDIUMBLOB` (hasta 16 MB cada uno).
+- Las evidencias no van en la base: solo su ruta. Los archivos viven en `EVIDENCIAS_DIR` (D62).
+- Permisos en Aiven: `hallazgo_version` y `hallazgo_auditoria` sin `UPDATE` ni `DELETE` para `cientifico_app` (D60).
+- Ambas migraciones pasan `deploy/aiven/verificar-migraciones.sh`.
+

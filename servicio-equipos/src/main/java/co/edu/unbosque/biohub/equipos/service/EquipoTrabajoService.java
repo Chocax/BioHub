@@ -51,6 +51,9 @@ public class EquipoTrabajoService {
         if (!custodio.activo()) {
             throw new CustodioInvalidoException("El custodio seleccionado está inactivo y no puede recibir equipos.");
         }
+        if (!custodio.esInvestigador()) {
+            throw new CustodioInvalidoException("El custodio debe ser un investigador de campo.");
+        }
 
         equipo.asignarACustodio(custodio.id(), custodio.usuario(), Instant.now());
         return repository.save(equipo);
@@ -78,10 +81,14 @@ public class EquipoTrabajoService {
             throw new IllegalArgumentException("Parámetros de paginación fuera de rango.");
         }
         PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "nombre", "id"));
+        boolean conCustodio = custodioId != null && !custodioId.isBlank();
+        if (estado != null && conCustodio) {
+            return repository.findByEstadoAndCustodioId(estado, custodioId.trim(), pageable);
+        }
         if (estado != null) {
             return repository.findByEstado(estado, pageable);
         }
-        if (custodioId != null && !custodioId.isBlank()) {
+        if (conCustodio) {
             return repository.findByCustodioId(custodioId.trim(), pageable);
         }
         return repository.findAll(pageable);

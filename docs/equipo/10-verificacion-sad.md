@@ -252,6 +252,17 @@ Supuesto de trabajo: `r` ≈ 60–150 ms desde Bogotá hacia una región de Nort
 
 ---
 
+## Revisión general antes del front (2026-11-16)
+
+| Elemento del SAD | Estado | Evidencia |
+|---|---|---|
+| SD-08 reporte mensual (§7.2.8): solicitud registrada, publicada en el broker, 202, proceso en segundo plano, consulta de estado, PDF y CSV | **Implementado** (D61) | `SolicitudesReporteIntegracionTest`, con MySQL y RabbitMQ reales |
+| ASR3: el reporte nunca toca la base transaccional | **Cumple** | Solo lee `reportes` (alimentada por eventos), y el cruce se agrega en SQL |
+| §4.5: evidencias en un volumen de archivos del Servicio Científico | **Implementado** (D62) | `AlmacenEvidenciasDisco` (Adapter del puerto `AlmacenEvidencias`) |
+| ASR7 y §5.2, restricción a nivel de base de datos (solo INSERT y SELECT sobre el historial) | **Cumple en Aiven** tras el paso 5 de `09` §4.3 (D60) | `MigracionesRegistroTest`, `HistorialAppendOnlyScriptTest` |
+| §4.8 y SD-04, propagación por eventos | **Cumple** | De punta a punta con los 5 servicios: alta y reclasificación visibles en la consulta pública y en reportes; DLQ vacías |
+| §5.3, escalado con Compose y NGINX | Solo para la consulta pública (`pruebas-carga/compose-carga.yml`) | No hay un compose con todos los servicios (D34): se corren en el equipo de cada integrante |
+
 ## Parte de Santiago: gateway (iteraciones 16 y 19, 2026-11-14)
 
 Las tablas de §3 y §5 son la línea base del 2026-11-04 y no se reescriben. Estado actual de lo que es de Santiago:

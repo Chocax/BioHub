@@ -20,21 +20,24 @@ Lo que no aparece en esa tabla se deniega. El gateway hace el control grueso. **
 
 ## 2. Matriz de roles por capacidad
 
-Las rutas con `*` son propuestas: el dueño las confirma y actualiza esta tabla.
+Estado a 2026-11-16: todas las rutas existen y coinciden con el código (cada servicio con `denyAll` y `@PreAuthorize`).
 
 | Capacidad | Ruta | `investigador_campo` | `auditor_cientifico` | `cientifico_alto_rango` | `analista_ambiental` | `administrador` | Dueño |
 |---|---|---|---|---|---|---|---|
-| Buscar hallazgos sin coordenadas | `GET /api/cientifico/ubicacion/hallazgos` | Sí | Sí | Sí | Sí | Sí | Juanita (hecho) |
-| Ver mapa y coordenadas | `GET /api/cientifico/ubicacion/mapa` | No | No | Sí | No | No | Juanita (hecho) |
-| Re-cifrar | `POST /api/cientifico/ubicacion/recifrado` | No | No | No | No | Sí | Juanita (hecho) |
-| Registrar hallazgo y ficha | `/api/cientifico/hallazgos*`, `/fichas*` | Sí | No | Sí | No | No | Hernando |
-| Reclasificar | `/api/cientifico/hallazgos/{id}/clasificacion*` | Sí | Sí | Sí | No | No | Hernando |
-| Ver historial | `/api/cientifico/hallazgos/{id}/historial*` | No | Sí | Sí | No | No | Hernando |
-| Registrar y asignar equipos | `/api/equipos/***` | No | No | No | No | Sí | Nicolás |
-| Ver y generar reportes | `/api/reportes/***` | No | No | No | Sí | No | Nicolás |
-| API Keys y límites | `/api/gateway/consumidores/**`, `/keys/**` | No | No | No | No | Sí | Santiago (hecho) |
-| Usuarios y roles | `/api/gateway/usuarios/**` | No | No | No | No | Sí | Santiago (hecho) |
-| Fondo del mapa (teselas) | `GET /api/gateway/teselas/**` | Sí | Sí | Sí | Sí | Sí | Santiago (hecho) |
+| Buscar hallazgos sin coordenadas | `GET /api/cientifico/ubicacion/hallazgos` | Sí | Sí | Sí | Sí | Sí | Juanita |
+| Ver mapa y coordenadas | `GET /api/cientifico/ubicacion/mapa` | No | No | Sí | No | No | Juanita |
+| Re-cifrar | `POST /api/cientifico/ubicacion/recifrado` | No | No | No | No | Sí | Juanita |
+| Registrar hallazgo | `POST /api/cientifico/hallazgos` | Sí | No | Sí | No | No | Hernando (D63) |
+| Reclasificar | `PUT /api/cientifico/hallazgos/{id}` | Sí | No | Sí | No | No | Hernando (D63) |
+| Configurar plantilla de ficha | `PUT /api/cientifico/fichas/{especie}/atributos` | Sí | No | Sí | No | No | Hernando (D63) |
+| Subir evidencias | `POST /api/cientifico/hallazgos/{id}/evidencias` | Sí | No | Sí | No | No | D62 |
+| Consultar hallazgo, plantilla y evidencias | `GET /api/cientifico/hallazgos/{id}`, `/fichas/{especie}/atributos`, `/hallazgos/{id}/evidencias/**` | Sí | Sí | Sí | No | Sí | Hernando |
+| Ver historial y comparar | `GET /api/cientifico/hallazgos/{id}/{versiones,auditoria,comparar}` | No | Sí | Sí | No | Sí | Hernando |
+| Inventario y asignación de equipos | `/api/equipos/**` | No | No | No | No | Sí | Nicolás |
+| Reportes (consultas y mensual) | `/api/reportes/**` | No | No | No | Sí | Sí | Nicolás (D61) |
+| API Keys y límites | `/api/gateway/consumidores/**`, `/keys/**` | No | No | No | No | Sí | Santiago |
+| Usuarios y roles | `/api/gateway/usuarios/**` | No | No | No | No | Sí | Santiago |
+| Fondo del mapa (teselas) | `GET /api/gateway/teselas/**` | Sí | Sí | Sí | Sí | Sí | Santiago |
 
 `administrador` nunca recibe coordenadas (RF12) ni edita datos científicos.
 
@@ -49,22 +52,13 @@ Las rutas con `*` son propuestas: el dueño las confirma y actualiza esta tabla.
    ```
 3. Si reinicias `api-gateway`, su arranque aplica la migración nueva. Contra Aiven solo debe hacerlo el dueño del gateway.
 
-### Hernando (`registro`)
+### Hernando (`registro`) y Nicolás (`equipos` y `reportes`): estado al 2026-11-16
 
-- [ ] Publica en la matriz las rutas reales de registro, fichas, reclasificación e historial.
-- [ ] Confirma qué roles reclasifican: HU-03 y RF9 no lo dejan cerrado.
-- [ ] Protege cada endpoint con `@PreAuthorize` y agrega una prueba de 403 por rol.
-- [ ] Guarda el autor con el `sub` del JWT (SEC-17, HU-11 c.3), no con `preferred_username`.
-- [ ] Confirma el tamaño máximo de adjuntos: el gateway acepta 10 MB y carga el cuerpo en memoria. Si necesitas más, avisa a Santiago.
-- [ ] Coordina con Juanita el `denyAll` de `servicio-cientifico` (`config/` es compartido).
-
-### Nicolás (`equipos` y `reportes`)
-
-- [ ] Publica en la matriz las rutas reales y confirma los roles.
-- [ ] Cambia `.anyRequest().authenticated()` por `.anyRequest().denyAll()` en los dos servicios.
-- [ ] Protege cada endpoint con `@PreAuthorize` y agrega una prueba de 403 por rol.
-- [ ] HU-04 exige un custodio activo, y los usuarios viven en Keycloak. Propuesta: `servicio-equipos` llama a `GET {gateway}/api/gateway/usuarios/{id}` reenviando el JWT del administrador. Confírmalo con Santiago.
-- [ ] Informa el tamaño de los PDF y CSV: el proxy carga la respuesta en memoria y corta a los 30 segundos.
+Lo que antes estaba como tarea de cada uno ya está en el código: rutas reales en la matriz, `denyAll` y `@PreAuthorize`
+en los tres servicios, el custodio validado contra el gateway (y ahora exigido como `investigador_campo`), y los roles
+que reclasifican (D63). El autor se guarda con `preferred_username`, que en este realm es un ID único e inmutable (D59).
+Lo que se agregó para cerrar el SRS, con su dueño original como responsable de mantenerlo: evidencias (D62), reporte
+mensual asíncrono con índice de presión (D61) e historial bloqueado en la base de datos (D60).
 
 ### Juanita (`ubicacion`, `consulta-publica`, `web-publica`)
 

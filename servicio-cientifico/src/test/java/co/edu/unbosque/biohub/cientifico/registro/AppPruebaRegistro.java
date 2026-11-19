@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 import co.edu.unbosque.biohub.cientifico.config.SecurityConfig;
+import co.edu.unbosque.biohub.cientifico.registro.infrastructure.AlmacenEvidenciasDisco;
 
 /**
  * Aplicación mínima para las pruebas del módulo registro: carga registro y ubicación, porque el alta de
@@ -29,7 +30,7 @@ import co.edu.unbosque.biohub.cientifico.config.SecurityConfig;
         "co.edu.unbosque.biohub.cientifico.ubicacion.domain"})
 @EnableJpaRepositories({"co.edu.unbosque.biohub.cientifico.registro.domain",
         "co.edu.unbosque.biohub.cientifico.ubicacion.domain"})
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, AlmacenEvidenciasDisco.class})
 public class AppPruebaRegistro {
 
     /** En produccion lo aporta RabbitConfig, que aqui no se carga porque RabbitMQ queda fuera. */

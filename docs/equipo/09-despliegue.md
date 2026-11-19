@@ -124,6 +124,14 @@ rm 01-escritura-bases-y-usuarios.sql
 
 La copia con claves está en `deploy/aiven/.gitignore`; la plantilla (`.example`) es lo único que se sube. El script es idempotente: repetirlo rota contraseñas y recalcula permisos. Termina con `SHOW GRANTS` de cada usuario: deben verse solo `SELECT, INSERT, UPDATE, DELETE` (`*_app`) o esos más `CREATE, ALTER, DROP, INDEX, REFERENCES` (`*_migr`), sobre su propia base, sin `ALL PRIVILEGES` ni `WITH GRANT OPTION`. `avnadmin` nunca se usa en una aplicación.
 
+**5) Solo en el servicio de escritura, después de arrancar `servicio-cientifico` una vez** (para que Flyway cree las tablas): bloquea el historial (D60, RNF10). No tiene contraseñas, se ejecuta tal cual. Repítelo cada vez que una migración nueva de `cientifico` cree tablas:
+
+```bash
+mysql --ssl-mode=VERIFY_CA --ssl-ca=../../certs/ca.pem -h <HOST> -P <PUERTO> -u avnadmin -p < 03-registro-historial-append-only.sql.example
+```
+
+Para comprobarlo, conectado como `cientifico_app`, `UPDATE hallazgo_version SET autor = autor LIMIT 1;` debe fallar con `ERROR 1142`.
+
 Aiven MySQL exige clave primaria en todas las tablas (`sql_require_primary_key`) y no admite `CREATE TABLE ... SELECT`, triggers ni `SET GLOBAL`: las migraciones deben pasar `deploy/aiven/verificar-migraciones.sh`.
 
 ### 4.4 Probar la conexión (opcional, rápido)
@@ -311,7 +319,9 @@ Guía para el equipo: `11-seguridad-y-acceso.md`.
 | `REDIS_MAXMEMORY` | Opcional, solo Compose | Por defecto `256mb` |
 | `GATEWAY_CIRCUITO_FALLOS`, `GATEWAY_CIRCUITO_TIEMPO_ABIERTO` | Opcionales | Circuit breaker hacia los servicios (D52). Por defecto 5 fallos y `10s` |
 | `GATEWAY_TESELAS_URL`, `GATEWAY_TESELAS_AGENTE`, `GATEWAY_TESELAS_POR_USUARIO`, `GATEWAY_TESELAS_CACHE` | Opcionales | Proxy de teselas del mapa (D56). Por defecto, OSM, el `User-Agent` de BioHub, 600 por minuto y `64MB`. El gateway necesita salida a internet hacia ese servidor |
-| `RABBITMQ_CIENTIFICO_PASSWORD`, `RABBITMQ_CONSULTA_PASSWORD`, `RABBITMQ_REPORTES_PASSWORD` | Opcionales, `.env` raíz | Crean los usuarios por servicio (SEC-04) |
+| `RABBITMQ_CIENTIFICO_PASSWORD`, `RABBITMQ_CONSULTA_PASSWORD`, `RABBITMQ_REPORTES_PASSWORD` | Opcionales, `.env` raíz | Crean los usuarios por servicio (SEC-04). Tras D61, `reportes_mq` necesita los permisos nuevos de `biohub.reportes`: vuelve a correr `docker compose up -d rabbitmq-usuarios` |
+| `EVIDENCIAS_DIR` | Opcional, `servicio-cientifico` | Carpeta de fotos y audios (D62). Por defecto `./datos/evidencias`, ignorada por Git. En contenedores, un volumen persistente |
+| `REPORTES_PROGRAMACION` | Opcional, `servicio-reportes` | Cron del reporte mensual automático (D61). Por defecto `0 0 3 1 * *` (día 1, 3 a. m. de Bogotá); `-` lo desactiva |
 
 - **Cambios del realm:** `failureFactor` 3, cliente `biohub-gateway` y usuario de prueba `sinrol1`. Hay que reimportar el realm.
 - **Migración del gateway en Aiven:** la aplica `gateway_migr` al arrancar con el perfil `aiven`. Una vez aplicada no se edita.

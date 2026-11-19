@@ -718,7 +718,7 @@ servicio con `@PreAuthorize` (defensa en profundidad, RNF6).
 ## 13. Endpoints
 
 ### 13.1 `POST /api/cientifico/hallazgos` — registrar un hallazgo (HU-01)
-Roles: `investigador_campo`, `cientifico_alto_rango`, `administrador`.
+Roles: `investigador_campo`, `cientifico_alto_rango` (D63: el administrador no crea ni edita datos científicos).
 
 ```json
 {
@@ -755,7 +755,7 @@ Errores: `400 DATOS_INVALIDOS` (campo del formulario), `400 UBICACION_INVALIDA` 
 la transacción se revirtió entera), `403` si el rol no corresponde.
 
 ### 13.2 `PUT /api/cientifico/hallazgos/{id}` — reclasificar (HU-03)
-Roles: `cientifico_alto_rango`, `administrador`.
+Roles: `investigador_campo`, `cientifico_alto_rango` (D63).
 
 Mismo cuerpo que el alta **sin** `latitud`/`longitud`, más `justificacion` (obligatoria, ≤ 1000). Los
 campos nulos no se tocan. Devuelve `{ "hallazgoId": "...", "version": n }` con la versión nueva.
@@ -768,7 +768,7 @@ Roles: `investigador_campo`, `cientifico_alto_rango`, `auditor_cientifico`, `adm
 Devuelve el hallazgo **sin coordenadas**.
 
 ### 13.4 `PUT /api/cientifico/fichas/{nombreCientifico}/atributos` — configurar la plantilla (HU-02)
-Roles: `cientifico_alto_rango`, `administrador`.
+Roles: `investigador_campo`, `cientifico_alto_rango` (D63).
 
 Se envía la lista completa tal como debe quedar; cada llamada crea una **versión nueva** de la plantilla
 y las anteriores no se tocan, de modo que los hallazgos ya registrados no se alteran.
@@ -798,6 +798,22 @@ Cada fila: `campo`, `valorPrevio`, `valorNuevo`, `justificacion`, `autor`, `fech
 Devuelve **solo los campos que cambiaron**, que es lo que el auditor necesita resaltar. El orden de los
 parámetros no importa. `400` si ambos son iguales; `404` si alguna versión no existe.
 
+### 13.9 Evidencias del hallazgo: fotografías y audios (RF1, HU-01 c.2, D62)
+
+| Método y ruta | Roles | Respuesta |
+|---|---|---|
+| `POST /api/cientifico/hallazgos/{id}/evidencias` | `investigador_campo`, `cientifico_alto_rango` | `multipart/form-data` con el campo `archivo`. **201** con la evidencia nueva y `Location`; **200** si el mismo archivo ya estaba (no se duplica) |
+| `GET /api/cientifico/hallazgos/{id}/evidencias` | los 4 que consultan el hallazgo (todos menos `analista_ambiental`) | Lista en orden de subida |
+| `GET /api/cientifico/hallazgos/{id}/evidencias/{evidenciaId}` | los mismos | El archivo, siempre como adjunto (`Content-Disposition: attachment`), con `nosniff` y `no-store` |
+
+Evidencia: `{ id, nombre, tipo: FOTOGRAFIA|AUDIO, contentType, tamanoBytes, sha256, subidoPor, creadoEn }`. Nunca trae la ruta en disco.
+
+- **Formatos** (se reconocen por el contenido, no por la extensión): JPEG y PNG (fotos); WAV, MP3, OGG y FLAC (audio). WEBP, HEIC, MP4 y M4A no: pueden traer la ubicación del teléfono y no se limpian.
+- **Metadatos:** a las fotos se les quita el EXIF, el XMP y los comentarios antes de guardarlas, porque el EXIF trae las coordenadas GPS (RNF9). Lo que se descarga es la versión limpia.
+- **Tamaño:** máximo 9 MB por archivo (el cuerpo máximo del gateway es 10 MB con el sobre multipart).
+- **Errores:** `400 DATOS_INVALIDOS` (vacío, formato no admitido, imagen dañada o sin el campo `archivo`), `413 ARCHIVO_DEMASIADO_GRANDE`, `404 HALLAZGO_NO_ENCONTRADO`, `404 EVIDENCIA_NO_ENCONTRADA` (también si la evidencia es de otro hallazgo), `403`.
+- El front sube el hallazgo primero (13.1) y luego cada archivo con el `hallazgoId` que recibió.
+
 ## 14. Garantías que registro cumple del contrato
 
 1. El hallazgo se inserta **antes** de avisar a ubicación, en la misma `@Transactional`; si ubicación
@@ -821,22 +837,65 @@ parámetros no importa. `400` si ambos son iguales; `404` si alguna versión no 
 1. Los repositorios no exponen ninguna operación de modificación ni de borrado.
 2. Un `CHECK` impide guardar una versión ≥ 2 sin justificación, y un `UNIQUE` impide repetir una versión.
 
-**Lo que todavía NO está garantizado:** el criterio 2 de HU-05 pide bloquear *físicamente* `UPDATE` y
-`DELETE`. La vía habitual —triggers— se probó y **no es viable**: MySQL con binary logging exige
-`SUPER` para crearlos (ERROR 1419) y ningún usuario del proyecto tiene `SUPER` ni `TRIGGER` (doc 05
-§11). Se comprobó contra MySQL 8.4 real: la migración fallaba y el servicio no arrancaba, así que se
-retiró.
+3. **En la base de datos (D60, desde 2026-11-16):** `cientifico_app` no tiene `UPDATE` ni `DELETE` sobre esas dos
+   tablas. Lo aplica `deploy/aiven/03-registro-historial-append-only.sql.example`, que es un paso obligatorio del
+   aprovisionamiento de Aiven (`09-despliegue.md` §4.3, paso 5). Un `UPDATE` o `DELETE` sobre el historial falla con
+   `ERROR 1142` aunque se use la credencial de la aplicación (HU-05 c.2, RNF10).
 
-Queda la vía de permisos, pero choca con el aprovisionamiento actual: `cientifico_app` tiene
-`UPDATE, DELETE` sobre `cientifico`.*, y en MySQL los privilegios **se suman**, de modo que no se
-puede restar el permiso a dos tablas concretas. Hay que bajar el permiso de base y devolverlo tabla
-por tabla.
+Los triggers no sirven: MySQL con binary logging exige `SUPER` para crearlos (ERROR 1419) y ningún usuario del
+proyecto lo tiene. Por eso se usan permisos.
 
-La propuesta está escrita y **probada** en `deploy/aiven/03-registro-historial-append-only.sql.example`;
-`MigracionesRegistroTest` crea un usuario con ese reparto y verifica que `UPDATE` y `DELETE` sobre el
-historial fallan mientras el resto sigue funcionando.
+**Pruebas:** `MigracionesRegistroTest` crea un usuario con ese reparto y comprueba que el historial rechaza
+`UPDATE` y `DELETE` mientras el resto sigue funcionando. `HistorialAppendOnlyScriptTest` hace fallar el build si una
+migración crea una tabla que no está en el script: cada tabla nueva tiene que decidir si es historial o si lleva su
+línea de permisos.
 
-> **Decisión pendiente del equipo:** aplicarlo tiene un costo, cada tabla nueva con escritura necesitará
-> su línea en ese script, mientras que hoy el aprovisionamiento es por base para no tener que tocarlo.
-> Mientras no se aplique, la inmutabilidad protege contra un error de programación, pero no contra
-> alguien que use la credencial de la aplicación.
+**Límite:** en el MySQL local de Docker el usuario de la aplicación también hace las migraciones y tiene todos los
+permisos, así que el bloqueo solo aplica en Aiven, donde hay un usuario de aplicación y otro de migración.
+
+## 16. Inventario de equipos de campo (HU-04, RF5, RF6) — `servicio-equipos`
+
+Todo exige rol `administrador`. Errores en problem+json: `400 PARAMETRO_INVALIDO`, `404 NO_ENCONTRADO`,
+`409 CONFLICTO`, `403 ROL_INSUFICIENTE`, `503 SERVICIO_NO_DISPONIBLE` (no se pudo consultar al gateway).
+
+| Método y ruta | Cuerpo | Respuesta |
+|---|---|---|
+| `POST /api/equipos` | `{ codigoInventario, nombre, categoria, descripcion? }` | 201 + equipo. 409 si el código ya existe |
+| `GET /api/equipos?estado&custodioId&page&size` | – | 200 + `{ content, page, size, total, totalPaginas }`. Los dos filtros se combinan |
+| `GET /api/equipos/{id}` | – | 200 + equipo |
+| `PUT /api/equipos/{id}/asignacion` | `{ custodioId }` (el `id` de Keycloak) | 200 + equipo `ASIGNADO`. 400 si el custodio no existe, está inactivo o **no es `investigador_campo`** (HU-04 c.1) |
+| `PUT /api/equipos/{id}/estado` | `{ estado: DISPONIBLE|MANTENIMIENTO|BAJA }` | 200 + equipo; libera al custodio |
+
+Equipo: `{ id, codigoInventario, nombre, categoria, descripcion, estado, custodioId, custodioUsuario, asignadoEn,
+creadoEn, actualizadoEn }`. `ASIGNADO` es el estado "En expedición" de HU-04 c.2: el front lo muestra con ese texto.
+Para validar al custodio, el servicio llama a `GET /api/gateway/usuarios/{id}` con el JWT del administrador.
+
+## 17. Reportes (HU-09, RF15, RF16) — `servicio-reportes`
+
+Roles: `analista_ambiental` y `administrador`. Todo se calcula sobre la base analítica, alimentada por los eventos
+`hallazgo.*`; nunca se consulta la base del Servicio Científico (ASR3).
+
+### 17.1 Reporte mensual asíncrono de presión sobre los ecosistemas (SD-08, D61)
+
+| Método y ruta | Respuesta |
+|---|---|
+| `POST /api/reportes/solicitudes` con `{ "periodo": "2026-03" }` | **202 Accepted** + `Location` + la solicitud en `PENDIENTE`. El reporte se genera en segundo plano (HU-09 c.1) |
+| `GET /api/reportes/solicitudes` | Las 20 más recientes |
+| `GET /api/reportes/solicitudes/{id}` | Estado: `PENDIENTE`, `EN_PROCESO`, `LISTO` o `FALLIDO`. Con `LISTO` trae `resumen` |
+| `GET /api/reportes/solicitudes/{id}/csv` · `/pdf` | El archivo (HU-09 c.3). **409 `REPORTE_NO_LISTO`** si todavía no está listo |
+
+Solicitud: `{ id, periodo, estado, origen: MANUAL|PROGRAMADO, solicitadoPor, solicitadoEn, iniciadoEn, terminadoEn,
+error, resumen }`. `resumen` es `{ periodo, totalHallazgos, totalEnPeligro, departamentos, zonasEnAlerta: [...],
+indices: [{ departamento, hallazgos, enPeligro, especies, proporcionEnPeligro, promedioEnPeligroPrevio, crecimiento,
+indice, nivel, alerta }] }`, ordenado del departamento más presionado al menos. La fórmula está en D61.
+
+- `periodo` en formato `AAAA-MM`, entre 2000 y el mes actual: si no, 400 `PARAMETRO_INVALIDO`.
+- El front consulta el estado cada 1 o 2 segundos hasta `LISTO` o `FALLIDO` y entonces muestra los botones de descarga.
+- El primer día de cada mes, a las 3 a. m. de Bogotá, el servicio pide solo el reporte del mes anterior
+  (`origen: PROGRAMADO`, `solicitadoPor: sistema`), una sola vez por mes (HU-09 "programar").
+
+### 17.2 Consultas inmediatas (las de antes)
+
+`GET /api/reportes/resumen`, `GET /api/reportes/hallazgos` y `GET /api/reportes/exportar/{csv|pdf}`, con los filtros
+opcionales `departamento`, `familia`, `estado`, `desde` y `hasta`. Responden en el momento con conteos por
+departamento, familia y estado. Sirven para explorar; el reporte mensual de HU-09 es el de 17.1.

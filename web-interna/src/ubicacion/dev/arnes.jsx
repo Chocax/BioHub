@@ -10,7 +10,7 @@
  */
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import Arnes from './Arnes.jsx';
+import Arnes from './ArnesUbicacion.jsx';
 import './arnes.css';
 
 const raiz = createRoot(document.getElementById('arnes'));
