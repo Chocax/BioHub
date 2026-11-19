@@ -20,8 +20,9 @@ const TAMANOS = [20, 50, 100];
  *  - roles: roles de negocio del usuario (rolesUsuario() de Santiago)
  *  - alSesionVencida(): se llama ante un 401 (p. ej. keycloak.login)
  *  - alVerEnMapa(id): opcional; si falta, no se pinta el botón "Ver en el mapa"
+ *  - alVerDetalle(id): opcional; si está, el nombre de la especie abre la ficha completa del hallazgo
  */
-export default function PaginaBusqueda({ cliente, roles = [], alSesionVencida, alVerEnMapa }) {
+export default function PaginaBusqueda({ cliente, roles = [], alSesionVencida, alVerEnMapa, alVerDetalle }) {
   const altoRango = esAltoRango(roles);
   const [filtros, setFiltros] = useState(FILTROS_VACIOS);
   const [pagina, setPagina] = useState(0);
@@ -130,7 +131,7 @@ export default function PaginaBusqueda({ cliente, roles = [], alSesionVencida, a
                 </select>
               </label>
             </div>
-            <TablaHallazgos hallazgos={estado.hallazgos} altoRango={altoRango} onVerEnMapa={alVerEnMapa} />
+            <TablaHallazgos hallazgos={estado.hallazgos} altoRango={altoRango} onVerEnMapa={alVerEnMapa} onVerDetalle={alVerDetalle} />
             <Paginacion
               pagina={estado.page}
               totalPaginas={estado.totalPaginas}
