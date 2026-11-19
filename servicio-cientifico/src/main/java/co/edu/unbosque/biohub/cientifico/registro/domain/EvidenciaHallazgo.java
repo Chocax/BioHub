@@ -58,6 +58,10 @@ public class EvidenciaHallazgo {
     @Column(name = "subido_por", length = 100)
     private String subidoPor;
 
+    /** Si el portal público puede mostrarla (D65). Solo fotografías; por defecto, no. */
+    @Column(name = "publica", nullable = false)
+    private boolean publica;
+
     @Column(name = "creado_en", insertable = false, updatable = false)
     private Instant creadoEn;
 
@@ -123,6 +127,18 @@ public class EvidenciaHallazgo {
 
     public Instant getCreadoEn() {
         return creadoEn;
+    }
+
+    public boolean isPublica() {
+        return publica;
+    }
+
+    /** Solo una fotografía puede ser pública: un audio no se muestra en el portal. */
+    public void marcarPublica(boolean valor) {
+        if (valor && tipo != TipoEvidencia.FOTOGRAFIA) {
+            throw new IllegalStateException("Solo una fotografía puede ser pública");
+        }
+        this.publica = valor;
     }
 
     /** Tipo de evidencia admitida por HU-01. */

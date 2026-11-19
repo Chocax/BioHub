@@ -19,6 +19,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
@@ -82,6 +84,18 @@ public class EvidenciaController {
                 .body(new InputStreamResource(evidencias.abrir(evidencia)));
     }
 
+    /** Muestra u oculta la fotografía en el portal público (D65). Cuerpo: {@code {"publica": true}}. */
+    @PutMapping("/{evidenciaId}/publica")
+    @PreAuthorize("hasAnyRole('investigador_campo', 'cientifico_alto_rango')")
+    public EvidenciaResponse marcarPublica(@PathVariable UUID id, @PathVariable UUID evidenciaId,
+                                           @RequestBody MarcarPublicaRequest cuerpo, @AuthenticationPrincipal Jwt jwt) {
+        return EvidenciaResponse.de(evidencias.marcarPublica(id, evidenciaId, Boolean.TRUE.equals(cuerpo.publica()),
+                HallazgoController.usuario(jwt)));
+    }
+
+    public record MarcarPublicaRequest(Boolean publica) {
+    }
+
     /** {@code filename} simple si el nombre es ASCII; si trae tildes, además {@code filename*} en UTF-8 (RFC 6266). */
     static String adjunto(String nombre) {
         boolean ascii = nombre.chars().allMatch(c -> c >= 0x20 && c < 0x7F);
@@ -92,10 +106,10 @@ public class EvidenciaController {
 
     /** Metadatos de la evidencia; nunca la ruta interna en disco. */
     public record EvidenciaResponse(UUID id, String nombre, String tipo, String contentType, long tamanoBytes,
-                                    String sha256, String subidoPor, Instant creadoEn) {
+                                    String sha256, String subidoPor, boolean publica, Instant creadoEn) {
         static EvidenciaResponse de(EvidenciaHallazgo e) {
             return new EvidenciaResponse(e.getId(), e.getNombre(), e.getTipo().name(), e.getContentType(),
-                    e.getTamanoBytes(), e.getSha256(), e.getSubidoPor(), e.getCreadoEn());
+                    e.getTamanoBytes(), e.getSha256(), e.getSubidoPor(), e.isPublica(), e.getCreadoEn());
         }
     }
 }
