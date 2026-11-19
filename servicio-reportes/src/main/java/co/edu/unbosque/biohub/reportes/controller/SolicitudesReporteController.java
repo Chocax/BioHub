@@ -28,7 +28,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import co.edu.unbosque.biohub.reportes.domain.OrigenSolicitud;
-import co.edu.unbosque.biohub.reportes.domain.ReporteArchivo;
 import co.edu.unbosque.biohub.reportes.domain.SolicitudReporte;
 import co.edu.unbosque.biohub.reportes.service.SolicitudesReporteService;
 
@@ -85,15 +84,13 @@ public class SolicitudesReporteController {
     @GetMapping(value = "/{id}/csv", produces = "text/csv; charset=UTF-8")
     @PreAuthorize("hasAnyRole('analista_ambiental', 'administrador')")
     public ResponseEntity<byte[]> csv(@PathVariable UUID id) {
-        ReporteArchivo a = servicio.archivos(id);
-        return archivo(a.getCsv(), MediaType.parseMediaType("text/csv; charset=UTF-8"), nombre(id, "csv"));
+        return archivo(servicio.csvDe(id), MediaType.parseMediaType("text/csv; charset=UTF-8"), nombre(id, "csv"));
     }
 
     @GetMapping(value = "/{id}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
     @PreAuthorize("hasAnyRole('analista_ambiental', 'administrador')")
     public ResponseEntity<byte[]> pdf(@PathVariable UUID id) {
-        ReporteArchivo a = servicio.archivos(id);
-        return archivo(a.getPdf(), MediaType.APPLICATION_PDF, nombre(id, "pdf"));
+        return archivo(servicio.pdfDe(id), MediaType.APPLICATION_PDF, nombre(id, "pdf"));
     }
 
     private String nombre(UUID id, String extension) {

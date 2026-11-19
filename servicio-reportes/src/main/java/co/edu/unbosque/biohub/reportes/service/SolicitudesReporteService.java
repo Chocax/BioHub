@@ -158,56 +158,82 @@ public class SolicitudesReporteService {
         return r;
     }
 
+    /**
+     * CSV para abrir con doble clic en Excel en español: separador «;» y coma decimal (con «,» Excel lo deja todo en
+     * una columna). Lleva BOM para que las tildes salgan bien y encabezados legibles.
+     */
     static byte[] csv(List<IndicePresion> indices) {
         StringBuilder sb = new StringBuilder("﻿");
-        sb.append("departamento,hallazgos,en_peligro,especies,proporcion_en_peligro,promedio_en_peligro_3_meses,")
-                .append("crecimiento,indice_presion,nivel,alerta\n");
+        sb.append("Departamento;Hallazgos;En peligro;Especies;Proporción en peligro;Promedio en peligro (3 meses previos);")
+                .append("Crecimiento;Índice de presión;Nivel;Zona en alerta\r\n");
         for (IndicePresion i : indices) {
-            sb.append(ConsultasReportesService.escaparCsv(i.departamento())).append(',')
-                    .append(i.hallazgos()).append(',')
-                    .append(i.enPeligro()).append(',')
-                    .append(i.especies()).append(',')
-                    .append(numero(i.proporcionEnPeligro())).append(',')
-                    .append(numero(i.promedioEnPeligroPrevio())).append(',')
-                    .append(numero(i.crecimiento())).append(',')
-                    .append(numero(i.indice())).append(',')
-                    .append(i.nivel()).append(',')
-                    .append(i.alerta() ? "SI" : "NO").append('\n');
+            sb.append(celda(i.departamento())).append(';')
+                    .append(i.hallazgos()).append(';')
+                    .append(i.enPeligro()).append(';')
+                    .append(i.especies()).append(';')
+                    .append(numero(i.proporcionEnPeligro())).append(';')
+                    .append(numero(i.promedioEnPeligroPrevio())).append(';')
+                    .append(numero(i.crecimiento())).append(';')
+                    .append(numero(i.indice())).append(';')
+                    .append(i.nivel()).append(';')
+                    .append(i.alerta() ? "Sí" : "No").append("\r\n");
         }
         return sb.toString().getBytes(StandardCharsets.UTF_8);
     }
 
-    static byte[] pdf(YearMonth periodo, List<IndicePresion> indices, Map<String, Object> resumen) {
-        List<String> l = new ArrayList<>();
-        l.add("BIOHUB - INDICE DE PRESION SOBRE ECOSISTEMAS - " + periodo);
-        l.add("Generado: " + LocalDate.now(ZONA) + " | Hallazgos: " + resumen.get("totalHallazgos")
-                + " | En peligro: " + resumen.get("totalEnPeligro"));
-        l.add("Indice = 100 x (0.7 x proporcion en peligro + 0.3 x crecimiento vs. promedio de 3 meses)");
-        l.add("Nivel: ALTO >= 50, MEDIO >= 25. Alerta: nivel ALTO y aumento de hallazgos en peligro.");
-        l.add("--------------------------------------------------------------------------------");
-        @SuppressWarnings("unchecked")
-        List<String> alerta = (List<String>) resumen.get("zonasEnAlerta");
-        l.add("ZONAS EN ALERTA: " + (alerta.isEmpty() ? "ninguna" : ConsultasReportesService.sanitizarAscii(
-                String.join(", ", alerta))));
-        l.add("--------------------------------------------------------------------------------");
-        l.add("DEPARTAMENTO | HALLAZGOS | EN PELIGRO | INDICE | NIVEL");
-        int limite = Math.min(indices.size(), 40);
-        for (int k = 0; k < limite; k++) {
-            IndicePresion i = indices.get(k);
-            l.add(String.format(Locale.ROOT, "%s | %d | %d | %.1f | %s%s",
-                    ConsultasReportesService.sanitizarAscii(i.departamento()), i.hallazgos(), i.enPeligro(),
-                    i.indice(), i.nivel(), i.alerta() ? " (ALERTA)" : ""));
+    /** Comillas si el texto trae «;», comillas o saltos; y un apóstrofo si empieza como fórmula (=, +, -, @). */
+    private static String celda(String valor) {
+        String v = valor == null ? "" : valor;
+        if (!v.isEmpty() && "=+-@".indexOf(v.charAt(0)) >= 0) {
+            v = "'" + v;
         }
-        if (indices.size() > limite) {
-            l.add("... (" + (indices.size() - limite) + " departamentos mas en el CSV)");
-        }
-        if (indices.isEmpty()) {
-            l.add("Sin hallazgos en el periodo.");
-        }
-        return ConsultasReportesService.construirPdfSimple(l);
+        return v.contains(";") || v.contains("\"") || v.contains("\n") || v.contains("\r")
+                ? "\"" + v.replace("\"", "\"\"") + "\"" : v;
     }
 
+    /**
+     * PDF y CSV de un reporte LISTO, armados de nuevo desde su resumen: así también los reportes generados con una
+     * versión anterior se descargan con el formato actual. Si el resumen no se puede leer, se entregan los guardados.
+     */
+    public byte[] pdfDe(UUID id) {
+        ReporteArchivo guardado = archivos(id);
+        SolicitudReporte s = obtener(id);
+        return indicesDe(s).map(indices -> pdf(YearMonth.parse(s.getPeriodo()), indices, Map.of(),
+                        s.getTerminadoEn() == null ? LocalDate.now(ZONA) : LocalDate.ofInstant(s.getTerminadoEn(), ZONA)))
+                .orElseGet(guardado::getPdf);
+    }
+
+    public byte[] csvDe(UUID id) {
+        ReporteArchivo guardado = archivos(id);
+        return indicesDe(obtener(id)).map(SolicitudesReporteService::csv).orElseGet(guardado::getCsv);
+    }
+
+    private java.util.Optional<List<IndicePresion>> indicesDe(SolicitudReporte s) {
+        if (s.getResumenJson() == null) {
+            return java.util.Optional.empty();
+        }
+        try {
+            com.fasterxml.jackson.databind.JsonNode nodo = json.readTree(s.getResumenJson()).get("indices");
+            if (nodo == null || !nodo.isArray()) {
+                return java.util.Optional.empty();
+            }
+            return java.util.Optional.of(java.util.Arrays.asList(json.treeToValue(nodo, IndicePresion[].class)));
+        } catch (JsonProcessingException | IllegalArgumentException e) {
+            log.warn("El resumen del reporte {} no se pudo leer: se entrega el archivo guardado", s.getId());
+            return java.util.Optional.empty();
+        }
+    }
+
+    static byte[] pdf(YearMonth periodo, List<IndicePresion> indices, Map<String, Object> resumen) {
+        return pdf(periodo, indices, resumen, LocalDate.now(ZONA));
+    }
+
+    static byte[] pdf(YearMonth periodo, List<IndicePresion> indices, Map<String, Object> resumen, LocalDate generado) {
+        return PdfPresion.generar(periodo, indices, generado);
+    }
+
+    /** Coma decimal, como la lee Excel en español. */
     private static String numero(double valor) {
-        return String.format(Locale.ROOT, "%.2f", valor);
+        return String.format(Locale.ROOT, "%.2f", valor).replace('.', ',');
     }
 }
