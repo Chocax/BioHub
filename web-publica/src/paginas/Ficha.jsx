@@ -54,7 +54,7 @@ export default function Ficha() {
 
   if (estado.tipo === 'cargando') {
     return (
-      <div aria-busy="true">
+      <div aria-busy="true" className="contenedor">
         {enlaceVolver}
         <p role="status" className="solo-lectores">Cargando la ficha…</p>
         <Esqueleto tipo="ficha" />
@@ -64,7 +64,7 @@ export default function Ficha() {
 
   if (estado.tipo === 'error') {
     return (
-      <div>
+      <div className="contenedor">
         {enlaceVolver}
         <ErrorDeConsulta error={estado.error} onReintentar={() => setIntento((n) => n + 1)}>
           <Link to="/">Ir al buscador</Link>
@@ -75,7 +75,7 @@ export default function Ficha() {
 
   const f = estado.ficha;
   return (
-    <article className="ficha">
+    <article className="ficha contenedor">
       {enlaceVolver}
       <header className="ficha-cabecera">
         <h1 tabIndex={-1} ref={refH1}><i lang="la">{f.nombreCientifico}</i></h1>
