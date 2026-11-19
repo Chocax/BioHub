@@ -392,7 +392,27 @@ Despliegue de bases, Redis y RabbitMQ en VMs locales con una VPN de malla, y su 
 | 24e | Validación en navegador contra el backend real con los 5 roles, escritorio y móvil | Hecho: investigador, alto rango, analista y administrador recorridos; arreglados desbordes en móvil y textos |
 | 24f | Pruebas: `App.test.jsx` nuevo (rutas, menú y guardas por rol) y las de ubicación y la web pública en verde | Hecho |
 
-**Pendientes tras la iteración 24:**
+**Pendientes tras la iteración 24:** (ver también la iteración 25)
 - Los de la iteración 23 fuera del código siguen en pie.
 - La web pública en Vercel debe servir `public/pinturas/` (ya va dentro de `dist`).
 
+# Iteración 25: segunda revisión del front con las notas de Santiago
+
+**Fecha:** 2026-11-19 · **Rama:** `feature/revision-front-2`.
+
+| # | Tarea | Estado |
+|---|---|---|
+| 25a | `levantar.ps1`: todo el entorno local con un comando, usuarios de prueba y datos de ejemplo | Hecho y probado con un `.env` de prueba |
+| 25b | Arreglos que salieron al probarlo: CRLF del init de MySQL, espera de la API de RabbitMQ, usuario de migración de Aiven en local | Hecho |
+| 25c | Fichas: foco al escribir, unidad más ancha, galería de especies con foto y paginación | Hecho |
+| 25d | Listas desplegables (especie, familia, investigador) y catálogo público por especie con foto (D65) | Hecho |
+| 25e | Mapa: leyenda, panel nuevo con foto | Hecho |
+| 25f | Reportes: PDF con diseño y sala más didáctica | Hecho |
+| 25g | Iconos, favicon, login de Keycloak, pie del portal, pinturas que rotan, salas con pintura | Hecho |
+| 25h | Pruebas: catálogo y foto pública (científico y consulta), PDF, front unitario y E2E | Hecho |
+| 25i | Tercera ronda: reportes viejos con el formato nuevo y CSV para Excel, flechas del carrusel, pinturas al azar por sala, Usuarios y roles rediseñada, nombre y cartela de cada sala en los bordes, login con fondos que rotan, fondos sin pixelado | Hecho |
+| 25j | Más obras de historia de Colombia (E. W. Mark, Comisión Corográfica, Humboldt, Mutis) | Pendiente: Wikimedia bloqueó las descargas por exceso de peticiones |
+
+**Pendientes tras la iteración 25:**
+- Quien tenga Keycloak ya importado no necesita reimportar: `levantar.ps1` activa el tema del login por la API de administración.
+- Al subir, avisar al equipo: cambian `docker-compose.yml` (monta el tema) e `infra/` (`.gitattributes` de MySQL y espera en `crear-usuarios.sh`).
