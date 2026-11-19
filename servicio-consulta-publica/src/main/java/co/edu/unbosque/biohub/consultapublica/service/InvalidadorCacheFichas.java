@@ -32,9 +32,11 @@ public class InvalidadorCacheFichas {
             if (fichas != null) {
                 fichas.evict(hallazgoId.toString());
             }
-            Cache busquedas = cacheManager.getCache(CacheConfig.BUSQUEDAS);
-            if (busquedas != null) {
-                busquedas.clear();
+            for (String nombre : new String[] {CacheConfig.BUSQUEDAS, CacheConfig.ESPECIES, CacheConfig.FAMILIAS}) {
+                Cache cache = cacheManager.getCache(nombre);
+                if (cache != null) {
+                    cache.clear();
+                }
             }
         } catch (RuntimeException e) {
             log.warn("No se pudo invalidar la caché hallazgoId={} causa={}", hallazgoId, e.getClass().getSimpleName());

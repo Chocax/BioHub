@@ -35,7 +35,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/publica/eventos/recibidos").hasRole("administrador")
                         // Consulta pública: sin login. API Keys y rate limiting se aplican en el gateway.
                         .requestMatchers(HttpMethod.GET, "/api/publica/ping", "/api/publica/fichas",
-                                "/api/publica/fichas/*").permitAll()
+                                "/api/publica/fichas/*", "/api/publica/especies", "/api/publica/especies/*").permitAll()
                         // Todo lo demás se deniega (11-seguridad-y-acceso.md §3). Un endpoint nuevo exige su matcher
                         // aquí y su @PreAuthorize en el controlador (lo verifica ArquitecturaSeguridadTest).
                         .anyRequest().denyAll())
