@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Ban, Binoculars, Check, PackageCheck, Plus, Undo2, Wrench } from 'lucide-react';
 import { api } from '../api/cliente.js';
 import { Aviso, AvisoError, CabeceraPagina, Campo, Cargando, ChipEstado, formatearFecha, Paginacion, Vacio } from '../componentes/ui.jsx';
 
@@ -39,7 +40,7 @@ function Registrar({ alCrear }) {
         <Campo etiqueta="Categoría" obligatorio>{(p) => <select {...p} value={datos.categoria} onChange={cambiar('categoria')}>{CATEGORIAS.map((c) => <option key={c}>{c}</option>)}</select>}</Campo>
       </div>
       <Campo etiqueta="Descripción">{(p) => <textarea {...p} maxLength={500} value={datos.descripcion} onChange={cambiar('descripcion')} />}</Campo>
-      <div><button type="submit" className="boton" disabled={guardando}>{guardando ? 'Guardando…' : 'Registrar equipo'}</button></div>
+      <div><button type="submit" className="boton" disabled={guardando}><Plus className="icono" aria-hidden="true" />{guardando ? 'Guardando…' : 'Registrar equipo'}</button></div>
     </form>
   );
 }
@@ -61,24 +62,51 @@ function Acciones({ equipo, investigadores, alCambiar }) {
             {investigadores.map((u) => <option key={u.id} value={u.id}>{u.nombre} {u.apellido} ({u.usuario})</option>)}
           </select>
           <button type="button" className="boton boton--chico" disabled={!custodio || ocupado}
-            onClick={() => hacer(api.put(`/api/equipos/${equipo.id}/asignacion`, { custodioId: custodio }))}>Asignar</button>
+            onClick={() => hacer(api.put(`/api/equipos/${equipo.id}/asignacion`, { custodioId: custodio }))}><Check className="icono" aria-hidden="true" />Asignar</button>
         </div>
       )}
       <div className="acciones">
         {equipo.estado !== 'DISPONIBLE' && equipo.estado !== 'BAJA' && (
           <button type="button" className="boton boton--fantasma boton--chico" disabled={ocupado}
-            onClick={() => hacer(api.put(`/api/equipos/${equipo.id}/estado`, { estado: 'DISPONIBLE' }))}>{equipo.estado === 'ASIGNADO' ? 'Devolver' : 'Disponible'}</button>
+            onClick={() => hacer(api.put(`/api/equipos/${equipo.id}/estado`, { estado: 'DISPONIBLE' }))}>{equipo.estado === 'ASIGNADO' ? <><Undo2 className="icono" aria-hidden="true" />Devolver</> : <><PackageCheck className="icono" aria-hidden="true" />Disponible</>}</button>
         )}
         {equipo.estado !== 'MANTENIMIENTO' && equipo.estado !== 'BAJA' && (
           <button type="button" className="boton boton--fantasma boton--chico" disabled={ocupado}
-            onClick={() => hacer(api.put(`/api/equipos/${equipo.id}/estado`, { estado: 'MANTENIMIENTO' }))}>Mantenimiento</button>
+            onClick={() => hacer(api.put(`/api/equipos/${equipo.id}/estado`, { estado: 'MANTENIMIENTO' }))}><Wrench className="icono" aria-hidden="true" />Mantenimiento</button>
         )}
         {equipo.estado !== 'BAJA' && (
           <button type="button" className="boton boton--fantasma boton--chico" disabled={ocupado}
-            onClick={() => { if (window.confirm(`¿Dar de baja ${equipo.nombre}? No se podrá volver a asignar.`)) hacer(api.put(`/api/equipos/${equipo.id}/estado`, { estado: 'BAJA' })); }}>Dar de baja</button>
+            onClick={() => { if (window.confirm(`¿Dar de baja ${equipo.nombre}? No se podrá volver a asignar.`)) hacer(api.put(`/api/equipos/${equipo.id}/estado`, { estado: 'BAJA' })); }}><Ban className="icono" aria-hidden="true" />Dar de baja</button>
         )}
       </div>
       {error && <p className="campo__error" role="alert">{error.message}</p>}
+    </div>
+  );
+}
+
+const RESUMEN = [
+  ['DISPONIBLE', 'Disponibles', PackageCheck, 'musgo'],
+  ['ASIGNADO', 'En expedición', Binoculars, 'pizarra'],
+  ['MANTENIMIENTO', 'En mantenimiento', Wrench, 'ocre'],
+  ['BAJA', 'De baja', Ban, 'neutro'],
+];
+
+/** Cuántos equipos hay en cada estado (una petición de tamaño 1 por estado; se recalcula tras cada cambio). */
+function Indicadores({ version }) {
+  const [conteos, setConteos] = useState({});
+  useEffect(() => {
+    Promise.all(RESUMEN.map(([estado]) => api.get(`/api/equipos?estado=${estado}&page=0&size=1`)
+      .then((p) => [estado, p.total]).catch(() => [estado, null])))
+      .then((pares) => setConteos(Object.fromEntries(pares)));
+  }, [version]);
+  return (
+    <div className="indicadores">
+      {RESUMEN.map(([estado, texto, Icono, tono]) => (
+        <div key={estado} className="indicador">
+          <span className={`indicador__icono tono--${tono}`}><Icono className="icono" aria-hidden="true" /></span>
+          <div><p className="indicador__valor">{conteos[estado] ?? '—'}</p><p className="indicador__texto">{texto}</p></div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -102,9 +130,10 @@ export default function Equipos() {
 
   return (
     <section className="pagina">
-      <CabeceraPagina pestana="Equipos de campo" eyebrow="Inventario · HU-04" titulo={<>Equipos de <em>campo</em></>}
+      <CabeceraPagina pestana="Equipos de campo" eyebrow="Inventario · HU-04" titulo={<>Equipos de <em>campo</em></>} pintura="auto"
         descripcion="Drones, cámaras trampa, hidrófonos y sensores son activos del Estado: cada uno sale a campo con un investigador activo como custodio." />
       {mensaje && <Aviso tipo="exito">{mensaje}</Aviso>}
+      <Indicadores version={pagina} />
       <div className="rejilla" style={{ gridTemplateColumns: 'minmax(0, 2fr) minmax(280px, 1fr)', alignItems: 'start' }}>
         <div className="tarjeta">
           <div className="campos" style={{ marginBottom: 16 }}>

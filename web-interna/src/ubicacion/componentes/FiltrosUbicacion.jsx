@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { DEPARTAMENTOS } from '../datos/departamentos.js';
 import { FILTROS_VACIOS, limpiarFiltros, validarFiltros } from '../utilidades/filtros.js';
 import Boton from './Boton.jsx';
@@ -7,8 +7,13 @@ import { CampoFecha, CampoSelect, CampoTexto } from './Campos.jsx';
 /**
  * Formulario de filtros. variante "busqueda" (con Investigador, botón "Buscar") o "mapa"
  * (sin Investigador, botón "Aplicar filtros"). Solo llama a `onAplicar` si la validación pasa.
+ * `sugerencias` (opcional): { especies: string[], investigadores: string[] } para autocompletar; se puede
+ * escribir cualquier otro valor.
  */
-export default function FiltrosUbicacion({ variante = 'busqueda', valores, onAplicar, onLimpiar, deshabilitado = false }) {
+export default function FiltrosUbicacion({ variante = 'busqueda', valores, onAplicar, onLimpiar, deshabilitado = false, sugerencias }) {
+  const idListas = useId();
+  const listaEspecies = sugerencias?.especies?.length ? `${idListas}-especies` : undefined;
+  const listaInvestigadores = sugerencias?.investigadores?.length ? `${idListas}-investigadores` : undefined;
   const [borrador, setBorrador] = useState(valores);
   const [errores, setErrores] = useState({});
   const formulario = useRef(null);
@@ -38,11 +43,11 @@ export default function FiltrosUbicacion({ variante = 'busqueda', valores, onApl
     <form ref={formulario} className="ub-filtros" onSubmit={enviar} noValidate aria-label={conInvestigador ? 'Filtros de búsqueda' : 'Filtros del mapa'}>
       <fieldset disabled={deshabilitado}>
         <div className="ub-filtros__rejilla">
-          <CampoTexto etiqueta="Especie" data-campo="especie" value={borrador.especie} maxLength={120} error={errores.especie} onChange={cambiar('especie')} />
+          <CampoTexto etiqueta="Especie" data-campo="especie" value={borrador.especie} maxLength={120} error={errores.especie} onChange={cambiar('especie')} list={listaEspecies} autoComplete="off" />
           <CampoFecha etiqueta="Desde" data-campo="desde" value={borrador.desde} error={errores.desde} onChange={cambiar('desde')} />
           <CampoFecha etiqueta="Hasta" data-campo="hasta" value={borrador.hasta} error={errores.hasta} onChange={cambiar('hasta')} />
           {conInvestigador ? (
-            <CampoTexto etiqueta="Investigador" data-campo="investigador" value={borrador.investigador} maxLength={120} error={errores.investigador} onChange={cambiar('investigador')} />
+            <CampoTexto etiqueta="Investigador" data-campo="investigador" value={borrador.investigador} maxLength={120} error={errores.investigador} onChange={cambiar('investigador')} list={listaInvestigadores} autoComplete="off" />
           ) : null}
           <CampoSelect etiqueta="Departamento" vacio="Todos los departamentos" opciones={DEPARTAMENTOS} value={borrador.departamento} onChange={cambiar('departamento')} />
         </div>
@@ -51,6 +56,8 @@ export default function FiltrosUbicacion({ variante = 'busqueda', valores, onApl
           <Boton variante="secundario" onClick={limpiar}>Limpiar filtros</Boton>
         </div>
       </fieldset>
+      {listaEspecies ? <datalist id={listaEspecies}>{sugerencias.especies.map((e) => <option key={e} value={e} />)}</datalist> : null}
+      {listaInvestigadores ? <datalist id={listaInvestigadores}>{sugerencias.investigadores.map((i) => <option key={i} value={i} />)}</datalist> : null}
     </form>
   );
 }

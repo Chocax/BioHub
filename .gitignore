@@ -1,3 +1,6 @@
+# levantar.ps1: logs y estado del entorno local
+.biohub-local/
+
 # Java / Maven
 target/
 *.class

@@ -46,7 +46,7 @@ export function TablaHallazgos({ hallazgos, altoRango, onVerEnMapa, onVerDetalle
             <tr key={h.id}>
               <td data-etiqueta="Especie">
                 {onVerDetalle ? (
-                  <button type="button" className="ub-boton ub-boton--enlace ub-detalle" onClick={() => onVerDetalle(h.id)}
+                  <button type="button" className="ub-boton ub-boton--enlace ub-ver-detalle" onClick={() => onVerDetalle(h.id)}
                     aria-label={`Abrir la ficha del hallazgo: ${h.nombreCientifico}`}>
                     <i lang="la">{h.nombreCientifico}</i>
                   </button>

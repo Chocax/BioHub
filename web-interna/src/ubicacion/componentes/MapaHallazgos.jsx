@@ -15,13 +15,15 @@ export const ZOOM_AJUSTE_VARIOS = 10;
 export const MAX_ERRORES_TESELAS = 3;
 const ATRIBUCION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
-// Iconos DOM (enfocables con teclado). Forma distinta por estado: no se depende solo del color.
-const ICONOS = Object.fromEntries(
-  ['EN_PELIGRO', 'NO_AMENAZADA', 'SIN_EVALUAR'].map((e) => [
-    e,
-    L.divIcon({ className: `ub-marcador ub-marcador--${e.toLowerCase().replace('_', '-')}`, html: '<span></span>', iconSize: [20, 20], iconAnchor: [10, 10] }),
-  ]),
-);
+// Iconos DOM (enfocables con teclado). Forma distinta por estado: no se depende solo del color (ver LeyendaMapa).
+// El seleccionado lleva además un anillo: así se distingue aunque el foco esté en otro lado.
+const crearIcono = (estado, activo) => L.divIcon({
+  className: `ub-marcador ub-marcador--${estado.toLowerCase().replace('_', '-')}${activo ? ' ub-marcador--activo' : ''}`,
+  html: '<span></span>', iconSize: [20, 20], iconAnchor: [10, 10],
+});
+const ESTADOS_MARCADOR = ['EN_PELIGRO', 'NO_AMENAZADA', 'SIN_EVALUAR'];
+const ICONOS = Object.fromEntries(ESTADOS_MARCADOR.map((e) => [e, crearIcono(e, false)]));
+const ICONOS_ACTIVOS = Object.fromEntries(ESTADOS_MARCADOR.map((e) => [e, crearIcono(e, true)]));
 
 /**
  * Leaflet 1.9 no cancela, al quitar el mapa, el temporizador de 250 ms que cierra una animación de zoom:
@@ -78,7 +80,7 @@ export default function MapaHallazgos({ cliente, puntos, seleccionadoId, onSelec
           <Marker
             key={p.id}
             position={p.posicion}
-            icon={ICONOS[normalizarEstado(p.estadoConservacion)]}
+            icon={(p.id === seleccionadoId ? ICONOS_ACTIVOS : ICONOS)[normalizarEstado(p.estadoConservacion)]}
             keyboard
             title={`${p.nombreCientifico} (${etiquetaEstado(p.estadoConservacion)})`}
             zIndexOffset={p.id === seleccionadoId ? 1000 : 0}

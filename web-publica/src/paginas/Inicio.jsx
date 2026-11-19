@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
-import { buscarFichas } from '../api/fichas.js';
+import { buscarEspecies } from '../api/especies.js';
 import Aviso from '../components/Aviso.jsx';
 import AvisoUbicacionProtegida from '../components/AvisoUbicacionProtegida.jsx';
 import Buscador from '../components/Buscador.jsx';
@@ -22,6 +22,33 @@ function leerPagina(valor) {
   return Number.isInteger(n) && n > 0 && n < 10000 ? n : 0;
 }
 
+/**
+ * Fondo del héroe: cuatro pinturas que se alternan con un fundido lento (cada 25 s, 3 s de transición). La primera
+ * es el cielo de nubes; con movimiento reducido se queda quieta. `ancho` es el ancho real del archivo grande: si se
+ * declara de menos, el navegador estira la versión pequeña y la pintura se ve pixelada.
+ */
+const FONDOS = [
+  { src: '/pinturas/nubes-grande.webp', chica: '/pinturas/nubes-800.webp', ancho: 2400 },
+  { src: '/pinturas/tropico.webp', chica: '/pinturas/tropico-800.webp', ancho: 1798 },
+  { src: '/pinturas/andes-grande.webp', chica: '/pinturas/andes-800.webp', ancho: 2400 },
+  { src: '/pinturas/rio-grande.webp', chica: '/pinturas/rio-800.webp', ancho: 2400 },
+];
+const CADA_MS = 25000;
+
+function CieloRotativo() {
+  const [actual, setActual] = useState(0);
+  useEffect(() => {
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return undefined;
+    const t = window.setInterval(() => setActual((n) => (n + 1) % FONDOS.length), CADA_MS);
+    return () => window.clearInterval(t);
+  }, []);
+  return FONDOS.map((f, i) => (
+    <img key={f.src} className="cielo__pintura" data-activa={i === actual} src={f.src}
+      srcSet={`${f.chica} 800w, ${f.src} ${f.ancho}w`}
+      sizes="100vw" alt="" fetchPriority={i === 0 ? 'high' : 'low'} loading={i === 0 ? 'eager' : 'lazy'} />
+  ));
+}
+
 export default function Inicio() {
   useTitulo('Buscar especies · BioHub');
   const [params, setParams] = useSearchParams();
@@ -39,7 +66,7 @@ export default function Inicio() {
   useEffect(() => {
     const control = new AbortController();
     setEstado({ tipo: 'cargando' });
-    buscarFichas({ q, familia, departamento, page }, { signal: control.signal })
+    buscarEspecies({ q, familia, departamento, page }, { signal: control.signal })
       .then((r) => {
         setDegradado(r.modoDegradado);
         setEstado({ tipo: 'ok', ...r });
@@ -83,8 +110,7 @@ export default function Inicio() {
   return (
     <>
       <section className="cielo" aria-labelledby="titulo-portal">
-        <img className="cielo__pintura" src="/pinturas/nubes.webp" srcSet="/pinturas/nubes-800.webp 800w, /pinturas/nubes.webp 1200w"
-          sizes="100vw" alt="" fetchPriority="high" />
+        <CieloRotativo />
         <div className="cielo__contenido">
           <p className="cielo__eyebrow">Sistema Nacional de Biodiversidad</p>
           <h1 id="titulo-portal" className="cielo__titulo">La biodiversidad de Colombia, <em>al alcance de todos</em></h1>
@@ -135,9 +161,16 @@ export default function Inicio() {
 
           {estado.tipo === 'ok' && estado.total > 0 ? (
             <>
+              {!q && !hayFiltros ? (
+                <div className="catalogo-cabecera">
+                  <p className="cielo__eyebrow">Catálogo</p>
+                  <p className="catalogo-cabecera__titulo">Explora todas las <em>especies</em></p>
+                  <p className="catalogo-cabecera__bajada">De la A a la Z. Abre una para ver su ficha, su foto y dónde se ha registrado.</p>
+                </div>
+              ) : null}
               <h2 className="resultados-titulo" tabIndex={-1} ref={refTitulo} aria-live="polite">{textoTotal(estado.total)}</h2>
               <ul className="lista-tarjetas" aria-label="Resultados de la búsqueda">
-                {estado.fichas.map((f) => <TarjetaEspecie key={f.id} ficha={f} volver={volver} />)}
+                {estado.especies.map((e) => <TarjetaEspecie key={e.nombreCientifico} especie={e} volver={volver} />)}
               </ul>
               <Paginacion pagina={estado.page} totalPaginas={estado.totalPaginas} onCambiar={cambiarPagina} />
             </>
@@ -148,7 +181,7 @@ export default function Inicio() {
       </div>
 
       <section className="lienzo-publico" aria-labelledby="titulo-proteccion">
-        <img className="lienzo-publico__pintura" src="/pinturas/tropico.webp" srcSet="/pinturas/tropico-800.webp 800w, /pinturas/tropico.webp 1800w"
+        <img className="lienzo-publico__pintura" src="/pinturas/tropico.webp" srcSet="/pinturas/tropico-800.webp 800w, /pinturas/tropico.webp 1798w"
           sizes="100vw" alt="" loading="lazy" />
         <div className="lienzo-publico__tarjeta">
           <p className="cielo__eyebrow">Por qué no ves coordenadas</p>

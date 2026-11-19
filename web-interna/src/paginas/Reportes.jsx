@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Activity, CalendarDays, FileDown, FileSpreadsheet, TriangleAlert } from 'lucide-react';
 import { api, descargar } from '../api/cliente.js';
 import { Aviso, AvisoError, CabeceraPagina, Cargando, ChipEstado, formatearFecha, Vacio } from '../componentes/ui.jsx';
 
@@ -26,7 +27,7 @@ function Resultado({ solicitud }) {
         <div><p className="eyebrow">Departamentos</p><p className="cifra">{r.departamentos}</p></div>
       </div>
       {r.zonasEnAlerta.length > 0
-        ? <Aviso tipo="error"><strong>Zonas en alerta:</strong> {r.zonasEnAlerta.join(', ')}. Presión alta y en aumento frente a los tres meses anteriores.</Aviso>
+        ? <Aviso tipo="error"><TriangleAlert className="icono" aria-hidden="true" /> <strong>Zonas en alerta:</strong> {r.zonasEnAlerta.join(', ')}. Presión alta y en aumento frente a los tres meses anteriores.</Aviso>
         : <Aviso tipo="exito">Ningún departamento en alerta este mes.</Aviso>}
       {r.indices.length === 0 ? <Vacio titulo="Sin hallazgos en el periodo" /> : (
         <div className="tabla-envoltura">
@@ -56,8 +57,8 @@ function Resultado({ solicitud }) {
         Índice = 100 × (0,7 × proporción de hallazgos en peligro del mes + 0,3 × crecimiento frente al promedio de los 3 meses anteriores). Alto ≥ 50, medio ≥ 25.
       </p>
       <div className="acciones">
-        <button type="button" className="boton" onClick={() => descargar(`/api/reportes/solicitudes/${solicitud.id}/pdf`, `presion-ecosistemas-${solicitud.periodo}.pdf`)}>Descargar PDF</button>
-        <button type="button" className="boton boton--fantasma" onClick={() => descargar(`/api/reportes/solicitudes/${solicitud.id}/csv`, `presion-ecosistemas-${solicitud.periodo}.csv`)}>Descargar CSV</button>
+        <button type="button" className="boton" onClick={() => descargar(`/api/reportes/solicitudes/${solicitud.id}/pdf`, `presion-ecosistemas-${solicitud.periodo}.pdf`)}><FileDown className="icono" aria-hidden="true" />Descargar PDF</button>
+        <button type="button" className="boton boton--fantasma" onClick={() => descargar(`/api/reportes/solicitudes/${solicitud.id}/csv`, `presion-ecosistemas-${solicitud.periodo}.csv`)}><FileSpreadsheet className="icono" aria-hidden="true" />Descargar CSV</button>
       </div>
     </>
   );
@@ -96,18 +97,18 @@ export default function Reportes() {
 
   return (
     <section className="pagina">
-      <CabeceraPagina pestana="Reportes" eyebrow="Analítica · HU-09" titulo={<>Presión sobre los <em>ecosistemas</em></>}
+      <CabeceraPagina pestana="Reportes" eyebrow="Analítica · HU-09" titulo={<>Presión sobre los <em>ecosistemas</em></>} pintura="auto"
         descripcion="El reporte se calcula en segundo plano sobre la base analítica, sin tocar el registro diario. Puedes seguir trabajando mientras se genera. Cada mes se pide uno automático del mes anterior." />
       <AvisoError error={error} />
       <div className="rejilla" style={{ gridTemplateColumns: 'minmax(260px, 1fr) minmax(0, 2.4fr)', alignItems: 'start' }}>
         <div>
           <form className="tarjeta tarjeta--tinta muesca formulario" onSubmit={pedir}>
-            <p className="eyebrow">Nuevo reporte</p>
+            <p className="eyebrow" style={{ display: 'flex', gap: 8, alignItems: 'center' }}><CalendarDays className="icono" aria-hidden="true" />Nuevo reporte</p>
             <div className="campo">
               <label htmlFor="periodo" style={{ color: '#d6d4cd' }}>Mes</label>
               <input id="periodo" type="month" value={periodo} max={new Date().toISOString().slice(0, 7)} onChange={(e) => setPeriodo(e.target.value)} required />
             </div>
-            <button type="submit" className="boton boton--claro" disabled={pidiendo || !periodo}>{pidiendo ? 'Pidiendo…' : 'Generar reporte'}</button>
+            <button type="submit" className="boton boton--claro" disabled={pidiendo || !periodo}><Activity className="icono" aria-hidden="true" />{pidiendo ? 'Pidiendo…' : 'Generar reporte'}</button>
           </form>
           <div className="tarjeta">
             <p className="tarjeta__titulo">Recientes</p>
@@ -134,6 +135,31 @@ export default function Reportes() {
               <Resultado solicitud={seleccion} />
             </>
           ) : <Vacio titulo="Elige o genera un reporte" />}
+        </div>
+      </div>
+
+      <div className="rejilla rejilla--2" style={{ marginTop: 24 }}>
+        <div className="tarjeta">
+          <p className="tarjeta__titulo">Cómo funciona</p>
+          <ol className="pasos" style={{ marginTop: 14 }}>
+            <li className="paso"><span className="paso__numero">1</span><p><strong>Eliges el mes</strong>El del mes anterior se pide solo, el día 1 a las 3 a. m.</p></li>
+            <li className="paso"><span className="paso__numero">2</span><p><strong>Se calcula aparte</strong>Corre en segundo plano sobre la base analítica: puedes seguir trabajando.</p></li>
+            <li className="paso"><span className="paso__numero">3</span><p><strong>Lo descargas</strong>PDF para leer o presentar; CSV con todas las cifras para analizar.</p></li>
+          </ol>
+        </div>
+        <div className="tarjeta">
+          <p className="tarjeta__titulo">Cómo se lee el índice</p>
+          <p className="formula">Índice = 100 × (0,7 × <em>proporción en peligro</em> + 0,3 × <em>crecimiento</em>)</p>
+          <p className="texto-suave" style={{ fontSize: 13.5 }}>
+            <strong>Proporción en peligro:</strong> de los hallazgos del mes, cuántos son de especies CR o EN.{' '}
+            <strong>Crecimiento:</strong> cuánto suben esos hallazgos frente al promedio de los tres meses anteriores.
+          </p>
+          <div className="niveles">
+            <ChipEstado estado="ALTO" /><span className="texto-suave" style={{ fontSize: 13 }}>50 o más</span>
+            <ChipEstado estado="MEDIO" /><span className="texto-suave" style={{ fontSize: 13 }}>de 25 a 50</span>
+            <ChipEstado estado="BAJO" /><span className="texto-suave" style={{ fontSize: 13 }}>menos de 25</span>
+          </div>
+          <p className="texto-suave" style={{ fontSize: 13, marginBottom: 0 }}>Un departamento queda <strong>en alerta</strong> si su nivel es alto y sus hallazgos en peligro van en aumento.</p>
         </div>
       </div>
     </section>

@@ -3,6 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { listado, mockFetch, renderizar, respuesta } from './ayudas.jsx';
 
+/** Peticiones al catálogo (sin contar la de las familias, que se pide una vez al cargar). */
+const delCatalogo = (f) => f.mock.calls.map((c) => new URL(c[0])).filter((u) => u.pathname === '/api/publica/especies');
+
 describe('Inicio: búsqueda', () => {
   afterEach(() => vi.unstubAllGlobals());
 
@@ -18,10 +21,10 @@ describe('Inicio: búsqueda', () => {
     expect(within(enlace).getByText('Familia Bufonidae')).toBeInTheDocument();
     expect(within(enlace).getByText('Boyacá · Región Andina')).toBeInTheDocument();
     expect(screen.getByText('1 especie encontrada')).toBeInTheDocument();
-    const url = new URL(f.mock.calls[0][0]);
-    expect(url.pathname).toBe('/api/publica/fichas');
+    const url = delCatalogo(f)[0];
+    expect(url.pathname).toBe('/api/publica/especies');
     expect(url.searchParams.get('page')).toBe('0');
-    expect(url.searchParams.get('size')).toBe('20');
+    expect(url.searchParams.get('size')).toBe('12');
     expect(screen.getByText(/BioHub no publica ubicaciones exactas/)).toBeInTheDocument();
   });
 
@@ -35,8 +38,8 @@ describe('Inicio: búsqueda', () => {
     await u.selectOptions(screen.getByLabelText('Departamento'), 'Boyacá');
     await u.click(screen.getByRole('button', { name: 'Buscar' }));
     await waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent('/?q=atelopus&familia=Bufonidae&departamento=15'));
-    await waitFor(() => expect(f.mock.calls.length).toBeGreaterThan(1));
-    const ultima = new URL(f.mock.calls.at(-1)[0]);
+    await waitFor(() => expect(delCatalogo(f).length).toBeGreaterThan(1));
+    const ultima = delCatalogo(f).at(-1);
     expect(ultima.searchParams.get('q')).toBe('atelopus');
     expect(ultima.searchParams.get('familia')).toBe('Bufonidae');
     expect(ultima.searchParams.get('departamento')).toBe('15');
@@ -46,11 +49,33 @@ describe('Inicio: búsqueda', () => {
     const f = mockFetch(() => respuesta(listado({ page: 2, totalPaginas: 5, total: 90 })));
     renderizar('/?q=rana&departamento=15&page=2');
     await screen.findByText('90 especies encontradas');
-    const url = new URL(f.mock.calls[0][0]);
+    const url = delCatalogo(f)[0];
     expect(url.searchParams.get('q')).toBe('rana');
     expect(url.searchParams.get('page')).toBe('2');
     expect(screen.getByLabelText('Nombre científico o común')).toHaveValue('rana');
     expect(screen.getByLabelText('Departamento')).toHaveValue('15');
+  });
+
+  it('la familia es una lista con las familias registradas y el catálogo pide esa familia', async () => {
+    const f = mockFetch((url) => (url.pathname.endsWith('/familias')
+      ? respuesta({ familias: ['Bufonidae', 'Psittacidae'] })
+      : respuesta(listado())));
+    const u = userEvent.setup();
+    renderizar('/');
+    await screen.findByText('1 especie encontrada');
+    const familia = await screen.findByRole('combobox', { name: 'Familia' });
+    expect(within(familia).getAllByRole('option').map((o) => o.textContent)).toEqual(['Todas las familias', 'Bufonidae', 'Psittacidae']);
+    await u.selectOptions(familia, 'Psittacidae');
+    await u.click(screen.getByRole('button', { name: 'Buscar' }));
+    await waitFor(() => expect(delCatalogo(f).at(-1).searchParams.get('familia')).toBe('Psittacidae'));
+  });
+
+  it('cada tarjeta trae la foto pública de la especie desde la API', async () => {
+    mockFetch(() => respuesta(listado()));
+    renderizar('/');
+    const foto = await screen.findByAltText('Fotografía de Atelopus ebenoides');
+    expect(new URL(foto.getAttribute('src')).pathname).toBe('/api/publica/especies/foto');
+    expect(new URL(foto.getAttribute('src')).searchParams.get('nombre')).toBe('Atelopus ebenoides');
   });
 
   it('ofrece los 33 departamentos más la opción "Todos"', async () => {
@@ -102,7 +127,7 @@ describe('Inicio: paginación', () => {
     await u.click(screen.getByRole('button', { name: 'Siguiente' }));
     await screen.findByText('Página 2 de 3');
     expect(screen.getByTestId('url')).toHaveTextContent('/?q=rana&page=1');
-    expect(new URL(f.mock.calls.at(-1)[0]).searchParams.get('page')).toBe('1');
+    expect(delCatalogo(f).at(-1).searchParams.get('page')).toBe('1');
     await waitFor(() => expect(screen.getByRole('heading', { name: '45 especies encontradas' })).toHaveFocus());
     await u.click(screen.getByRole('button', { name: 'Anterior' }));
     await screen.findByText('Página 1 de 3');
@@ -152,7 +177,7 @@ describe('Inicio: estados', () => {
     falla = false;
     await u.click(screen.getByRole('button', { name: 'Reintentar' }));
     await screen.findByText('1 especie encontrada');
-    expect(f.mock.calls.length).toBe(2);
+    expect(delCatalogo(f).length).toBe(2);
     expect(screen.queryByRole('alert')).toBeNull();
   });
 

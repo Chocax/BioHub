@@ -16,6 +16,17 @@ CONFIG=/tmp/curl-admin.cfg
 umask 077
 printf 'user = "%s:%s"\n' "$RABBITMQ_ADMIN_USER" "$RABBITMQ_ADMIN_PASSWORD" > "$CONFIG"
 
+# El healthcheck de RabbitMQ pasa antes de que la API de administración (15672) escuche: se espera hasta 60 s.
+intentos=0
+until curl -fs -K "$CONFIG" -o /dev/null "$API/overview"; do
+  intentos=$((intentos + 1))
+  if [ "$intentos" -ge 30 ]; then
+    echo "La API de administración de RabbitMQ no respondió en 60 s" >&2
+    exit 1
+  fi
+  sleep 2
+done
+
 poner() {  # poner <ruta> : envía por stdin el JSON a la API de administración
   curl -fsS -K "$CONFIG" -X PUT -H "content-type: application/json" --data-binary @- "$API/$1"
 }

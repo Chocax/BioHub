@@ -100,8 +100,8 @@ class ArquitecturaSeguridadTest {
     /** Métodos de {@code @politicaUbicacion} admitidos en {@code @PreAuthorize}. Añadir uno exige revisar su lógica. */
     static final Set<String> METODOS_POLITICA_UBICACION = Set.of("puedeVerCoordenadas");
 
-    /** Métodos que pueden declarar {@code permitAll()}, como {@code Clase.metodo}. En servicio-cientifico, ninguno. */
-    static final Set<String> PUBLICOS_PERMIT_ALL = Set.of();
+    /** Métodos que pueden declarar {@code permitAll()}, como {@code Clase.metodo}. Solo la foto pública (D65). */
+    static final Set<String> PUBLICOS_PERMIT_ALL = Set.of("FotoPublicaController.foto");
 
     private static final String ROL_LITERAL = "'(?:" + String.join("|", ROLES) + ")'";
     private static final String TERMINO = "(?:hasRole\\(\\s*" + ROL_LITERAL + "\\s*\\)"
