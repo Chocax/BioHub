@@ -1,6 +1,7 @@
 {
   "realm": "biohub",
   "displayName": "BioHub",
+  "loginTheme": "biohub",
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,
