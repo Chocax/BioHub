@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080';
+export const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080';
 
 /** Error de la API con el estado HTTP y el `codigo` estable del contrato (problem+json). */
 export class ErrorApi extends Error {

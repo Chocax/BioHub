@@ -63,12 +63,19 @@ export async function simularApi(page, { modo = 'normal' } = {}) {
         headers: { 'Cache-Control': 'no-store' },
       });
     }
+    if (url.pathname.endsWith('/api/publica/especies/familias')) {
+      return route.fulfill(json(200, { familias: ['Bufonidae'] }));
+    }
+    if (url.pathname.endsWith('/api/publica/especies/foto')) {
+      return route.fulfill({ status: 404, body: '' }); // sin foto: el portal muestra la ilustración
+    }
     const m = url.pathname.match(/\/api\/publica\/fichas\/([^/]+)$/);
     if (m) {
       const ficha = [FICHA_PELIGRO, FICHA_COMUN].find((f) => f.id === m[1]);
       return route.fulfill(ficha ? json(200, ficha) : json(404, problema(404, 'NO_ENCONTRADO', 'La ficha solicitada no existe.', url.pathname)));
     }
-    if (url.pathname.endsWith('/api/publica/fichas')) {
+    // El catálogo agrupado (D65) responde con la misma forma: cada ficha de prueba es una especie distinta.
+    if (url.pathname.endsWith('/api/publica/fichas') || url.pathname.endsWith('/api/publica/especies')) {
       if (modo === 'vacio') return route.fulfill(json(200, pagina([])));
       const q = (url.searchParams.get('q') ?? '').toLowerCase();
       const todas = [FICHA_PELIGRO, FICHA_COMUN];

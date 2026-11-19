@@ -29,7 +29,7 @@ img { max-width: 100%; display: block; }
 .cielo__bajada { margin: 0 0 10px; max-width: 58ch; font-size: 17px; line-height: 1.55; text-shadow: 0 1px 12px rgba(9, 66, 108, .45); }
 .cielo__buscador { width: 100%; text-align: left; animation: aparecer .9s cubic-bezier(.2, .7, .1, 1) both .2s; }
 .cielo__mariposa { position: absolute; z-index: 1; width: 38px; top: 22%; left: 12%; animation: volar 16s ease-in-out infinite; }
-@keyframes deriva { from { transform: scale(1.06); } to { transform: scale(1.16) translate(-2%, 1%); } }
+@keyframes deriva { from { transform: scale(1.01); } to { transform: scale(1.06) translate(-1%, .5%); } }
 @keyframes aparecer { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
 @keyframes volar {
   0% { transform: translate(0, 0) rotate(-6deg); } 25% { transform: translate(30vw, -30px) rotate(8deg); }
@@ -113,7 +113,59 @@ main:has(> .ficha), main:has(> .pagina-404), main:has(> div.contenedor:only-chil
 .aviso-ubicacion h3 { font: 400 22px/1.2 var(--serif); }
 
 /* ---------- pie */
-.pie-publico { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; padding: 26px clamp(16px, 3vw, 32px); background: var(--noche); color: #d8e6f2; font-size: 13px; }
+.pie-publico {
+  display: grid; gap: 32px 40px; grid-template-columns: minmax(240px, 1.4fr) repeat(3, minmax(160px, 1fr));
+  padding: 56px clamp(16px, 4vw, 56px) 28px; background: var(--noche); color: #d8e6f2; font-size: 13.5px; line-height: 1.6;
+}
+.pie-publico p { margin: 0 0 8px; }
+.pie-publico a { color: #fff; text-decoration: none; display: block; margin-bottom: 6px; }
+.pie-publico a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.pie-publico__logo { display: inline-flex; align-items: center; gap: 10px; font: 500 24px/1 var(--serif); color: #fff; margin-bottom: 14px; }
+.pie-publico__logo .monograma { width: 40px; height: 40px; color: var(--lima); }
+.pie-publico__marca p { max-width: 38ch; }
+.pie-publico__titulo { font: 600 11px/1.4 var(--fuente); letter-spacing: .16em; text-transform: uppercase; color: var(--lima); margin-bottom: 12px !important; }
+.pie-publico__legal { grid-column: 1 / -1; border-top: 1px solid rgba(216, 230, 242, .2); padding-top: 18px; margin: 8px 0 0 !important; font-size: 12px; color: #a9c3da; }
+@media (max-width: 900px) { .pie-publico { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .pie-publico { grid-template-columns: 1fr; } }
+
+/* ---------- héroe: las pinturas se alternan con un fundido lento */
+.cielo__pintura { opacity: 0; transition: opacity 3s ease-in-out; }
+.cielo__pintura[data-activa="true"] { opacity: 1; }
+
+/* ---------- catálogo por especie: tarjeta con foto */
+.catalogo-cabecera { text-align: center; margin: 40px 0 6px; }
+.catalogo-cabecera .cielo__eyebrow { color: var(--cielo-profundo); }
+.catalogo-cabecera__titulo { font: 300 clamp(34px, 4.6vw, 52px)/1.05 var(--serif); margin: 6px 0 8px; color: var(--noche); }
+.catalogo-cabecera__titulo em { font-style: italic; }
+.catalogo-cabecera__bajada { margin: 0 auto; max-width: 54ch; color: var(--c-texto-suave); }
+.tarjeta-especie .tarjeta-enlace { padding: 0; overflow: hidden; gap: 0; height: 100%; }
+.tarjeta-foto { aspect-ratio: 4 / 3; overflow: hidden; background: var(--lino); }
+.tarjeta-foto img { width: 100%; height: 100%; object-fit: cover; transition: transform 1.2s cubic-bezier(.2, .7, .1, 1); }
+.tarjeta-especie .tarjeta-enlace:hover .tarjeta-foto img { transform: scale(1.06); }
+.tarjeta-cuerpo { display: grid; gap: 6px; padding: 16px 20px 20px; justify-items: start; }
+.tarjeta-registros { font-size: 12.5px; color: var(--cielo-profundo); font-weight: 600; }
+.foto-especie--vacia {
+  display: grid; place-items: center;
+  background: linear-gradient(160deg, #d9ecf8 0%, #f3f8fb 55%, #e9f3d2 100%);
+}
+.foto-especie__ilustracion { width: 26%; max-width: 90px; height: auto; opacity: .85; }
+
+/* ---------- ficha: foto al lado del nombre y otros registros */
+.ficha-cabecera--con-foto { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 380px); gap: 28px; align-items: center; }
+.ficha-foto { aspect-ratio: 4 / 3; border-radius: var(--r-md); overflow: hidden; background: var(--lino); box-shadow: var(--sombra-2); }
+.ficha-foto img { width: 100%; height: 100%; object-fit: cover; }
+@media (max-width: 720px) { .ficha-cabecera--con-foto { grid-template-columns: 1fr; } }
+.otros-registros { margin: 40px 0 72px; }
+.otros-registros h2 { font: 300 30px/1.1 var(--serif); color: var(--noche); margin: 0 0 16px; }
+.otros-registros ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.otros-registros .chip, .otros-registros [class*="chip"] { white-space: nowrap; flex: none; }
+.otros-registros a {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px; border-radius: var(--r-md);
+  border: 1px solid var(--c-borde); background: #fff; color: var(--c-texto); text-decoration: none;
+  transition: border-color .2s, transform .2s;
+}
+.otros-registros a:hover { border-color: var(--cielo-claro); transform: translateY(-2px); }
+.otros-registros__lugar { font-weight: 500; }
 
 @media (prefers-reduced-motion: reduce) {
   .cielo__pintura, .lienzo-publico__pintura, .cielo__mariposa { animation: none; }
