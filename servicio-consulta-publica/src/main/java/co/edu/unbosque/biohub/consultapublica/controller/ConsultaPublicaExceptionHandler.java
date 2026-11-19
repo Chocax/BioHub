@@ -27,7 +27,7 @@ import co.edu.unbosque.biohub.consultapublica.service.ParametroInvalidoException
  * detalles internos. Acotado a {@link FichasPublicasController}: no altera el 401/403 de Spring Security
  * ni los demás controladores.
  */
-@RestControllerAdvice(assignableTypes = FichasPublicasController.class)
+@RestControllerAdvice(assignableTypes = {FichasPublicasController.class, EspeciesPublicasController.class})
 public class ConsultaPublicaExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ConsultaPublicaExceptionHandler.class);

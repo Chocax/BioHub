@@ -81,7 +81,8 @@ public class BusquedaFichasJdbc {
                 .optional();
     }
 
-    private static String construirWhere(CriterioBusquedaPublica c, List<Object> parametros) {
+    /** También lo usa {@link BusquedaEspeciesJdbc}: los mismos filtros, agrupados por especie. */
+    static String construirWhere(CriterioBusquedaPublica c, List<Object> parametros) {
         List<String> condiciones = new ArrayList<>();
         if (c.q() != null) {
             var fulltext = c.expresionFulltext();

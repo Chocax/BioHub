@@ -39,7 +39,8 @@ class TodosLosEndpointsExigenRolTest {
      * {@code permitAll()}. Un endpoint nuevo que no esté aquí debe dar 403 a un JWT sin roles.
      */
     static final Set<String> RUTAS_PUBLICAS = Set.of("GET /api/publica/ping", "GET /api/publica/fichas",
-            "GET /api/publica/fichas/{id}");
+            "GET /api/publica/fichas/{id}", "GET /api/publica/especies", "GET /api/publica/especies/familias",
+            "GET /api/publica/especies/foto");
 
     @Autowired
     private ApplicationContext ctx;
