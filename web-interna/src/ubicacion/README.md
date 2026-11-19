@@ -48,7 +48,7 @@ const cliente = crearClienteUbicacion({
 
 ## Arnés de desarrollo (D58)
 
-Página propia para abrir las pantallas en un navegador real sin esperar el montaje en `App.jsx`: `dev/arnes.html` (+ `arnes.jsx`, `Arnes.jsx`, `sesionReal.js`, `sesionSimulada.js`). Monta `PaginaBusqueda` y `PaginaMapa` con `crearClienteUbicacion` igual que el bloque "Cómo montarlas" y navega entre ellas sin router. Muestra un aviso fijo de "Solo desarrollo".
+Página propia para abrir las pantallas en un navegador real sin esperar el montaje en `App.jsx`: `dev/arnes.html` (+ `arnes.jsx`, `ArnesUbicacion.jsx`, `sesionReal.js`, `sesionSimulada.js`). Monta `PaginaBusqueda` y `PaginaMapa` con `crearClienteUbicacion` igual que el bloque "Cómo montarlas" y navega entre ellas sin router. Muestra un aviso fijo de "Solo desarrollo".
 
 ```bash
 npm run dev:ubicacion        # abre http://localhost:5173/src/ubicacion/dev/arnes.html

@@ -14,6 +14,7 @@ import org.springframework.web.context.request.WebRequest;
 import co.edu.unbosque.biohub.cientifico.registro.domain.VersionIncompletaException;
 import co.edu.unbosque.biohub.cientifico.registro.service.DatosHallazgoInvalidosException;
 import co.edu.unbosque.biohub.cientifico.registro.service.HallazgoNoEncontradoException;
+import co.edu.unbosque.biohub.cientifico.registro.service.EvidenciaNoEncontradaException;
 import co.edu.unbosque.biohub.cientifico.registro.service.PlantillaNoEncontradaException;
 import co.edu.unbosque.biohub.cientifico.registro.service.UbicacionDelHallazgoNoRegistradaException;
 
@@ -52,6 +53,30 @@ public class RegistroExceptionHandler {
     public ResponseEntity<ProblemaRegistroResponse> hallazgoNoEncontrado(HallazgoNoEncontradoException e,
                                                                          WebRequest peticion) {
         return noEncontrado(e.getMessage(), "HALLAZGO_NO_ENCONTRADO", peticion);
+    }
+
+    @ExceptionHandler(EvidenciaNoEncontradaException.class)
+    public ResponseEntity<ProblemaRegistroResponse> evidenciaNoEncontrada(EvidenciaNoEncontradaException e,
+                                                                          WebRequest peticion) {
+        return noEncontrado(e.getMessage(), "EVIDENCIA_NO_ENCONTRADA", peticion);
+    }
+
+    /** El archivo pasa del máximo de multipart (spring.servlet.multipart.max-file-size). */
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<ProblemaRegistroResponse> archivoDemasiadoGrande(WebRequest peticion) {
+        String mensaje = "El archivo supera el tamaño máximo permitido.";
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(new ProblemaRegistroResponse(TIPO_VALIDACION, "Archivo demasiado grande",
+                        HttpStatus.PAYLOAD_TOO_LARGE.value(), mensaje, ruta(peticion), "ARCHIVO_DEMASIADO_GRANDE",
+                        List.of(new ErrorCampoRegistro("archivo", mensaje))));
+    }
+
+    /** Falta el campo {@code archivo} o la petición no es multipart. */
+    @ExceptionHandler({org.springframework.web.multipart.support.MissingServletRequestPartException.class,
+            org.springframework.web.multipart.MultipartException.class})
+    public ResponseEntity<ProblemaRegistroResponse> archivoAusente(WebRequest peticion) {
+        return validacion("archivo", "Adjunta el archivo en el campo 'archivo'.", "DATOS_INVALIDOS", peticion);
     }
 
     @ExceptionHandler(PlantillaNoEncontradaException.class)

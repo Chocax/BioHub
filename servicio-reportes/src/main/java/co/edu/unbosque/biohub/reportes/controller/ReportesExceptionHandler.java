@@ -33,4 +33,24 @@ public class ReportesExceptionHandler {
         pd.setProperty("codigo", "ROL_INSUFICIENTE");
         return ResponseEntity.status(HttpStatus.FORBIDDEN).contentType(MediaType.APPLICATION_PROBLEM_JSON).body(pd);
     }
+
+    @ExceptionHandler(co.edu.unbosque.biohub.reportes.service.SolicitudNoEncontradaException.class)
+    public ResponseEntity<ProblemDetail> solicitudNoEncontrada(RuntimeException ex, HttpServletRequest req) {
+        return problema(HttpStatus.NOT_FOUND, "No encontrado", ex.getMessage(), "NO_ENCONTRADO", req);
+    }
+
+    /** HU-09: el archivo se pide antes de que el reporte esté listo (o el reporte falló). */
+    @ExceptionHandler(co.edu.unbosque.biohub.reportes.service.ReporteNoListoException.class)
+    public ResponseEntity<ProblemDetail> reporteNoListo(RuntimeException ex, HttpServletRequest req) {
+        return problema(HttpStatus.CONFLICT, "Reporte no listo", ex.getMessage(), "REPORTE_NO_LISTO", req);
+    }
+
+    private static ResponseEntity<ProblemDetail> problema(HttpStatus estado, String titulo, String detalle,
+                                                          String codigo, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(estado, detalle);
+        pd.setTitle(titulo);
+        pd.setInstance(URI.create(req.getRequestURI()));
+        pd.setProperty("codigo", codigo);
+        return ResponseEntity.status(estado).contentType(MediaType.APPLICATION_PROBLEM_JSON).body(pd);
+    }
 }

@@ -201,7 +201,27 @@ Esta matriz es una línea base de otra rama: la tabla de arriba no se reescribi�
 | RNF12, ASR9 | Cumple | `ProxyService.reenviarApiExterna`, `RutasGateway.PREFIJO_API_EXTERNA` | `ProxyServiceTest`, Bruno `gateway/` |
 | HU-10, RF17, RF19 | Cumple en backend; falta pantalla | `ServicioUsuarios`, `KeycloakAdminAdapter`, `RevocacionTokenFilter` | `KeycloakAdminAdapterIntegracionTest`, `ServicioUsuariosTest`, `GatewayIntegracionTest` |
 | HU-11 c.1, c.2, RF18 | Cumple | `realm-biohub.json` (`failureFactor: 3`), `SecurityConfig` | `KeycloakAdminAdapterIntegracionTest` |
-| HU-11 c.3 | Depende de Hernando | Guardar el `sub` en cada acción | Pendiente |
-| SEC-02 | Parcial | Gateway hecho; falta `denyAll` en los 4 servicios | `MatrizAccesoGatewayTest` |
+| HU-11 c.3 | Cumple (D59) | `preferred_username`, único e inmutable en el realm, en `creado_por`, `autor` y `subido_por` | `EvidenciasMySqlTest` (`subidoPor`), pruebas de registro |
+| SEC-02 | Cumple | `denyAll` en el gateway y en los 4 servicios, `@PreAuthorize` por endpoint | `MatrizAccesoGatewayTest`, `ArquitecturaSeguridadTest`, `TodosLosEndpointsExigenRolTest` |
 | SEC-J-04 (apoya RF11, RF12) | Cumple en el gateway; falta usarlo en `MapaHallazgos.jsx` | `TeselasController`, `ServicioTeselas`, `infrastructure/teselas/OrigenTeselasHttp` (D56) | `TeselasControllerTest`, `ServicioTeselasTest`, `OrigenTeselasHttpTest`; de punta a punta contra OSM |
 | RNF13 en `web-interna`, login y navegación | Pendiente | Las pantallas van al final | Pendiente |
+
+## Actualización: revisión general antes del front (2026-11-16)
+
+Revisión de `develop` completo contra el SRS y el SAD. Se completó lo que faltaba de las partes de Hernando y Nicolás.
+Estado verificado con código y pruebas, más un recorrido de punta a punta con los 5 servicios, el gateway, Keycloak,
+RabbitMQ, Redis y MySQL:
+
+| Requisito | Estado | Código | Pruebas |
+|---|---|---|---|
+| HU-01, RF1, RNF4 (evidencias) | Cumple en backend | `EvidenciaController`, `EvidenciaService`, `LimpiadorMetadatos`, `AlmacenEvidenciasDisco` (D62) | `EvidenciasMySqlTest`, `LimpiadorMetadatosTest`; de punta a punta por el gateway (multipart) |
+| HU-01 c.1 y c.3, HU-02, RF2, RF3, ASR5 | Cumple en backend | `HallazgoService`, `FichaPlantillaService` | Pruebas de registro y de punta a punta |
+| HU-03, RF4, RF9 | Cumple en backend; roles según D63 | `HallazgoController` | Pruebas de registro y de punta a punta (investigador sí, auditor y administrador no) |
+| HU-05, RF7, RF8, RNF10, ASR7 | Cumple; el bloqueo en la base aplica en Aiven tras el paso 5 de `09` §4.3 (D60) | `HistorialController`, `03-registro-historial-append-only.sql.example` | `MigracionesRegistroTest`, `HistorialAppendOnlyScriptTest` |
+| HU-04, RF5, RF6 | Cumple en backend | `EquipoTrabajoService` (custodio `investigador_campo`, activo) | `EquipoTrabajoServiceTest`; de punta a punta (un analista como custodio da 400) |
+| HU-09, RF15, RF16, RNF3, ASR3 | Cumple en backend (D61) | `SolicitudesReporteService`, `CalculadorIndicePresion`, `ColaSolicitudesReporte` | `SolicitudesReporteIntegracionTest` (MySQL y RabbitMQ reales), `CalculadorIndicePresionTest` |
+| Comunicación entre servicios (SAD §4.8, SD-04) | Cumple | Eventos `hallazgo.*` a consulta pública y reportes | De punta a punta: la ficha pública y la base analítica reflejan el alta y la reclasificación; DLQ vacías |
+| RNF9 en la base y en los logs | Cumple | — | Ninguna coordenada en texto plano en `cientifico`, `consulta_publica` ni `reportes`, ni en los logs de los 5 servicios |
+
+Pendiente: las pantallas de `web-interna` que usan estos endpoints (RNF6, RNF7, RNF8 y RNF13 en la web interna), y que el dueño de Aiven corra el paso 5 de `09` §4.3.
+

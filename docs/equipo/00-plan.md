@@ -353,3 +353,46 @@ Despliegue de bases, Redis y RabbitMQ en VMs locales con una VPN de malla, y su 
 |---|---:|---|---|
 | 22a–22c | 14.19 acumulado en la sesión (≈2.81 en la iteración 22; opus 11.10, sonnet 3.09 en total) | los dos qa-tester (sonnet/high) | qa-tester sonnet/**high** (matriz: medium): rigor del método de medición |
 
+---
+# Iteración 23: revisión general antes del front (Santiago)
+
+**Fecha:** 2026-11-16 · **Rama:** `develop`.
+
+**Alcance:** revisar `develop` completo contra el enunciado, el SRS y el SAD, y cerrar lo que faltaba antes de empezar el front.
+
+| # | Tarea | Estado |
+|---|---|---|
+| 23a | Revisión: pruebas de todo el backend y recorrido de punta a punta con los 5 servicios | Hecho: 32 de 34 comprobaciones; las 2 fallas eran reglas de roles y de custodio, corregidas en 23e y 23f |
+| 23b | Evidencias: fotos y audios (RF1, HU-01 c.2, D62) | Hecho |
+| 23c | Reporte mensual asíncrono con índice de presión (HU-09, RF15, RF16, D61) | Hecho |
+| 23d | Historial bloqueado en la base (RNF10, D60) | Hecho en código y pruebas; **falta** que el dueño de Aiven corra el paso 5 de `09` §4.3 |
+| 23e | Roles de escritura científica (D63) y autor = `preferred_username` (D59) | Hecho |
+| 23f | Custodio `investigador_campo` y filtros combinados en equipos (HU-04 c.1) | Hecho |
+| 23g | Arreglar las 2 pruebas de reportes y meter equipos y reportes al CI | Hecho |
+| 23h | `Arnes.jsx` y `arnes.jsx` chocaban en Windows: el componente pasa a `ArnesUbicacion.jsx` | Hecho |
+| 23i | Pantallas de `web-interna` con los diseños que elija Santiago | Hecho en la iteración 24 |
+
+**Pendientes fuera del código:**
+- Dueña del servicio de escritura en Aiven: correr `03-registro-historial-append-only.sql.example` (paso 5 de `09` §4.3).
+- Todos: `docker compose up -d rabbitmq-usuarios` para los permisos nuevos de `reportes_mq`.
+- Aceptados para el prototipo: outbox del publicador de eventos (`04` §14.6) y compose con todos los servicios (D34).
+
+# Iteración 24: el front de las dos webs (Santiago)
+
+**Fecha:** 2026-11-16 · **Rama:** `feature/front-galeria-cielo` (sale de `feature/revision-antes-del-front`).
+
+**Alcance:** todas las pantallas de `web-interna` y el rediseño de `web-publica`, con los sistemas visuales de D64.
+
+| # | Tarea | Estado |
+|---|---|---|
+| 24a | Sistema visual "galería" (`galeria.css`), ilustraciones SVG y pinturas de dominio público | Hecho |
+| 24b | Esqueleto de la web interna: `react-router`, rutas perezosas, menú y guardas por rol (`permisos.js`), cliente HTTP con errores legibles | Hecho |
+| 24c | Salas: inicio, búsqueda y mapa (módulo de Juanita), registrar hallazgo con atributos dinámicos y evidencias, detalle, reclasificar, historial, plantillas, equipos, reportes, usuarios y API keys | Hecho |
+| 24d | Web pública: cielo de CORA y blanco y verde de ECOSIA, misma distribución que la interna | Hecho |
+| 24e | Validación en navegador contra el backend real con los 5 roles, escritorio y móvil | Hecho: investigador, alto rango, analista y administrador recorridos; arreglados desbordes en móvil y textos |
+| 24f | Pruebas: `App.test.jsx` nuevo (rutas, menú y guardas por rol) y las de ubicación y la web pública en verde | Hecho |
+
+**Pendientes tras la iteración 24:**
+- Los de la iteración 23 fuera del código siguen en pie.
+- La web pública en Vercel debe servir `public/pinturas/` (ya va dentro de `dist`).
+

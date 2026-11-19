@@ -6,6 +6,7 @@ import './index.css';
 import './estilos/tokens.css';
 import './estilos/base.css';
 import './estilos/componentes.css';
+import './estilos/cielo.css';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

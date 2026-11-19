@@ -24,4 +24,19 @@ public interface HallazgoReporteRepository extends JpaRepository<HallazgoReporte
         @Param("estado") String estado,
         @Param("desde") LocalDate desde,
         @Param("hasta") LocalDate hasta);
+
+    /**
+     * Cruce masivo por departamento (RF16): la base analítica agrega en SQL, así que el reporte no carga las filas
+     * en memoria aunque haya millones.
+     */
+    @Query("""
+            SELECT new co.edu.unbosque.biohub.reportes.domain.ConteoDepartamento(
+                h.departamento, COUNT(h),
+                SUM(CASE WHEN UPPER(h.estadoConservacion) = 'EN_PELIGRO' THEN 1 ELSE 0 END),
+                COUNT(DISTINCT LOWER(h.nombreCientifico)))
+            FROM HallazgoReporte h
+            WHERE h.fechaRecoleccion >= :desde AND h.fechaRecoleccion <= :hasta
+            GROUP BY h.departamento
+            """)
+    List<ConteoDepartamento> contarPorDepartamento(@Param("desde") LocalDate desde, @Param("hasta") LocalDate hasta);
 }

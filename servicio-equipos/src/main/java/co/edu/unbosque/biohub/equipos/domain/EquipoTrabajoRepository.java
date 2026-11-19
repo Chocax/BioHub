@@ -9,4 +9,5 @@ public interface EquipoTrabajoRepository extends JpaRepository<EquipoTrabajo, UU
     boolean existsByCodigoInventarioIgnoreCase(String codigoInventario);
     Page<EquipoTrabajo> findByEstado(EstadoEquipo estado, Pageable pageable);
     Page<EquipoTrabajo> findByCustodioId(String custodioId, Pageable pageable);
+    Page<EquipoTrabajo> findByEstadoAndCustodioId(EstadoEquipo estado, String custodioId, Pageable pageable);
 }
