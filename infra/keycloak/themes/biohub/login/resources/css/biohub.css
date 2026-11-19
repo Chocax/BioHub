@@ -1,0 +1,121 @@
+/*
+ * BioHub · inicio de sesión con el estilo "galería" de la web interna (D64): pintura de dominio público a todo el
+ * fondo (F. E. Church, El corazón de los Andes, 1859), tarjeta clara con esquinas cortadas, serif Fraunces para los
+ * títulos e Inter para el resto. Fuentes OFL-1.1 servidas por el propio Keycloak: sin CDN.
+ */
+@font-face { font-family: 'Fraunces BioHub'; src: url('../fonts/fraunces-latin-wght-normal.woff2') format('woff2'); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Fraunces BioHub'; src: url('../fonts/fraunces-latin-wght-italic.woff2') format('woff2'); font-weight: 100 900; font-style: italic; font-display: swap; }
+@font-face { font-family: 'Inter BioHub'; src: url('../fonts/inter-latin-wght-normal.woff2') format('woff2'); font-weight: 100 900; font-style: normal; font-display: swap; }
+
+:root {
+  --bh-tinta: #0d0d0c;
+  --bh-masilla: #c4c3b6;
+  --bh-hueso: #e7e5e4;
+  --bh-tiza: #f1f0ec;
+  --bh-pergamino: #d6d3cb;
+  --bh-grafito: #595855;
+  --bh-terracota: #9a3b2c;
+  --bh-foco: #1f5fa8;
+  --bh-serif: 'Fraunces BioHub', Georgia, 'Times New Roman', serif;
+  --bh-sans: 'Inter BioHub', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --pf-v5-global--FontFamily--text: var(--bh-sans);
+  --pf-v5-global--FontFamily--heading: var(--bh-serif);
+}
+
+html.login-pf, .login-pf body {
+  background: #2f3a2a url('../img/andes.webp') center / cover no-repeat fixed !important;
+  font-family: var(--bh-sans);
+}
+/* Fondos que se alternan (js/fondos.js): capas fijas detrás de todo, con fundido lento. */
+.bh-fondo {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 0; transition: opacity 1.8s ease-in-out;
+  background: #2f3a2a center / cover no-repeat; animation: bh-deriva 60s ease-in-out infinite alternate;
+}
+.bh-fondo--activo { opacity: 1; }
+@keyframes bh-deriva { from { transform: scale(1.01); } to { transform: scale(1.04); } }
+html.bh-con-fondos, .bh-con-fondos body { background-image: none !important; background-color: #2f3a2a !important; }
+@media (prefers-reduced-motion: reduce) { .bh-fondo { animation: none; transition: none; } }
+
+.login-pf body::before {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 1;
+  background: linear-gradient(100deg, rgb(13 13 12 / .55) 0%, rgb(13 13 12 / .15) 45%, rgb(13 13 12 / .05) 100%);
+}
+
+.pf-v5-c-login { background: transparent !important; min-height: 100vh; position: relative; z-index: 2; }
+.pf-v5-c-login__container { position: relative; z-index: 1; }
+
+/* Marca: monograma + "BioHub" en serif, y una bajada */
+.pf-v5-c-login__header { margin-bottom: 18px; }
+#kc-header-wrapper, .pf-v5-c-brand {
+  display: flex; align-items: center; gap: 14px; color: #fff !important; text-transform: none !important;
+  font: 400 44px/1 var(--bh-serif) !important; letter-spacing: -.02em !important; text-shadow: 0 2px 18px rgb(0 0 0 / .45);
+}
+#kc-header-wrapper::before {
+  content: ''; width: 52px; height: 52px; flex: none; border-radius: 50%;
+  background: url('../img/favicon.svg') center / contain no-repeat; box-shadow: 0 4px 18px rgb(0 0 0 / .35);
+}
+#kc-header-wrapper::after {
+  content: 'Plataforma interna del Instituto'; display: block; margin-left: 4px; align-self: flex-end; padding-bottom: 6px;
+  font: 500 11px/1.3 var(--bh-sans); letter-spacing: .16em; text-transform: uppercase; color: #ece9e1;
+}
+
+/* Tarjeta clara con esquinas cortadas, como la galería */
+.pf-v5-c-login__main {
+  --c: 16px;
+  background: var(--bh-tiza) !important; color: var(--bh-tinta); border-radius: 0 !important; box-shadow: 0 30px 60px -30px rgb(0 0 0 / .6) !important;
+  clip-path: polygon(var(--c) 0, calc(100% - var(--c)) 0, 100% var(--c), 100% calc(100% - var(--c)),
+    calc(100% - var(--c)) 100%, var(--c) 100%, 0 calc(100% - var(--c)), 0 var(--c));
+  border-top: 0 !important;
+}
+.pf-v5-c-login__main-header { padding-top: 34px; border-top: 0 !important; }
+.pf-v5-c-title.pf-m-3xl, #kc-page-title {
+  font: 400 32px/1.1 var(--bh-serif) !important; letter-spacing: -.015em; color: var(--bh-tinta) !important;
+}
+.pf-v5-c-login__main-body, .pf-v5-c-login__main-footer { color: var(--bh-tinta); }
+.pf-v5-c-form__label-text, .pf-v5-c-form__label {
+  font: 500 12px/1.3 var(--bh-sans) !important; letter-spacing: .04em; color: var(--bh-grafito) !important;
+}
+
+/* Campos */
+.pf-v5-c-form-control {
+  --pf-v5-c-form-control--BackgroundColor: #fff;
+  --pf-v5-c-form-control--before--BorderColor: var(--bh-pergamino);
+  --pf-v5-c-form-control--after--BorderColor: var(--bh-pergamino);
+  --pf-v5-c-form-control--hover--after--BorderColor: var(--bh-tinta);
+  --pf-v5-c-form-control--focus--after--BorderColor: var(--bh-tinta);
+  background: #fff !important; border-radius: 7px !important; overflow: hidden; color: var(--bh-tinta) !important;
+}
+.pf-v5-c-form-control::before { border: 1px solid var(--bh-masilla) !important; border-radius: 7px; }
+.pf-v5-c-form-control::after { border-bottom-width: 0 !important; }
+.pf-v5-c-form-control:focus-within::before { border-color: var(--bh-tinta) !important; box-shadow: 0 0 0 3px rgb(31 95 168 / .22); }
+.pf-v5-c-form-control > input { min-height: 42px; font: 400 15px/1.4 var(--bh-sans); color: var(--bh-tinta) !important; }
+.pf-v5-c-input-group .pf-v5-c-button.pf-m-control {
+  border-radius: 7px !important; background: #fff !important; color: var(--bh-grafito) !important; margin-left: 6px;
+}
+.pf-v5-c-input-group .pf-v5-c-button.pf-m-control::after { border: 1px solid var(--bh-pergamino) !important; border-radius: 7px; }
+
+/* Botón principal: píldora negra */
+.pf-v5-c-button.pf-m-primary {
+  --pf-v5-c-button--m-primary--BackgroundColor: var(--bh-tinta);
+  --pf-v5-c-button--m-primary--hover--BackgroundColor: #2b2b29;
+  --pf-v5-c-button--m-primary--focus--BackgroundColor: #2b2b29;
+  --pf-v5-c-button--m-primary--active--BackgroundColor: #2b2b29;
+  background: var(--bh-tinta) !important; color: #fff !important; border-radius: 28.8px !important; min-height: 44px;
+  font: 500 14px/1 var(--bh-sans) !important; letter-spacing: .01em; transition: transform .15s ease;
+}
+.pf-v5-c-button.pf-m-primary:hover { transform: translateY(-1px); }
+.pf-v5-c-button.pf-m-link, a { color: var(--bh-tinta); }
+
+/* Selector de idioma y avisos */
+.pf-v5-c-login__main-header-utilities .pf-v5-c-menu-toggle, #login-select-toggle {
+  border-radius: 28.8px !important; background: #fff !important; color: var(--bh-tinta) !important;
+}
+.pf-v5-c-alert.pf-m-danger, .pf-v5-c-alert.pf-m-error { border-radius: 8px; }
+.pf-v5-c-helper-text__item-text.pf-m-error { color: var(--bh-terracota) !important; }
+:focus-visible { outline: 2px solid var(--bh-foco) !important; outline-offset: 3px; }
+
+@media (max-width: 600px) {
+  html.login-pf, .login-pf body { background-attachment: scroll !important; }
+  #kc-header-wrapper, .pf-v5-c-brand { font-size: 34px !important; }
+  #kc-header-wrapper::after { display: none; }
+}

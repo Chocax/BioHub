@@ -166,6 +166,8 @@ services:
     volumes:
       - keycloak-data:/opt/keycloak/data   # H2 en data/h2; el import se monta dentro
       - ./infra/keycloak:/opt/keycloak/data/import:ro
+      # Tema de inicio de sesión con el estilo de BioHub (D64). start-dev no lo guarda en caché: un cambio de CSS se ve al recargar.
+      - ./infra/keycloak/themes/biohub:/opt/keycloak/themes/biohub:ro
     healthcheck:
       # La imagen no trae curl: se consulta el puerto de management (9000) con bash.
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
