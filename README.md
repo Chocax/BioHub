@@ -81,6 +81,37 @@ co.edu.unbosque.biohub.cientifico
 
 ## 4. Cómo levantar todo
 
+### Atajo: un solo comando (Windows)
+
+Con el `.env` ya creado (paso a), desde la raíz del repo en PowerShell:
+
+```powershell
+.\levantar.ps1            # Docker, los 5 servicios y las 2 webs; al final, tabla de puertos y usuarios de prueba
+.\levantar.ps1 -Sembrar   # lo mismo y además crea datos de ejemplo (hallazgos, equipos, un reporte)
+.\levantar.ps1 -Estado    # qué está arriba, sin arrancar nada
+.\levantar.ps1 -Detener   # apaga servicios y webs y detiene los contenedores (los datos se conservan)
+```
+
+Si PowerShell no deja correr scripts, usa `.\levantar.cmd` con los mismos parámetros. Otros parámetros:
+
+| Parámetro | Para qué |
+|---|---|
+| `-Perfil aiven` | Bases en Aiven en vez de Docker (necesita lo de `docs/equipo/09-despliegue.md` §4). Por defecto es `local` |
+| `-Compilar` | Compila aunque no haya cambios (por defecto solo compila si algo cambió) |
+| `-ReimportarRealm` | Vuelve a importar el realm. Úsalo si los usuarios de prueba no entran |
+| `-ArchivoEnv <ruta>` | Usa otro archivo de variables (por ejemplo, un segundo entorno con otro `COMPOSE_PROJECT_NAME` y otros puertos) |
+
+Qué hace, en orden:
+1. Revisa Java 21, Maven, Node y Docker. Si Docker Desktop está apagado, lo prende.
+2. Revisa que el `.env` tenga las variables obligatorias, y dice cuáles faltan sin mostrar sus valores. En local, si no hay `UBICACION_CLAVES`, genera una llave y la agrega al `.env`.
+3. Revisa que los puertos estén libres.
+4. Sube los contenedores, espera a que estén sanos y comprueba que los usuarios de prueba y el cliente del gateway funcionen.
+5. Compila los servicios si cambió algo.
+6. Arranca los 5 servicios en segundo plano, desde la carpeta de cada uno para que lean `../.env`. Siguen corriendo aunque cierres la terminal.
+7. Arranca las dos webs; si faltan dependencias, corre `npm ci` antes.
+
+Los logs quedan en `.biohub-local/logs/` (no se suben). Los pasos de abajo hacen lo mismo a mano.
+
 Todos los comandos se ejecutan desde la raíz del repo, salvo que se indique otra carpeta.
 
 ### a) Crear el `.env`
@@ -215,7 +246,7 @@ La consola de Keycloak usa `KEYCLOAK_ADMIN_USER` / `KEYCLOAK_ADMIN_PASSWORD` del
 | admin1 | administrador |
 | sinrol1 | ninguno: solo sirve para probar que un usuario sin rol no entra a los módulos internos |
 
-La contraseña de todos es el valor de `KEYCLOAK_TEST_USERS_PASSWORD` **de tu propio `.env`**.
+La contraseña de todos es el valor de `KEYCLOAK_TEST_USERS_PASSWORD` **de tu propio `.env`**. `levantar.ps1` la muestra al final, junto con qué puede hacer cada rol. Para tener más usuarios, entra a la web interna como `admin1` y créalos en "Usuarios".
 
 **El realm se importa solo la primera vez.** Si cambias `realm-biohub.json` o la contraseña de prueba, reimporta (borra los datos de Keycloak, que es solo de desarrollo):
 
