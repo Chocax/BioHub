@@ -7,6 +7,7 @@ import { FiltrosMapa } from './componentes/FiltrosUbicacion.jsx';
 import MapaHallazgos from './componentes/MapaHallazgos.jsx';
 import MensajeError from './componentes/MensajeError.jsx';
 import PanelDetalleHallazgo from './componentes/PanelDetalleHallazgo.jsx';
+import LeyendaMapa from './componentes/LeyendaMapa.jsx';
 import ChipEstado from './componentes/ChipEstado.jsx';
 import { FILTROS_VACIOS } from './utilidades/filtros.js';
 import { fechaCorta, formatearCoordenada, textoHallazgos } from './utilidades/formato.js';
@@ -19,7 +20,7 @@ import { esAltoRango } from './utilidades/roles.js';
  *  - alIrABusqueda(): acción del botón de la pantalla de acceso denegado
  * Si el rol no es cientifico_alto_rango no se hace NINGUNA llamada a la API.
  */
-export default function PaginaMapa({ cliente, roles = [], hallazgoId = null, alSesionVencida, alIrABusqueda }) {
+export default function PaginaMapa({ cliente, roles = [], hallazgoId = null, alSesionVencida, alIrABusqueda, sugerencias, detalleExtra }) {
   const altoRango = esAltoRango(roles);
   const [filtros, setFiltros] = useState(FILTROS_VACIOS);
   const [soloId, setSoloId] = useState(hallazgoId);
@@ -92,7 +93,7 @@ export default function PaginaMapa({ cliente, roles = [], hallazgoId = null, alS
         </div>
       </div>
 
-      <FiltrosMapa valores={filtros} onAplicar={aplicar} onLimpiar={limpiar} deshabilitado={cargando} />
+      <FiltrosMapa valores={filtros} onAplicar={aplicar} onLimpiar={limpiar} deshabilitado={cargando} sugerencias={sugerencias} />
 
       {soloId ? (
         <Aviso tipo="info">
@@ -179,8 +180,9 @@ export default function PaginaMapa({ cliente, roles = [], hallazgoId = null, alS
                 </table>
               </div>
             )}
-            <PanelDetalleHallazgo punto={seleccionado} onCerrar={cerrarDetalle} />
+            <PanelDetalleHallazgo punto={seleccionado} onCerrar={cerrarDetalle} extra={detalleExtra} />
           </div>
+          {vista === 'mapa' ? <LeyendaMapa /> : null}
         </div>
       ) : null}
     </div>

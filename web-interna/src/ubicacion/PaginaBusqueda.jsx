@@ -22,7 +22,7 @@ const TAMANOS = [20, 50, 100];
  *  - alVerEnMapa(id): opcional; si falta, no se pinta el botón "Ver en el mapa"
  *  - alVerDetalle(id): opcional; si está, el nombre de la especie abre la ficha completa del hallazgo
  */
-export default function PaginaBusqueda({ cliente, roles = [], alSesionVencida, alVerEnMapa, alVerDetalle }) {
+export default function PaginaBusqueda({ cliente, roles = [], alSesionVencida, alVerEnMapa, alVerDetalle, sugerencias }) {
   const altoRango = esAltoRango(roles);
   const [filtros, setFiltros] = useState(FILTROS_VACIOS);
   const [pagina, setPagina] = useState(0);
@@ -79,7 +79,7 @@ export default function PaginaBusqueda({ cliente, roles = [], alSesionVencida, a
     <div className="ub-raiz">
       <h1>Búsqueda de hallazgos</h1>
       {!altoRango ? <Aviso tipo="info">{TEXTO_ROL_RESTRINGIDO}</Aviso> : null}
-      <FiltrosHallazgos valores={filtros} onAplicar={aplicar} onLimpiar={limpiar} />
+      <FiltrosHallazgos valores={filtros} onAplicar={aplicar} onLimpiar={limpiar} sugerencias={sugerencias} />
 
       <section aria-label="Resultados" aria-busy={estado.tipo === 'cargando'}>
         {estado.tipo === 'cargando' ? (
