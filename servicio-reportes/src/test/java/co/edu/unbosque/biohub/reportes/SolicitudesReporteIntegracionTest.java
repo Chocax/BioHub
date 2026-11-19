@@ -145,12 +145,22 @@ class SolicitudesReporteIntegracionTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString("2026-03.csv")))
                 .andReturn().getResponse().getContentAsByteArray();
-        assertThat(new String(csv, StandardCharsets.UTF_8)).contains("indice_presion").contains("Boyacá").contains("SI");
+        // Para Excel en español: «;» y coma decimal; se arma desde el resumen, así que también vale para reportes viejos
+        assertThat(new String(csv, StandardCharsets.UTF_8)).contains("Índice de presión;Nivel;Zona en alerta")
+                .contains("Boyacá;").contains(";ALTO;Sí").doesNotContain(",ALTO,");
 
         byte[] pdf = mvc.perform(get("/api/reportes/solicitudes/" + id + "/pdf").with(como("administrador")))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsByteArray();
         assertThat(new String(pdf, 0, 4, StandardCharsets.US_ASCII)).isEqualTo("%PDF");
+        assertThat(new String(pdf, StandardCharsets.ISO_8859_1)).contains("Presión sobre los ecosistemas", "Boyacá");
+
+        // Un reporte guardado con el formato anterior se descarga igual con el actual (se rearma desde el resumen)
+        jdbc.update("UPDATE reporte_archivo SET pdf = ?, csv = ? WHERE solicitud_id = UUID_TO_BIN(?)",
+                "%PDF-1.4 viejo".getBytes(StandardCharsets.US_ASCII), "departamento,hallazgos".getBytes(StandardCharsets.UTF_8), String.valueOf(id));
+        byte[] rearmado = mvc.perform(get("/api/reportes/solicitudes/" + id + "/pdf").with(como("analista_ambiental")))
+                .andReturn().getResponse().getContentAsByteArray();
+        assertThat(new String(rearmado, StandardCharsets.ISO_8859_1)).contains("Presión sobre los ecosistemas");
 
         mvc.perform(get("/api/reportes/solicitudes").with(como("analista_ambiental")))
                 .andExpect(status().isOk())
