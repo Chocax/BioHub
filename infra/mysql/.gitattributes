@@ -1,0 +1,3 @@
+# Los scripts de init corren dentro del contenedor Linux de MySQL: con CRLF de Windows fallan
+# ("/bin/bash^M: bad interpreter") y no se crean los esquemas ni los usuarios.
+*.sh text eol=lf
