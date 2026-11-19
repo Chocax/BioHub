@@ -1,29 +1,49 @@
-/* Tokens del sistema de diseño (02-diseno-ux.md §5). Contrastes WCAG AA calculados en el diseño. */
-:root {
-  --c-fondo: #f4f8f4;
-  --c-superficie: #ffffff;
-  --c-texto: #1b2a1f;
-  --c-texto-suave: #4a5c4e;
-  --c-primario: #2e7d32;
-  --c-primario-hover: #1b5e20;
-  --c-borde-campo: #6b7d6f;
-  --c-borde: #cfd8d1;
-  --c-foco: #1565c0;
-  --c-error: #b71c1c;
-  --c-error-fondo: #fdecea;
-  --c-aviso-fondo: #fff3cd;
-  --c-aviso-texto: #5c4300;
-  --c-info-fondo: #e3f2fd;
-  --c-info-texto: #0d47a1;
-  --c-ok-fondo: #e8f5e9;
-  --c-neutro-fondo: #eceff1;
-  --c-neutro-texto: #37474f;
+/*
+ * Tokens del portal público: estilo "Cielo y follaje" (docs/diseño front/DESIGNS/WEB PUBLICA, Cora + Ecosia).
+ * Blanco sobrio como base, azul de cielo para la atmósfera, azul noche para las acciones, verde lima de follaje
+ * como único acento y rojo baya solo para "en peligro". Comparte tipografías y estructura con la web interna.
+ * Contrastes de texto ≥ 4.5:1 sobre blanco (WCAG AA).
+ */
+@import '@fontsource-variable/fraunces';
+@import '@fontsource-variable/inter';
 
-  --fuente: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+:root {
+  --cielo: #117bc8;
+  --cielo-profundo: #0d5c96;
+  --cielo-claro: #60a8dd;
+  --noche: #09426c;
+  --lima: #d7eb80;
+  --lima-oscuro: #4f6114;
+  --baya: #cf372d;
+  --musgo: #2f6b2f;
+  --niebla: #f8f8f6;
+  --lino: #f0f0eb;
+
+  --c-fondo: #ffffff;
+  --c-superficie: #ffffff;
+  --c-texto: #2b2b2b;
+  --c-texto-suave: #5f5f5f;
+  --c-primario: var(--noche);
+  --c-primario-hover: #062f4e;
+  --c-borde-campo: #8a8a85;
+  --c-borde: #dadada;
+  --c-foco: #0b63b6;
+  --c-error: #a8231b;
+  --c-error-fondo: #fbe9e7;
+  --c-aviso-fondo: #f6f9df;
+  --c-aviso-texto: #4a4a10;
+  --c-info-fondo: #eaf3fb;
+  --c-info-texto: #0a4a7d;
+  --c-ok-fondo: #eef6e4;
+  --c-neutro-fondo: #efefec;
+  --c-neutro-texto: #4b4b4b;
+
+  --fuente: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --serif: 'Fraunces Variable', 'Fraunces', Georgia, 'Times New Roman', serif;
   --t-xs: 0.875rem; --t-base: 1rem; --t-md: 1.125rem; --t-lg: 1.25rem; --t-xl: 1.5rem; --t-2xl: 2rem;
 
   --e-1: 0.25rem; --e-2: 0.5rem; --e-3: 0.75rem; --e-4: 1rem; --e-6: 1.5rem; --e-8: 2rem; --e-12: 3rem;
-  --r-sm: 4px; --r-md: 8px; --r-pill: 999px;
-  --sombra-1: 0 1px 2px rgba(27, 42, 31, 0.12);
-  --sombra-2: 0 4px 12px rgba(27, 42, 31, 0.16);
+  --r-sm: 8px; --r-md: 20px; --r-pill: 999px;
+  --sombra-1: 0 1px 2px rgba(13, 92, 150, 0.10), 0 4px 14px rgba(13, 92, 150, 0.08);
+  --sombra-2: 0 10px 34px rgba(13, 92, 150, 0.22);
 }
