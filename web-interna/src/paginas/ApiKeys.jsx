@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Ban, Copy, KeyRound, Plus, Save } from 'lucide-react';
 import { api } from '../api/cliente.js';
 import { Aviso, AvisoError, CabeceraPagina, Campo, Cargando, ChipEstado, formatearFecha, Paginacion, Vacio } from '../componentes/ui.jsx';
 
@@ -21,7 +22,7 @@ function NuevoConsumidor({ alCrear }) {
       <Campo etiqueta="Universidad u ONG" obligatorio>{(p) => <input {...p} required maxLength={150} value={datos.nombre} onChange={cambiar('nombre')} />}</Campo>
       <Campo etiqueta="Correo de contacto" obligatorio>{(p) => <input {...p} type="email" required value={datos.contactoEmail} onChange={cambiar('contactoEmail')} />}</Campo>
       <Campo etiqueta="Límite por minuto" ayuda="Vacío = 60 por minuto (RNF11)">{(p) => <input {...p} type="number" min="1" max="100000" value={datos.limitePorMinuto} onChange={cambiar('limitePorMinuto')} />}</Campo>
-      <div><button type="submit" className="boton">Crear consumidor</button></div>
+      <div><button type="submit" className="boton"><Plus className="icono" aria-hidden="true" />Crear consumidor</button></div>
     </form>
   );
 }
@@ -53,7 +54,7 @@ function Consumidor({ consumidor, alCambiar }) {
           <p className="eyebrow">Copia la key ahora: no se vuelve a mostrar</p>
           <p className="mono secreto">{nueva.apiKey}</p>
           <div className="acciones">
-            <button type="button" className="boton boton--claro boton--chico" onClick={() => navigator.clipboard?.writeText(nueva.apiKey)}>Copiar</button>
+            <button type="button" className="boton boton--claro boton--chico" onClick={() => navigator.clipboard?.writeText(nueva.apiKey)}><Copy className="icono" aria-hidden="true" />Copiar</button>
             <button type="button" className="boton boton--fantasma boton--chico" style={{ color: '#fff', borderColor: '#fff' }} onClick={() => setNueva(null)}>Ya la guardé</button>
           </div>
           <p className="texto-suave" style={{ fontSize: 12, margin: '10px 0 0' }}>Se usa en la cabecera <span className="mono">X-API-Key</span> contra <span className="mono">/api/v1/externa/fichas</span>.</p>
@@ -65,7 +66,7 @@ function Consumidor({ consumidor, alCambiar }) {
           <label htmlFor="limite">Límite por minuto</label>
           <input id="limite" type="number" min="1" max="100000" value={limite} placeholder={`${consumidor.limiteEfectivo} (por defecto)`} onChange={(e) => setLimite(e.target.value)} />
         </div>
-        <button type="submit" className="boton boton--fantasma">Guardar límite</button>
+        <button type="submit" className="boton boton--fantasma"><Save className="icono" aria-hidden="true" />Guardar límite</button>
       </form>
       <form className="acciones" style={{ alignItems: 'flex-end', marginBottom: 16 }}
         onSubmit={(e) => { e.preventDefault(); hacer(async () => { setNueva(await api.post(`/api/gateway/consumidores/${consumidor.id}/keys`, expira ? { expiraEn: new Date(`${expira}T23:59:59-05:00`).toISOString() } : undefined)); setExpira(''); await cargar(); }); }}>
@@ -73,7 +74,7 @@ function Consumidor({ consumidor, alCambiar }) {
           <label htmlFor="expira">Vence (opcional)</label>
           <input id="expira" type="date" value={expira} min={new Date().toISOString().slice(0, 10)} onChange={(e) => setExpira(e.target.value)} />
         </div>
-        <button type="submit" className="boton">Emitir nueva key</button>
+        <button type="submit" className="boton"><KeyRound className="icono" aria-hidden="true" />Emitir nueva key</button>
       </form>
       {!keys && <Cargando />}
       {keys?.length === 0 && <p className="texto-suave">Sin keys todavía.</p>}
@@ -90,7 +91,7 @@ function Consumidor({ consumidor, alCambiar }) {
                   <td>{k.expiraEn ? formatearFecha(k.expiraEn) : '—'}</td>
                   <td>{k.estado === 'ACTIVA' && (
                     <button type="button" className="boton boton--peligro boton--chico"
-                      onClick={() => { if (window.confirm(`¿Revocar ${k.prefijo}? Las peticiones con esa key se rechazan desde ya.`)) hacer(async () => { await api.borrar(`/api/gateway/keys/${k.id}`); await cargar(); }, 'Key revocada: se rechaza desde la siguiente petición.'); }}>Revocar</button>
+                      onClick={() => { if (window.confirm(`¿Revocar ${k.prefijo}? Las peticiones con esa key se rechazan desde ya.`)) hacer(async () => { await api.borrar(`/api/gateway/keys/${k.id}`); await cargar(); }, 'Key revocada: se rechaza desde la siguiente petición.'); }}><Ban className="icono" aria-hidden="true" />Revocar</button>
                   )}</td>
                 </tr>
               ))}
@@ -116,7 +117,7 @@ export default function ApiKeys() {
 
   return (
     <section className="pagina">
-      <CabeceraPagina pestana="API Keys" eyebrow="API externa · HU-12" titulo={<>Llaves para <em>universidades</em> y ONG</>}
+      <CabeceraPagina pestana="API Keys" eyebrow="API externa · HU-12" titulo={<>Llaves para <em>universidades</em> y ONG</>} pintura="auto"
         descripcion="Cada consumidor recibe sus API Keys y un límite de peticiones por minuto. Una key revocada se rechaza desde la siguiente petición." />
       <AvisoError error={error} />
       <div className="rejilla" style={{ gridTemplateColumns: 'minmax(260px, 1fr) minmax(0, 2fr)', alignItems: 'start' }}>
