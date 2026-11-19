@@ -38,7 +38,7 @@ export default function Historial() {
   const especie = versiones?.[0]?.snapshot?.nombreCientifico;
   return (
     <section className="pagina">
-      <CabeceraPagina pestana="Historial del hallazgo" eyebrow="Auditoría · HU-05" titulo={<>Historial <em>inmutable</em></>}
+      <CabeceraPagina pestana="Historial del hallazgo" eyebrow="Auditoría · HU-05" titulo={<>Historial <em>inmutable</em></>} pintura="auto"
         descripcion={especie ? `Todas las versiones de ${especie}. Nada se borra ni se sobrescribe: cada cambio es una versión nueva con su autor y su justificación.` : undefined}>
         <Link className="boton boton--fantasma" to={`/hallazgos/${id}`}>Volver al hallazgo</Link>
       </CabeceraPagina>

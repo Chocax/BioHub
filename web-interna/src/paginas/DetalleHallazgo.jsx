@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router';
+import { Download, Globe, History, Map as IconoMapa, PenLine, Upload } from 'lucide-react';
 import { api, descargar, pedir } from '../api/cliente.js';
 import { puede } from '../auth/permisos.js';
 import { useSesion } from '../componentes/Marco.jsx';
@@ -25,7 +26,7 @@ function VistaEvidencia({ hallazgoId, evidencia }) {
     : <audio className="evidencia__audio" controls src={url} aria-label={`Audio: ${evidencia.nombre}`} />;
 }
 
-function Evidencias({ hallazgoId, puedeSubir }) {
+function Evidencias({ hallazgoId, puedeSubir, nombreCientifico }) {
   const [lista, setLista] = useState(null);
   const [error, setError] = useState(null);
   const [subiendo, setSubiendo] = useState(false);
@@ -33,6 +34,17 @@ function Evidencias({ hallazgoId, puedeSubir }) {
     api.get(`/api/cientifico/hallazgos/${hallazgoId}/evidencias`).then(setLista).catch(setError);
   }, [hallazgoId]);
   useEffect(cargar, [cargar]);
+
+  // D65: el investigador decide qué foto puede salir en el portal público; por defecto ninguna.
+  async function marcarPublica(evidencia, publica) {
+    setError(null);
+    try {
+      const actualizada = await api.put(`/api/cientifico/hallazgos/${hallazgoId}/evidencias/${evidencia.id}/publica`, { publica });
+      setLista((l) => l.map((e) => (e.id === actualizada.id ? actualizada : e)));
+    } catch (falla) {
+      setError(falla);
+    }
+  }
 
   async function subir(archivos) {
     setSubiendo(true);
@@ -57,7 +69,7 @@ function Evidencias({ hallazgoId, puedeSubir }) {
         <p className="tarjeta__titulo">Evidencias</p>
         {puedeSubir && (
           <label className="boton boton--fantasma boton--chico" style={{ cursor: 'pointer' }}>
-            {subiendo ? 'Subiendo…' : 'Agregar archivos'}
+            <Upload className="icono" aria-hidden="true" />{subiendo ? 'Subiendo…' : 'Agregar archivos'}
             <input type="file" multiple className="solo-lectores" accept=".jpg,.jpeg,.png,.wav,.mp3,.ogg,.flac,image/jpeg,image/png,audio/*"
               disabled={subiendo} onChange={(e) => { subir(Array.from(e.target.files)); e.target.value = ''; }} />
           </label>
@@ -66,15 +78,29 @@ function Evidencias({ hallazgoId, puedeSubir }) {
       <AvisoError error={error} />
       {lista === null && !error && <Cargando texto="Cargando evidencias…" />}
       {lista?.length === 0 && <p className="texto-suave">Este hallazgo todavía no tiene fotos ni audios.</p>}
+      {puedeSubir && lista?.some((e) => e.tipo === 'FOTOGRAFIA') && (
+        <p className="texto-suave" style={{ fontSize: 12.5, margin: '0 0 12px' }}>
+          Marca «Mostrar en el portal» en la foto que quieras publicar en la ficha pública de <i lang="la">{nombreCientifico}</i>.
+          Ya no lleva la ubicación GPS, pero revisa que la imagen no muestre el lugar exacto.
+        </p>
+      )}
       {lista?.length > 0 && (
         <ul className="evidencias">
           {lista.map((e) => (
             <li key={e.id} className="evidencia">
               <VistaEvidencia hallazgoId={hallazgoId} evidencia={e} />
+              {e.publica && <span className="evidencia__sello chip chip--musgo"><Globe className="icono" aria-hidden="true" />Pública</span>}
               <div className="evidencia__pie">
                 <span title={e.nombre}>{e.nombre}</span>
                 <span className="texto-suave">{formatearTamano(e.tamanoBytes)} · {e.subidoPor ?? '—'}</span>
-                <button type="button" className="enlace" onClick={() => descargar(`/api/cientifico/hallazgos/${hallazgoId}/evidencias/${e.id}`, e.nombre)}>Descargar</button>
+                <button type="button" className="enlace" onClick={() => descargar(`/api/cientifico/hallazgos/${hallazgoId}/evidencias/${e.id}`, e.nombre)}
+                  style={{ display: 'inline-flex', gap: 4, alignItems: 'center', justifySelf: 'start' }}><Download className="icono" aria-hidden="true" />Descargar</button>
+                {puedeSubir && e.tipo === 'FOTOGRAFIA' && (
+                  <label className="evidencia__publica">
+                    <input type="checkbox" checked={e.publica} onChange={(ev) => marcarPublica(e, ev.target.checked)} />
+                    Mostrar en el portal
+                  </label>
+                )}
               </div>
             </li>
           ))}
@@ -185,9 +211,9 @@ export default function DetalleHallazgo() {
       <CabeceraPagina pestana={hallazgo?.nombreCientifico ?? 'Hallazgo'} eyebrow={hallazgo ? `Hallazgo · versión ${hallazgo.version}` : 'Hallazgo'}
         titulo={hallazgo ? <i lang="la">{hallazgo.nombreCientifico}</i> : 'Cargando…'}
         descripcion={hallazgo?.nombreComun}>
-        {hallazgo && puede(roles, 'verHistorial') && <Link className="boton boton--fantasma" to={`/hallazgos/${id}/historial`}>Historial y versiones</Link>}
-        {hallazgo && puede(roles, 'verMapa') && <Link className="boton boton--fantasma" to={`/mapa?hallazgo=${id}`}>Ver en el mapa</Link>}
-        {hallazgo && puede(roles, 'reclasificar') && !editando && <button type="button" className="boton" onClick={() => setEditando(true)}>Reclasificar</button>}
+        {hallazgo && puede(roles, 'verHistorial') && <Link className="boton boton--fantasma" to={`/hallazgos/${id}/historial`}><History className="icono" aria-hidden="true" />Historial y versiones</Link>}
+        {hallazgo && puede(roles, 'verMapa') && <Link className="boton boton--fantasma" to={`/mapa?hallazgo=${id}`}><IconoMapa className="icono" aria-hidden="true" />Ver en el mapa</Link>}
+        {hallazgo && puede(roles, 'reclasificar') && !editando && <button type="button" className="boton" onClick={() => setEditando(true)}><PenLine className="icono" aria-hidden="true" />Reclasificar</button>}
       </CabeceraPagina>
       {mensaje && <Aviso tipo="exito">{mensaje}</Aviso>}
       {state?.fallidos?.length > 0 && <Aviso tipo="aviso">No se subieron: {state.fallidos.join('; ')}</Aviso>}
@@ -220,7 +246,7 @@ export default function DetalleHallazgo() {
               </div>
             )}
           </div>
-          <Evidencias hallazgoId={hallazgo.id} puedeSubir={puede(roles, 'registrarHallazgo')} />
+          <Evidencias hallazgoId={hallazgo.id} puedeSubir={puede(roles, 'registrarHallazgo')} nombreCientifico={hallazgo.nombreCientifico} />
         </div>
       )}
     </section>
