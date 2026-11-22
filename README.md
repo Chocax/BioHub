@@ -2,7 +2,7 @@
 
 BioHub es una plataforma de registro y consulta de hallazgos de biodiversidad (proyecto del curso Ingeniería de Software 2, Universidad El Bosque).
 
-> **Estado: esqueleto.** Contiene estructura, infraestructura local, seguridad base (Keycloak + JWT) y una prueba de punta a punta (`/ping`). **No hay lógica de negocio ni modelo de datos todavía**: eso se construye en las ramas de cada persona.
+> **Estado (Entrega 3, noviembre de 2026):** las historias de negocio están implementadas de punta a punta: registro de hallazgos con fichas flexibles, evidencias e historial inmutable; ubicación cifrada con mapa y búsqueda; portal público con catálogo por especie; equipos de campo; reportes de presión con PDF y CSV; API Gateway con API Keys, límites y administración de usuarios. Lo que falta por historia y por persona está en [docs/equipo/00-plan.md](docs/equipo/00-plan.md). Cómo se despliega para la entrega: [docs/equipo/12-plan-despliegue-entrega-3.md](docs/equipo/12-plan-despliegue-entrega-3.md).
 
 ## 1. Arquitectura
 
@@ -45,6 +45,8 @@ biohub/
 ├── pom.xml                     # Maven agregador (Spring Boot 3.5.16, Java 21, dependencias comunes)
 ├── docker-compose.yml          # Infraestructura local (proyecto Compose "biohub")
 ├── .env.example                # Plantilla de variables de entorno (el .env real NO se sube)
+├── levantar.ps1, levantar.cmd  # Levanta todo en Windows (sección 4)
+├── levantar.sh                 # Levanta todo en Linux o macOS (sección 4)
 ├── api-gateway/                # API Gateway: enruta /api/<prefijo>/**, valida JWT, CORS
 ├── servicio-cientifico/        # Módulos registro y ubicacion
 ├── servicio-equipos/           # Equipos de trabajo
@@ -53,10 +55,14 @@ biohub/
 ├── web-interna/                # React 19 + Vite, login con Keycloak (keycloak-js)
 ├── web-publica/                # React 19 + Vite, portal público sin login
 ├── infra/
-│   ├── keycloak/               # realm-biohub.json (se importa al arrancar Keycloak)
-│   └── mysql/transaccional/    # script de init: esquemas y usuarios de MySQL
-├── pruebas-carga/              # Reservada para pruebas de carga futuras
-└── docs/equipo/                # Plan, arquitectura y contrato de API
+│   ├── keycloak/               # realm-biohub.json y el tema de inicio de sesión
+│   ├── mysql/initdb/           # usuarios *_app y *_migr de las 4 bases locales (mismos permisos que en Aiven)
+│   └── rabbitmq/               # usuarios AMQP por servicio
+├── deploy/aiven/               # scripts SQL de usuarios y del historial append-only para Aiven
+├── scripts/                    # sembrar-demo.mjs: datos de ejemplo (lo usa levantar con -Sembrar)
+├── pruebas-carga/              # k6 para los ASR de rendimiento (ver su README)
+├── bruno/                      # colección de peticiones para probar la API a mano
+└── docs/equipo/                # Plan, arquitectura, contrato de API, ADR, pruebas y despliegue
 ```
 
 ### Convención de paquetes
@@ -81,9 +87,11 @@ co.edu.unbosque.biohub.cientifico
 
 ## 4. Cómo levantar todo
 
-### Atajo: un solo comando (Windows)
+### Atajo: un solo comando
 
-Con el `.env` ya creado (paso a), desde la raíz del repo en PowerShell:
+Con el `.env` ya creado (paso a), desde la raíz del repo.
+
+**Windows** (PowerShell):
 
 ```powershell
 .\levantar.ps1            # Docker, los 5 servicios y las 2 webs; al final, tabla de puertos y usuarios de prueba
@@ -92,22 +100,33 @@ Con el `.env` ya creado (paso a), desde la raíz del repo en PowerShell:
 .\levantar.ps1 -Detener   # apaga servicios y webs y detiene los contenedores (los datos se conservan)
 ```
 
-Si PowerShell no deja correr scripts, usa `.\levantar.cmd` con los mismos parámetros. Otros parámetros:
+Si PowerShell no deja correr scripts, usa `.\levantar.cmd` con los mismos parámetros.
+
+**Linux o macOS** (bash 4 o superior, con `curl`; en macOS instala un bash nuevo con Homebrew):
+
+```bash
+./levantar.sh             # lo mismo que en Windows
+./levantar.sh --sembrar
+./levantar.sh --estado
+./levantar.sh --detener
+```
+
+Si dice `Permission denied`, dale permiso una vez: `chmod +x levantar.sh`. Otros parámetros (Windows / Linux):
 
 | Parámetro | Para qué |
 |---|---|
-| `-Perfil aiven` | Bases en Aiven en vez de Docker (necesita lo de `docs/equipo/09-despliegue.md` §4). Por defecto es `local` |
-| `-Compilar` | Compila aunque no haya cambios (por defecto solo compila si algo cambió) |
-| `-ReimportarRealm` | Vuelve a importar el realm. Úsalo si los usuarios de prueba no entran |
-| `-ArchivoEnv <ruta>` | Usa otro archivo de variables (por ejemplo, un segundo entorno con otro `COMPOSE_PROJECT_NAME` y otros puertos) |
+| `-Perfil aiven` / `--perfil aiven` | Bases en Aiven en vez de Docker (necesita lo de `docs/equipo/09-despliegue.md` §4). Por defecto es `local` |
+| `-Compilar` / `--compilar` | Compila aunque no haya cambios (por defecto solo compila si algo cambió) |
+| `-ReimportarRealm` / `--reimportar-realm` | Vuelve a importar el realm. Úsalo si los usuarios de prueba no entran |
+| `-ArchivoEnv <ruta>` / `--env <ruta>` | Usa otro archivo de variables (por ejemplo, un segundo entorno con otro `COMPOSE_PROJECT_NAME` y otros puertos) |
 
 Qué hace, en orden:
 1. Revisa Java 21, Maven, Node y Docker. Si Docker Desktop está apagado, lo prende.
-2. Revisa que el `.env` tenga las variables obligatorias, y dice cuáles faltan sin mostrar sus valores. En local, si no hay `UBICACION_CLAVES`, genera una llave y la agrega al `.env`.
+2. Revisa que el `.env` tenga las variables obligatorias, y dice cuáles faltan sin mostrar sus valores. En local, si no hay `UBICACION_CLAVES` o las contraseñas de los usuarios de migraciones (`*_MIGR_PASSWORD`), las genera y las agrega al `.env`.
 3. Revisa que los puertos estén libres.
-4. Sube los contenedores, espera a que estén sanos y comprueba que los usuarios de prueba y el cliente del gateway funcionen.
+4. Sube los contenedores y espera a que estén sanos. Ajusta los usuarios de las 4 bases (`*_app` sin permisos sobre el esquema, `*_migr` solo para Flyway); también corrige bases creadas antes, sin borrar datos. Comprueba que los usuarios de prueba y el cliente del gateway funcionen.
 5. Compila los servicios si cambió algo.
-6. Arranca los 5 servicios en segundo plano, desde la carpeta de cada uno para que lean `../.env`. Siguen corriendo aunque cierres la terminal.
+6. Arranca los 5 servicios en segundo plano, desde la carpeta de cada uno para que lean `../.env`. Siguen corriendo aunque cierres la terminal. Cuando Flyway ya creó las tablas, bloquea el historial de registro (D60): el usuario de la app no puede modificar ni borrar `hallazgo_version` ni `hallazgo_auditoria`, y lo comprueba.
 7. Arranca las dos webs; si faltan dependencias, corre `npm ci` antes.
 
 Los logs quedan en `.biohub-local/logs/` (no se suben). Los pasos de abajo hacen lo mismo a mano.
@@ -137,6 +156,12 @@ docker compose ps
 
 Repite `docker compose ps` hasta que todos los contenedores estén en `healthy` (son 7). Keycloak tarda unos 30-60 s.
 
+Cada base se crea con **dos usuarios**, como en Aiven: `MYSQL_<X>_USER` (el `*_app`, solo lee y escribe datos) y `<P>_MIGR_USER` (el `*_migr`, el único que crea o cambia tablas; lo usa Flyway). Ninguno tiene `ALL PRIVILEGES`. Si arrancas sin `levantar`, después del primer arranque de `servicio-cientifico` bloquea el historial a mano (`levantar` lo hace solo):
+
+```bash
+docker exec biohub-mysql-transaccional bash /docker-entrypoint-initdb.d/01-usuarios.sh   # debe decir "historial protegido"
+```
+
 ### c) Compilar los servicios
 
 ```bash
@@ -153,7 +178,7 @@ cd api-gateway
 mvn spring-boot:run
 ```
 
-Repite con `servicio-equipos` y `servicio-reportes`. `servicio-cientifico` y `servicio-consulta-publica` necesitan elegir **perfil de base de datos**:
+Repite con los otros cuatro servicios. Todos necesitan elegir **perfil de base de datos**:
 
 ```bash
 cd servicio-cientifico
@@ -161,7 +186,7 @@ SPRING_PROFILES_ACTIVE=local mvn spring-boot:run    # MySQL del docker-compose (
 SPRING_PROFILES_ACTIVE=aiven mvn spring-boot:run    # MySQL en Aiven con SSL (ver 09-despliegue.md)
 ```
 
-(`servicio-consulta-publica` igual: local usa el MySQL del puerto 3308.) Sin perfil no arrancan: no hay URL ni credenciales por defecto. Plantillas de variables: `servicio-*/.env.example`. Para usar el jar:
+(En local, científico y equipos usan el 3307, consulta pública el 3308, reportes el 3309 y el gateway el 3310.) Sin perfil no arrancan: no hay URL ni credenciales por defecto. Plantillas de variables: `servicio-*/.env.example`. Para usar el jar:
 
 ```bash
 cd servicio-cientifico
@@ -188,8 +213,8 @@ Los puertos son fijos (`strictPort`): si están ocupados, Vite falla en vez de c
 
 ### f) Probar
 
-1. Abre http://localhost:5173 e inicia sesión con un usuario de prueba (sección 6). Debe mostrar la respuesta del ping del Servicio Científico.
-2. Abre http://localhost:5174 (portal público, sin login).
+1. Abre http://localhost:5173 e inicia sesión con un usuario de prueba (sección 6). Cada rol ve sus salas en el menú (búsqueda, registro, mapa, fichas, equipos, reportes, usuarios, API Keys). Con `-Sembrar` hay datos de ejemplo.
+2. Abre http://localhost:5174 (portal público, sin login): catálogo por especie y fichas públicas, sin coordenadas.
 3. Por consola, pide un token y llama al gateway:
 
 ```bash
@@ -334,7 +359,7 @@ Topología actual (iteración 15):
 - **RabbitMQ, Redis y Keycloak**: en Docker local (`docker-compose.yml`). El compose también trae MySQL locales para el perfil `local`.
 - **Desarrollo sin internet**: perfil `local` (`SPRING_PROFILES_ACTIVE=local`) contra los MySQL del compose.
 
-Guía completa (consola de Aiven, conversión del CA, variables, rollback, migración de los demás servicios): [docs/equipo/09-despliegue.md](docs/equipo/09-despliegue.md). Las credenciales (`.env`, `ca.pem`) no están en el repo: pídelas por un canal privado.
+Guía completa (consola de Aiven, conversión del CA, variables, rollback, migración de los demás servicios): [docs/equipo/09-despliegue.md](docs/equipo/09-despliegue.md). Plan para la Entrega 3 (qué corre dónde, orden, verificación y vuelta atrás): [docs/equipo/12-plan-despliegue-entrega-3.md](docs/equipo/12-plan-despliegue-entrega-3.md). Las credenciales (`.env`, `ca.pem`) no están en el repo: pídelas por un canal privado.
 
 ## 11. Solución de problemas
 
@@ -349,12 +374,14 @@ Guía completa (consola de Aiven, conversión del CA, variables, rollback, migra
 | `docker compose up` dice "Falta en .env" | Falta esa variable en tu `.env`: compárala con `.env.example` |
 | No puedo llamar a un servicio (8081-8084) desde otra máquina o contenedor | A propósito: escuchan solo en `127.0.0.1` para obligar a entrar por el gateway. Para contenedores usa `SERVER_ADDRESS=0.0.0.0` dentro de una red interna |
 | MySQL init falla con "caracteres no permitidos" | Las contraseñas de `.env` solo admiten letras, números y `_.@#%+=-` |
-| Cambié contraseñas de MySQL en `.env` y ya no conecta | Los usuarios se crean solo la primera vez: `docker compose down -v` (borra los datos locales) y `docker compose up -d` |
+| Cambié contraseñas de MySQL en `.env` y ya no conecta | Con `levantar` no pasa: ajusta los usuarios en cada arranque. A mano: `docker compose up -d` y luego `docker exec biohub-mysql-<base> bash /docker-entrypoint-initdb.d/01-usuarios.sh` (no borra datos) |
+| Flyway falla con `CREATE command denied` | Falta `<P>_MIGR_USER/PASSWORD` en el `.env`: las migraciones no las corre el usuario `*_app` (ver `.env.example`) |
+| Un script `.sh` falla con `bad interpreter` o `$'\r'` | Quedó con fin de línea de Windows. `.gitattributes` lo evita al clonar; si lo copiaste a mano: `sed -i 's/\r$//' archivo.sh` |
 
 ## 12. Documentación del equipo
 
 - [docs/equipo/00-plan.md](docs/equipo/00-plan.md): plan y resultados de verificación.
-- [docs/equipo/03-arquitectura.md](docs/equipo/03-arquitectura.md): arquitectura y decisiones.
+- [docs/equipo/03-arquitectura.md](docs/equipo/03-arquitectura.md): arquitectura y decisiones. Las que necesitan más contexto tienen su ADR completo en [docs/equipo/adr/](docs/equipo/adr/).
 - [docs/equipo/04-contrato-api.md](docs/equipo/04-contrato-api.md): contrato de API.
 - [docs/equipo/06-plan-pruebas.md](docs/equipo/06-plan-pruebas.md) y [07-reporte-qa.md](docs/equipo/07-reporte-qa.md): pruebas y resultados.
 - [docs/equipo/08-reporte-seguridad.md](docs/equipo/08-reporte-seguridad.md): auditoría de seguridad y **requisitos de seguridad para las próximas historias** (léelo antes de empezar tu historia).

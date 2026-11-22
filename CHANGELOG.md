@@ -4,6 +4,20 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
 ## [Unreleased]
 
+### Security (revisión del equipo, 2026-11-21)
+- Evidencias sin ubicación también en audios y en JPEG con datos pegados: el JPEG se recorre completo y se corta en el fin de imagen; WAV, MP3, FLAC y OGG se reconstruyen solo con el sonido.
+- MySQL local con los mismos permisos que Aiven: usuario `*_app` y usuario `*_migr` por base, sin `ALL PRIVILEGES`, e historial de registro append-only también en local.
+- Web interna con Content-Security-Policy en el build.
+
+### Added (revisión del equipo, 2026-11-21)
+- `levantar.sh` para Linux y macOS.
+- ADR completo de D65 (`docs/equipo/adr/D65-fotos-publicas.md`) y plan de despliegue de la Entrega 3 (`docs/equipo/12-plan-despliegue-entrega-3.md`).
+- Pruebas de las 8 salas de la web interna.
+
+### Changed (revisión del equipo, 2026-11-21)
+- `docker-compose.yml`: las 4 bases usan `infra/mysql/initdb/01-usuarios.sh` (se elimina `infra/mysql/transaccional/`). Nuevas variables `<P>_MIGR_USER/PASSWORD` en `.env`; `levantar` las genera si faltan.
+- README al día y `.env.example` con todas las variables.
+
 ### Removed
 - Retirada la VPN de malla anterior; MySQL pasa a Aiven. Se eliminan `deploy/` (VMs KVM, scripts de despliegue, ACL), la guía de la VPN y las VMs `biohub-backend`/`biohub-datos`.
 

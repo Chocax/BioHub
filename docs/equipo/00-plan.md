@@ -416,3 +416,24 @@ Despliegue de bases, Redis y RabbitMQ en VMs locales con una VPN de malla, y su 
 **Pendientes tras la iteración 25:**
 - Quien tenga Keycloak ya importado no necesita reimportar: `levantar.ps1` activa el tema del login por la API de administración.
 - Al subir, avisar al equipo: cambian `docker-compose.yml` (monta el tema) e `infra/` (`.gitattributes` de MySQL y espera en `crear-usuarios.sh`).
+
+# Iteración 26: lo que le tocó a Santiago en la revisión del equipo
+
+**Fecha:** 2026-11-21 · **Rama:** `feature/correcciones-revision` (sale de `develop` ya reescrito).
+
+| # | Tarea | Estado |
+|---|---|---|
+| 26a | GPS en las evidencias (seguridad lo tenía en "Rechazado"): JPEG recorrido escaneo por escaneo y cortado en el fin de imagen (se va el video de las fotos en movimiento y las imágenes MPF con su EXIF); audios reconstruidos solo con el sonido (WAV, MP3, FLAC; OGG Vorbis u Opus con comentarios vacíos y páginas refirmadas) | Hecho: `LimpiadorAudio`, 25 pruebas (`LimpiadorMetadatosTest`, `LimpiadorAudioTest`) |
+| 26b | Fotos públicas D65: ADR completo con la alternativa de copiar una miniatura al lado de lectura y cuándo revisarla | Hecho: `adr/D65-fotos-publicas.md`. Se mantiene el diseño (decisión del equipo) |
+| 26c | Historial protegido también en local: las 4 bases con `*_app` (sin permisos de esquema) y `*_migr` (Flyway), como en Aiven; sin `ALL PRIVILEGES` | Hecho: `infra/mysql/initdb/01-usuarios.sh` (repetible), probado con volúmenes viejos y con uno nuevo |
+| 26d | `levantar` ajusta los usuarios en cada arranque, genera las contraseñas de migración que falten y bloquea el historial con el mismo archivo de Aiven; lo comprueba con error 1142 | Hecho y probado de punta a punta |
+| 26e | `levantar.sh` para Linux y macOS, con los mismos pasos y opciones | Hecho. Probado en Git Bash el modo `--estado`; **falta** una corrida completa en Linux |
+| 26f | README al día (ya no dice "esqueleto"), `.env.example` completo y `.gitattributes` con LF para los `.sh` | Hecho |
+| 26g | Plan de despliegue de la Entrega 3 | Hecho: `12-plan-despliegue-entrega-3.md`, con los puntos por decidir marcados |
+| 26h | Web interna: CSP (como la del portal) y pruebas de las 8 salas (registro, detalle, historial, fichas, equipos, reportes, usuarios, API Keys) | Hecho: 42 pruebas nuevas (140 en total). CSP comprobada en el build recorriendo las 9 salas sin ninguna violación |
+
+**Pendientes tras la iteración 26:**
+- Al subir, avisar al equipo: cambian `docker-compose.yml` e `infra/mysql`. Quien use `levantar` no hace nada más. Quien levante a mano necesita las `*_MIGR_*` en su `.env` (ver `.env.example`) y correr una vez `docker exec biohub-mysql-<base> bash /docker-entrypoint-initdb.d/01-usuarios.sh` en cada base (no borra datos).
+- Las evidencias que ya estén guardadas se subieron con el limpiador anterior: los audios y las fotos con datos pegados al final pueden conservar ubicación. Por decidir: volver a limpiarlas con una tarea única o borrarlas si son de prueba.
+- Probar `levantar.sh` completo en una máquina Linux.
+
