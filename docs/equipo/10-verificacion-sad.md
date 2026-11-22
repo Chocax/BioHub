@@ -26,7 +26,7 @@
 | API Gateway como único punto de entrada (§4.5, ASR8, ASR9) | `api-gateway/.../ProxyController.java`, `ProxyService.java`, `GatewayProperties` | Implementada (enrutamiento) | Rutas por variable (`SERVICIO_*_URL`); servicios en `127.0.0.1` (D7). API Keys y rate limit ausentes (ARQ-03) |
 | Eventos en topología broker (§4.8) | `cientifico/eventos/service/PublicadorEventos.java` (publisher confirms, persistente); `consultapublica/config/RabbitConfig.java`, `reportes/config/RabbitConfig.java` (cola + DLQ propias) | Implementada (infraestructura) | Ningún productor real publica `hallazgo.*` todavía (ARQ-07) |
 | Keycloak, OAuth 2.0/OIDC, PKCE, token de 5 min (§5.2, §7.2.1) | `infra/keycloak/realm-biohub.json` (`accessTokenLifespan: 300`, `bruteForceProtected: true`); `KeycloakJwtAuthenticationConverter` y `SecurityConfig` en cada servicio | Implementada | `failureFactor: 5` frente a los 3 intentos de HU-11 (ARQ-21) |
-| Datos (§4.5): Científico y Equipos comparten la BD transaccional (esquemas propios); Consulta Pública, Reportes y Gateway con BD propia | `docker-compose.yml`: 4 MySQL (transaccional, lectura, analítica, gateway); `infra/mysql/transaccional/01-esquemas-y-usuarios.sh` | Implementada en local | Con Aiven depende de P-A1 (§8) |
+| Datos (§4.5): Científico y Equipos comparten la BD transaccional (esquemas propios); Consulta Pública, Reportes y Gateway con BD propia | `docker-compose.yml`: 4 MySQL (transaccional, lectura, analítica, gateway); `infra/mysql/initdb/01-usuarios.sh` (antes `infra/mysql/transaccional/01-esquemas-y-usuarios.sh`) | Implementada en local | Con Aiven depende de P-A1 (§8) |
 
 ---
 

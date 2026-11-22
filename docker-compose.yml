@@ -20,17 +20,27 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_TRANSACCIONAL_ROOT_PASSWORD:?Falta en .env}
-      MYSQL_CIENTIFICO_USER: ${MYSQL_CIENTIFICO_USER:?Falta en .env}
-      MYSQL_CIENTIFICO_PASSWORD: ${MYSQL_CIENTIFICO_PASSWORD:?Falta en .env}
-      MYSQL_EQUIPOS_USER: ${MYSQL_EQUIPOS_USER:?Falta en .env}
-      MYSQL_EQUIPOS_PASSWORD: ${MYSQL_EQUIPOS_PASSWORD:?Falta en .env}
+      # Usuarios con los mismos permisos que en Aiven: *_app para el servicio, *_migr solo para Flyway
+      # (infra/mysql/initdb/01-usuarios.sh). Las contraseñas de migración se exigen al crear el volumen.
+      BIOHUB_BASE_1: cientifico
+      BIOHUB_APP_USER_1: ${MYSQL_CIENTIFICO_USER:?Falta en .env}
+      BIOHUB_APP_PASSWORD_1: ${MYSQL_CIENTIFICO_PASSWORD:?Falta en .env}
+      BIOHUB_MIGR_USER_1: ${CIENTIFICO_MIGR_USER:-cientifico_migr}
+      BIOHUB_MIGR_PASSWORD_1: ${CIENTIFICO_MIGR_PASSWORD:-}
+      BIOHUB_BASE_2: equipos
+      BIOHUB_APP_USER_2: ${MYSQL_EQUIPOS_USER:?Falta en .env}
+      BIOHUB_APP_PASSWORD_2: ${MYSQL_EQUIPOS_PASSWORD:?Falta en .env}
+      BIOHUB_MIGR_USER_2: ${EQUIPOS_MIGR_USER:-equipos_migr}
+      BIOHUB_MIGR_PASSWORD_2: ${EQUIPOS_MIGR_PASSWORD:-}
       MYSQL_ROOT_HOST: 127.0.0.1   # root solo desde dentro del contenedor (no existe root@'%')
       TZ: America/Bogota
     ports:
       - "127.0.0.1:${MYSQL_TRANSACCIONAL_PORT:-3307}:3306"
     volumes:
       - mysql-transaccional-data:/var/lib/mysql
-      - ./infra/mysql/transaccional:/docker-entrypoint-initdb.d:ro
+      - ./infra/mysql/initdb:/docker-entrypoint-initdb.d:ro
+      # Historial append-only (D60): el mismo archivo que se corre en Aiven
+      - ./deploy/aiven/03-registro-historial-append-only.sql.example:/biohub/historial.sql:ro
     healthcheck: *mysql-healthcheck
 
   mysql-lectura:
@@ -39,15 +49,18 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_LECTURA_ROOT_PASSWORD:?Falta en .env}
-      MYSQL_DATABASE: consulta_publica
-      MYSQL_USER: ${MYSQL_LECTURA_USER:?Falta en .env}
-      MYSQL_PASSWORD: ${MYSQL_LECTURA_PASSWORD:?Falta en .env}
+      BIOHUB_BASE_1: consulta_publica
+      BIOHUB_APP_USER_1: ${MYSQL_LECTURA_USER:?Falta en .env}
+      BIOHUB_APP_PASSWORD_1: ${MYSQL_LECTURA_PASSWORD:?Falta en .env}
+      BIOHUB_MIGR_USER_1: ${CONSULTA_MIGR_USER:-consulta_migr}
+      BIOHUB_MIGR_PASSWORD_1: ${CONSULTA_MIGR_PASSWORD:-}
       MYSQL_ROOT_HOST: 127.0.0.1   # root solo desde dentro del contenedor (no existe root@'%')
       TZ: America/Bogota
     ports:
       - "127.0.0.1:${MYSQL_LECTURA_PORT:-3308}:3306"
     volumes:
       - mysql-lectura-data:/var/lib/mysql
+      - ./infra/mysql/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck: *mysql-healthcheck
 
   mysql-analitica:
@@ -56,15 +69,18 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ANALITICA_ROOT_PASSWORD:?Falta en .env}
-      MYSQL_DATABASE: reportes
-      MYSQL_USER: ${MYSQL_ANALITICA_USER:?Falta en .env}
-      MYSQL_PASSWORD: ${MYSQL_ANALITICA_PASSWORD:?Falta en .env}
+      BIOHUB_BASE_1: reportes
+      BIOHUB_APP_USER_1: ${MYSQL_ANALITICA_USER:?Falta en .env}
+      BIOHUB_APP_PASSWORD_1: ${MYSQL_ANALITICA_PASSWORD:?Falta en .env}
+      BIOHUB_MIGR_USER_1: ${REPORTES_MIGR_USER:-reportes_migr}
+      BIOHUB_MIGR_PASSWORD_1: ${REPORTES_MIGR_PASSWORD:-}
       MYSQL_ROOT_HOST: 127.0.0.1   # root solo desde dentro del contenedor (no existe root@'%')
       TZ: America/Bogota
     ports:
       - "127.0.0.1:${MYSQL_ANALITICA_PORT:-3309}:3306"
     volumes:
       - mysql-analitica-data:/var/lib/mysql
+      - ./infra/mysql/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck: *mysql-healthcheck
 
   mysql-gateway:
@@ -73,15 +89,18 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_GATEWAY_ROOT_PASSWORD:?Falta en .env}
-      MYSQL_DATABASE: gateway
-      MYSQL_USER: ${MYSQL_GATEWAY_USER:?Falta en .env}
-      MYSQL_PASSWORD: ${MYSQL_GATEWAY_PASSWORD:?Falta en .env}
+      BIOHUB_BASE_1: gateway
+      BIOHUB_APP_USER_1: ${MYSQL_GATEWAY_USER:?Falta en .env}
+      BIOHUB_APP_PASSWORD_1: ${MYSQL_GATEWAY_PASSWORD:?Falta en .env}
+      BIOHUB_MIGR_USER_1: ${GATEWAY_MIGR_USER:-gateway_migr}
+      BIOHUB_MIGR_PASSWORD_1: ${GATEWAY_MIGR_PASSWORD:-}
       MYSQL_ROOT_HOST: 127.0.0.1   # root solo desde dentro del contenedor (no existe root@'%')
       TZ: America/Bogota
     ports:
       - "127.0.0.1:${MYSQL_GATEWAY_PORT:-3310}:3306"
     volumes:
       - mysql-gateway-data:/var/lib/mysql
+      - ./infra/mysql/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck: *mysql-healthcheck
 
   redis:

@@ -51,6 +51,8 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
+# Lanzado desde otra consola (Git Bash, un IDE) a veces no trae ComSpec, y con eso se corren los comandos.
+if (-not $env:ComSpec) { $env:ComSpec = Join-Path $env:SystemRoot 'System32\cmd.exe' }
 $ProgressPreference = 'SilentlyContinue'
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 
@@ -189,6 +191,16 @@ function Preparar-Override {
   }
   $script:Override = Join-Path $Carpeta "compose-$script:Proyecto.yml"
   [IO.File]::WriteAllLines($script:Override, $lineas)
+}
+
+# Corre infra/mysql/initdb/01-usuarios.sh dentro del contenedor (es repetible): usuarios *_app y *_migr con sus
+# permisos y, en la transaccional, el bloqueo del historial si las tablas ya existen.
+function Permisos-MySQL($servicio) {
+  $log = Join-Path $Logs "mysql-usuarios-$servicio.log"
+  $codigo = Correr "docker exec $(Nombre-Contenedor $servicio) bash /docker-entrypoint-initdb.d/01-usuarios.sh" $log
+  $lineas = @(Get-Content $log -ErrorAction SilentlyContinue | Where-Object { $_ -match '\[biohub\]|ERROR' } |
+    ForEach-Object { $_ -replace '^\[biohub\]\s*', '' })
+  [pscustomobject]@{ Ok = ($codigo -eq 0); Lineas = $lineas; Historial = ($lineas | Where-Object { $_ -like 'historial*' } | Select-Object -First 1) }
 }
 
 function Docker-Arriba {
@@ -389,6 +401,29 @@ if (-not (Valor 'UBICACION_CLAVES' '') -and -not $enCientifico.Contains('UBICACI
 } else {
   Bien 'llave de cifrado de coordenadas presente'
 }
+# Usuarios de migración de las bases locales: uno por servicio, distinto del de la app (como en Aiven). Si faltan
+# en el .env se generan contraseñas al azar y se agregan al final, igual que la llave de coordenadas.
+$Migracion = [ordered]@{ CIENTIFICO = 'cientifico_migr'; EQUIPOS = 'equipos_migr'; CONSULTA = 'consulta_migr'; REPORTES = 'reportes_migr'; GATEWAY = 'gateway_migr' }
+if ($Perfil -eq 'local') {
+  $sinClave = @($Migracion.Keys | Where-Object { -not (Valor "${_}_MIGR_PASSWORD" '') })
+  if ($sinClave.Count -gt 0) {
+    $texto = [IO.File]::ReadAllText($script:RutaEnv)
+    $nuevo = ''
+    if ($texto.Length -gt 0 -and -not $texto.EndsWith("`n")) { $nuevo = "`r`n" }
+    $nuevo += "`r`n# Usuarios de migraciones (Flyway) de las bases locales: los generó levantar.ps1.`r`n"
+    foreach ($k in $sinClave) {
+      $bytes = New-Object byte[] 18
+      (New-Object Security.Cryptography.RNGCryptoServiceProvider).GetBytes($bytes)
+      if (-not (Valor "${k}_MIGR_USER" '')) { $nuevo += "${k}_MIGR_USER=$($Migracion[$k])`r`n" }
+      $nuevo += "${k}_MIGR_PASSWORD=$(($bytes | ForEach-Object { $_.ToString('x2') }) -join '')`r`n"
+    }
+    [IO.File]::AppendAllText($script:RutaEnv, $nuevo)
+    $script:Vars = Leer-Env $script:RutaEnv
+    Aviso "no había contraseña de migraciones para $($sinClave -join ', '): las generé y las agregué al final del .env"
+  } else {
+    Bien 'usuarios de migraciones de las bases locales presentes'
+  }
+}
 if ((Valor 'BIOHUB_EVENTOS_PUBLICADOR_CIENTIFICO' (Valor 'RABBITMQ_USER' '')) -ne (Valor 'RABBITMQ_USER' '')) {
   Aviso 'BIOHUB_EVENTOS_PUBLICADOR_CIENTIFICO no es igual a RABBITMQ_USER: el portal público rechazará los eventos'
 }
@@ -410,17 +445,12 @@ $derivadas = [ordered]@{
 foreach ($k in $derivadas.Keys) {
   if ($k -eq 'SPRING_PROFILES_ACTIVE' -or -not $script:Vars.Contains($k)) { Set-Item -Path "env:$k" -Value $derivadas[$k] }
 }
-# En local cada base de Docker tiene un solo usuario: las migraciones usan ese mismo. Sin esto, un
-# <SERVICIO>_MIGR_USER de Aiven puesto en el .env de un servicio (p. ej. api-gateway/.env) haría fallar Flyway.
+# En local las migraciones usan el usuario *_migr de cada base de Docker. Se fija aquí para que no gane un
+# <SERVICIO>_MIGR_USER de Aiven puesto en el .env de un servicio (p. ej. api-gateway/.env).
 if ($Perfil -eq 'local') {
-  $migracion = @{
-    GATEWAY = @('MYSQL_GATEWAY_USER', 'MYSQL_GATEWAY_PASSWORD'); CIENTIFICO = @('MYSQL_CIENTIFICO_USER', 'MYSQL_CIENTIFICO_PASSWORD')
-    EQUIPOS = @('MYSQL_EQUIPOS_USER', 'MYSQL_EQUIPOS_PASSWORD'); CONSULTA = @('MYSQL_LECTURA_USER', 'MYSQL_LECTURA_PASSWORD')
-    REPORTES = @('MYSQL_ANALITICA_USER', 'MYSQL_ANALITICA_PASSWORD')
-  }
-  foreach ($k in $migracion.Keys) {
-    Set-Item -Path "env:${k}_MIGR_USER" -Value (Valor $migracion[$k][0] '')
-    Set-Item -Path "env:${k}_MIGR_PASSWORD" -Value (Valor $migracion[$k][1] '')
+  foreach ($k in $Migracion.Keys) {
+    Set-Item -Path "env:${k}_MIGR_USER" -Value (Valor "${k}_MIGR_USER" $Migracion[$k])
+    Set-Item -Path "env:${k}_MIGR_PASSWORD" -Value (Valor "${k}_MIGR_PASSWORD" '')
   }
 }
 $env:VITE_API_URL = "http://localhost:$gw"
@@ -458,6 +488,17 @@ foreach ($c in $contenedoresPerfil) {
   $s = Esperar $c.Texto { $e = Estado-Contenedor $contenedor; $e.Estado -eq 'running' -and ($e.Salud -eq '' -or $e.Salud -eq 'healthy') } $limite
   if ($s -ge 0) { Bien ("{0,-44} puerto {1,-6} ({2} s)" -f $c.Texto, (Valor $c.Clave $c.Defecto), $s) }
   else { Mal "$($c.Texto) no quedó sano. Mira: docker logs $contenedor"; Salir 'Sin la infraestructura los servicios no arrancan.' }
+}
+if ($Perfil -eq 'local') {
+  # Se repite en cada arranque: una base creada antes (con el usuario de ALL PRIVILEGES) queda corregida sin
+  # borrar datos, y si Flyway ya creó las tablas, el historial queda protegido desde antes de arrancar los servicios.
+  $todoBien = $true
+  foreach ($c in @($contenedoresPerfil | Where-Object { $_.Servicio -like 'mysql-*' })) {
+    $r = Permisos-MySQL $c.Servicio
+    if (-not $r.Ok) { $todoBien = $false; Mal "no se pudieron ajustar los usuarios de $($c.Servicio):"; $r.Lineas | ForEach-Object { Nota $_ } }
+  }
+  if ($todoBien) { Bien 'bases con usuario de datos y usuario de migraciones separados (sin ALL PRIVILEGES)' }
+  else { Salir 'Revisa el mensaje de arriba (suele ser una contraseña con caracteres no permitidos en el .env).' }
 }
 $s = Esperar 'usuarios de RabbitMQ' { $e = Estado-Contenedor (Nombre-Contenedor 'rabbitmq-usuarios'); $e.Estado -eq 'exited' } 90
 $e = Estado-Contenedor (Nombre-Contenedor 'rabbitmq-usuarios')
@@ -572,6 +613,15 @@ foreach ($s in $Servicios) {
   if ($seg -ge 0) { Bien ("{0,-44} puerto {1,-6} ({2} s)" -f $s.Texto, $p, $seg) }
   elseif ($seg -eq -2) { Mal "$($s.Texto) se cayó al arrancar:"; Explicar-Caida $log; $fallidos += $s.Nombre }
   else { Mal "$($s.Texto) no respondió en el puerto $p en 4 minutos:"; Explicar-Caida $log; $fallidos += $s.Nombre }
+}
+
+# Historial de registro append-only (D60, ASR7): ahora que Flyway creó las tablas, el usuario de la app queda con
+# solo INSERT y SELECT sobre hallazgo_version y hallazgo_auditoria. Se comprueba intentando borrar con esa credencial.
+if ($Perfil -eq 'local' -and $fallidos -notcontains 'servicio-cientifico') {
+  $r = Permisos-MySQL 'mysql-transaccional'
+  if ($r.Ok -and $r.Historial -like 'historial protegido*') { Bien $r.Historial }
+  elseif ($r.Ok) { Aviso "$($r.Historial)" }
+  else { Mal 'el historial NO quedó protegido:'; $r.Lineas | ForEach-Object { Nota $_ } }
 }
 
 # ------------------------------------------------------------------------------------- 7. webs

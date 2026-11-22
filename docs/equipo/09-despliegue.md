@@ -56,7 +56,7 @@ Prefijos: `CIENTIFICO`, `EQUIPOS` (servicio de escritura) y `CONSULTA`, `REPORTE
 | `AIVEN_TRUSTSTORE_PATH`, `AIVEN_TRUSTSTORE_PASSWORD`, `AIVEN_SSL_MODE` (opcional) | Truststore PKCS12 con el CA (4.5) y modo SSL (`VERIFY_CA` o `VERIFY_IDENTITY`) |
 | `<P>_DB_CONNECT_TIMEOUT_MS`, `<P>_DB_SOCKET_TIMEOUT_MS` | Opcionales (3000 / 30000) |
 
-Perfil `local` (del `.env` de la raíz): `MYSQL_TRANSACCIONAL_HOST/PORT` + `MYSQL_CIENTIFICO_USER/PASSWORD` (científico) o `MYSQL_EQUIPOS_USER/PASSWORD` (equipos); `MYSQL_LECTURA_*` (consulta pública); `MYSQL_ANALITICA_*` (reportes); `MYSQL_GATEWAY_*` (gateway).
+Perfil `local` (del `.env` de la raíz): `MYSQL_TRANSACCIONAL_HOST/PORT` + `MYSQL_CIENTIFICO_USER/PASSWORD` (científico) o `MYSQL_EQUIPOS_USER/PASSWORD` (equipos); `MYSQL_LECTURA_*` (consulta pública); `MYSQL_ANALITICA_*` (reportes); `MYSQL_GATEWAY_*` (gateway). En local también hay dos usuarios por base, como en Aiven: el de arriba es el `*_app` y Flyway usa `<P>_MIGR_USER/PASSWORD` (`cientifico_migr`, `equipos_migr`, etc.). Los crea `infra/mysql/initdb/01-usuarios.sh`, que además bloquea el historial de registro con el mismo `deploy/aiven/03-...` (D60); `levantar.ps1` y `levantar.sh` lo corren en cada arranque.
 
 Además, los de siempre: `RABBITMQ_*`, `REDIS_PASSWORD`, `KEYCLOAK_*`, `UBICACION_CLAVES`, `UBICACION_CLAVE_ACTIVA` (ver `.env.example` de la raíz y de cada servicio). Cada servicio lee `../.env` (raíz) y luego `./.env` (propio) cuando se ejecuta desde su carpeta; el último gana. Plantillas: `.env.example` en cada carpeta de servicio. Sin comentarios al final de línea (se leen como `.properties`).
 
