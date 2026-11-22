@@ -76,6 +76,10 @@ biohub:
       directorio: ${EVIDENCIAS_DIR:./datos/evidencias}
       # Debe caber en el cuerpo máximo del gateway (10MB) junto con el sobre multipart.
       tamano-maximo: 9MB
+    fotos-publicas:
+      # D66: al arrancar, genera y publica (evidencia.publicada) las miniaturas de fotos ya públicas que no tengan. En
+      # segundo plano; si el broker no está, el servicio arranca igual (se recupera con la republicación de admin).
+      migrar-al-arrancar: ${FOTOS_PUBLICAS_MIGRAR_AL_ARRANCAR:true}
   ubicacion:
     cifrado:
       # Llaves AES-256 versionadas: "v1:<base64 de 32 bytes>,v2:<...>" (openssl rand -base64 32).

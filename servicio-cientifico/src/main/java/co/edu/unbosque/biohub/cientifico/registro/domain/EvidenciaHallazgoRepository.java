@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -18,11 +17,18 @@ public interface EvidenciaHallazgoRepository extends JpaRepository<EvidenciaHall
 
     Optional<EvidenciaHallazgo> findByHallazgoIdAndSha256(UUID hallazgoId, String sha256);
 
-    /** La foto pública más reciente de una especie (D65), entre sus hallazgos vigentes. */
+    /** Ids de las fotografías marcadas como públicas (D66): para republicarlas. Solo ids, uno a uno. */
     @Query("""
-            SELECT e FROM EvidenciaHallazgo e, Hallazgo h
-            WHERE h.id = e.hallazgoId AND h.nombreCientifico = :nombre AND h.anuladoEn IS NULL
-              AND e.publica = true AND e.tipo = co.edu.unbosque.biohub.cientifico.registro.domain.EvidenciaHallazgo.TipoEvidencia.FOTOGRAFIA
-            ORDER BY e.creadoEn DESC""")
-    List<EvidenciaHallazgo> fotosPublicasDeEspecie(@Param("nombre") String nombreCientifico, Pageable pagina);
+            SELECT e.id FROM EvidenciaHallazgo e
+            WHERE e.publica = true AND e.tipo = co.edu.unbosque.biohub.cientifico.registro.domain.EvidenciaHallazgo.TipoEvidencia.FOTOGRAFIA
+            ORDER BY e.creadoEn""")
+    List<UUID> idsFotosPublicas();
+
+    /** Fotos públicas que aún no tienen miniatura (las marcadas antes de D66): se migran al arrancar. */
+    @Query("""
+            SELECT e.id FROM EvidenciaHallazgo e
+            WHERE e.publica = true AND e.rutaMiniatura IS NULL
+              AND e.tipo = co.edu.unbosque.biohub.cientifico.registro.domain.EvidenciaHallazgo.TipoEvidencia.FOTOGRAFIA
+            ORDER BY e.creadoEn""")
+    List<UUID> idsFotosPublicasSinMiniatura();
 }

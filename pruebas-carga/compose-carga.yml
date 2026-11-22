@@ -39,7 +39,7 @@ services:
     cpus: 2
     ulimits: { nofile: { soft: 65536, hard: 65536 } }   # con 1024 (valor por defecto) NGINX se quedaba sin descriptores en el pico
     depends_on: [consulta-publica]
-    volumes: ["./nginx-carga.conf:/etc/nginx/nginx.conf:ro"]
+    volumes: ["${NGINX_CONF:-./nginx-carga.conf}:/etc/nginx/nginx.conf:ro"]   # NGINX_CONF=./nginx-carga-cache-fotos.conf: contrafactual con caché de fotos (README, it. 27)
     ports: ["127.0.0.1:18080:8080"]
     networks: [biohub_default]
 networks:

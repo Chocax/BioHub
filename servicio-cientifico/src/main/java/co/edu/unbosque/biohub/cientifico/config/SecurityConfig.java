@@ -36,9 +36,8 @@ public class SecurityConfig {
                         // problem+json ROL_INSUFICIENTE (contrato 04 §5.1): en ubicacion lo emite y audita
                         // UbicacionExceptionHandler; en el resto, ProblemaSeguridadHandler (SEC-J-20).
                         // No se usa hasAnyRole aquí: un 403 de la URL no pasaría por la auditoría de ubicacion (D55).
-                        // Foto pública de una especie para el Servicio de Consulta Pública (D65): sin token, solo
-                        // fotos marcadas como públicas. Desde internet no se llega: el gateway exige rol en este prefijo.
-                        .requestMatchers(HttpMethod.GET, "/api/cientifico/publico/especies/foto").permitAll()
+                        // D66: ya no hay ninguna ruta sin rol en /api/cientifico/** (la foto pública salía sin token
+                        // por D65; ahora viaja por el evento evidencia.publicada).
                         .requestMatchers("/api/cientifico/**").authenticated()
                         // Lo que no está en el prefijo se deniega, aunque el usuario tenga rol
                         .anyRequest().denyAll())

@@ -35,7 +35,8 @@ public class ConfiguracionDegradacion {
     @Bean
     FilterRegistrationBean<MonitorCargaFilter> monitorCargaFilter(MonitorCarga monitor) {
         FilterRegistrationBean<MonitorCargaFilter> registro = new FilterRegistrationBean<>(new MonitorCargaFilter(monitor));
-        registro.addUrlPatterns("/api/publica/fichas", "/api/publica/fichas/*");
+        registro.addUrlPatterns("/api/publica/fichas", "/api/publica/fichas/*", "/api/publica/especies",
+                "/api/publica/especies/*");
         registro.setOrder(Ordered.HIGHEST_PRECEDENCE + 10); // antes que la seguridad: mide la petición completa
         return registro;
     }

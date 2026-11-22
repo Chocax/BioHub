@@ -1,4 +1,4 @@
-import { API_URL, getJson } from './cliente.js';
+import { API_URL, ErrorApi, getJson } from './cliente.js';
 
 /**
  * Catálogo público agrupado por especie (GET /api/publica/especies, D65). LISTA BLANCA como en fichas.js
@@ -8,6 +8,10 @@ export const TAMANO_PAGINA = 12;
 
 const texto = (v) => (typeof v === 'string' && v.trim() !== '' ? v : null);
 const textos = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' && x.trim() !== '') : []);
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Un UUID válido o null: cualquier otra cosa no llega a la URL de la foto. */
+export const idFotoValido = (v) => (typeof v === 'string' && UUID.test(v) ? v : null);
 
 export function aEspeciePublica(crudo) {
   const o = crudo && typeof crudo === 'object' ? crudo : {};
@@ -24,6 +28,7 @@ export function aEspeciePublica(crudo) {
     regiones: regiones.length ? regiones : textos([o.region]),
     ultimaRecoleccion: texto(o.ultimaRecoleccion),
     fichaId: texto(o.fichaId) ?? texto(o.id),
+    fotoId: idFotoValido(o.fotoId),
   };
 }
 
@@ -52,7 +57,20 @@ export async function listarFamilias({ signal } = {}) {
   return textos(d?.familias);
 }
 
-/** URL de la foto pública de una especie (JPEG reducido). Si no tiene, responde 404 y se muestra la ilustración. */
-export function urlFotoEspecie(nombreCientifico) {
-  return `${API_URL}/api/publica/especies/foto?nombre=${encodeURIComponent(nombreCientifico)}`;
+/**
+ * Foto pública por su identificador (D66, GET /api/publica/especies/fotos/{fotoId}, inmutable). Con fetch se distingue
+ * un 404 (ya no es pública) de un 429/5xx/red (falla pasajera). Devuelve un Blob; lanza ErrorApi con el estado.
+ */
+export async function pedirFotoEspecie(fotoId, { signal } = {}) {
+  const id = idFotoValido(fotoId);
+  if (!id) throw new ErrorApi(400);
+  let r;
+  try {
+    r = await fetch(`${API_URL}/api/publica/especies/fotos/${id}`, { credentials: 'omit', signal });
+  } catch (e) {
+    if (e?.name === 'AbortError') throw e;
+    throw new ErrorApi(0);
+  }
+  if (!r.ok) throw new ErrorApi(r.status);
+  return r.blob();
 }

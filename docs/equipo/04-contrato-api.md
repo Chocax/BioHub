@@ -156,7 +156,7 @@ Ruta en el gateway: `GET {gateway}/api/publica/fichas`. Ruta interna: `GET http:
 | Parámetro | Tipo | Obligatorio | Validación |
 |---|---|---|---|
 | `q` | texto | No | 2–100 caracteres. Busca en nombre científico y nombre común |
-| `familia` | texto | No | 1–100 caracteres; coincidencia exacta sin distinguir mayúsculas ni tildes |
+| `familia` | texto | No | 1–100 caracteres; vacío o solo espacios = ausente (§1); coincidencia exacta sin distinguir mayúsculas ni tildes |
 | `departamento` | texto | No | Código DANE o nombre oficial (§1) |
 | `page` | entero | No | ≥ 0; por defecto 0 |
 | `size` | entero | No | 1–50; por defecto 20 |
@@ -252,17 +252,18 @@ Sin autenticación, como §4.1. Nunca traen coordenadas ni el investigador.
 |---|---|
 | `GET /api/publica/especies?q=&familia=&departamento=&page=&size=` | Una fila por `nombreCientifico`, con los mismos filtros, validaciones y modo degradado de §4.1 (`size` de 1 a 50). `Cache-Control: public, max-age=30` |
 | `GET /api/publica/especies/familias` | `{ "familias": ["Asteraceae", "Bufonidae", …] }`: las familias con registros públicos, en orden y sin repetir (tope 500) |
-| `GET /api/publica/especies/foto?nombre=Ara%20macao` | **200** `image/jpeg` (a lo sumo 1200 px, sin metadatos), `Cache-Control: public, max-age=600`, `nosniff`. **404** si la especie no tiene foto pública. **400** si `nombre` no es un nombre científico (letras, espacios, `.`, `'` y `-`, de 2 a 150) |
+| `GET /api/publica/especies/fotos/{fotoId}` (D66) | **200** `image/jpeg` (a lo sumo 1200 px, sin metadatos), `Cache-Control: public, max-age=31536000, immutable`, `nosniff`, `ETag` = sha256. **404** si no existe o ya no es pública. **400** si `fotoId` no es un UUID. Es la ruta que usa el portal |
+| `GET /api/publica/especies/foto?nombre=Ara%20macao` | Se mantiene por compatibilidad: la foto pública más reciente de la especie, servida desde la base de lectura. `Cache-Control: public, max-age=300`. **404** si no hay. **400** si `nombre` no es un nombre científico (letras, espacios, `.`, `'` y `-`, de 2 a 150) |
 
 Elemento del catálogo:
 ```json
 { "nombreCientifico": "Atelopus ebenoides", "nombreComun": "Rana arlequín de Boyacá", "familia": "Bufonidae",
   "estadoConservacion": "EN_PELIGRO", "registros": 2, "departamentos": ["Boyacá", "Cundinamarca"],
-  "regiones": ["Andina"], "ultimaRecoleccion": "2026-05-02", "fichaId": "3f2a9c1e-…" }
+  "regiones": ["Andina"], "ultimaRecoleccion": "2026-05-02", "fichaId": "3f2a9c1e-…", "fotoId": "9b1d…" }
 ```
-`nombreComun`, `familia`, `estadoConservacion` y `fichaId` son los del registro más reciente; `fichaId` se abre con §4.2.
+`nombreComun`, `familia`, `estadoConservacion` y `fichaId` son los del registro más reciente; `fichaId` se abre con §4.2. `fotoId` es la foto pública más reciente de la especie, o `null` si no tiene: el portal solo pide `/especies/fotos/{fotoId}` cuando no es `null`. En modo degradado el catálogo puede devolver `fotoId: null` y `familias` vacías.
 
-La foto la pide consulta-publica al Servicio Científico (`GET /api/cientifico/publico/especies/foto`, §13.10) y la guarda en una caché en memoria acotada (120 fotos, 10 minutos; 2 minutos para "sin foto"). Si el científico no responde, el portal muestra una ilustración.
+**Fotos (D66):** consulta-publica no llama al Servicio Científico. Las miniaturas le llegan por el evento `evidencia.publicada` (§7.6) y las sirve desde `foto_publica` en `mysql-lectura`.
 
 ## 5. Endpoints internos (servicio-cientifico, módulo ubicacion)
 
@@ -628,7 +629,7 @@ JSON Schema (draft 2020-12) de `datos`, para que Hernando valide en sus pruebas:
 ### 7.5 Comportamiento del consumidor (consulta-publica)
 | Caso | Resultado |
 |---|---|
-| Evento válido con `version` mayor que la guardada, o hallazgo nuevo | INSERT/UPDATE de la ficha; se invalidan su caché y la de las búsquedas; ack |
+| Evento válido con `version` mayor que la guardada, o hallazgo nuevo | INSERT/UPDATE de la ficha; se invalida solo su caché (`fichas::<id>`); búsquedas, catálogo y familias se renuevan por TTL (60 s) (iteración 27); ack |
 | Mismo evento repetido, o `version` igual o menor | Se ignora (ack, sin cambios) |
 | `reclasificado`/`actualizado` antes que `registrado` | Se crea la ficha con ese snapshot; el `registrado` posterior (versión menor) se ignora |
 | `datos` con una clave de coordenadas, o texto con forma de coordenadas en cualquier campo (SEC-J-01/02/03) | **Se descarta con ack: NO va a la DLQ** (la DLQ es un almacén persistente fuera del cifrado y guardaría las coordenadas). No se crea ni cambia ninguna ficha. Se registra un **incidente de seguridad** (log ERROR `INCIDENTE SEC-J-03`) con solo el `id` del evento y el tipo, sin ningún valor. Se analiza el cuerpo de todo mensaje de la cola, también con JSON roto o routing key distinta. El responsable del publicador debe corregirlo y republicar |
@@ -643,6 +644,36 @@ Obligaciones del publicador (Hernando):
 3. Probar sus eventos contra el JSON Schema de §7.3 y los ejemplos de §7.4. **Nunca** publicar `hallazgo.*` de prueba en el RabbitMQ de las VMs (crearía fichas públicas reales): usar Testcontainers.
 
 Nicolás (reportes) recibe los mismos eventos por su cola `reportes.eventos` y puede ignorar los campos que no use.
+
+### 7.6 Eventos `evidencia.*`: fotos públicas (D66)
+| Elemento | Valor |
+|---|---|
+| Exchange | `biohub.eventos` (el mismo), mismo sobre (§7.2), mismas propiedades AMQP y verificación de `user_id` que §7.1 |
+| Tipos y routing key | `evidencia.publicada`, `evidencia.retirada` |
+| Cola | `consulta-publica.fotos` (durable, DLX `biohub.eventos.dlx`, DLQ `consulta-publica.fotos.dlq`), enlazada con `evidencia.#`. `reportes.eventos` **no** la recibe. Límite del mensaje: **1 MB** solo en esta cola (las demás siguen en 64 KB) |
+| Cuándo | `publicada`: después del commit de `PUT …/evidencias/{id}/publica` con `publica=true`, al arrancar si faltaba la miniatura de una foto pública, y en la republicación de administrador. `retirada`: después del commit con `publica=false` o si se borra la evidencia o el hallazgo |
+
+`datos` de `evidencia.publicada`:
+| Campo | Tipo | Reglas |
+|---|---|---|
+| `evidenciaId` | UUID | Obligatorio. Es el `fotoId` del portal |
+| `hallazgoId` | UUID | Obligatorio. La especie sale de `ficha_publica` con este id |
+| `cambioEn` | ISO-8601 UTC | Obligatorio. Instante del cambio de visibilidad; ordena los eventos |
+| `sha256` | hex, 64 | Obligatorio. Hash de la miniatura (no del original) |
+| `ancho`, `alto` | entero 1..1200 | Obligatorio |
+| `jpegBase64` | string Base64 | Obligatorio. JPEG de a lo sumo 600 KB decodificado |
+
+`datos` de `evidencia.retirada`: `evidenciaId`, `hallazgoId`, `cambioEn`.
+
+Comportamiento del consumidor (consulta-publica):
+| Caso | Resultado |
+|---|---|
+| `publicada` con `cambioEn` mayor que el guardado, o foto nueva | UPSERT en `foto_publica` (`publica = true`, bytes, sha256, tamaño, `cambio_en`); se invalida la caché del catálogo y de la foto de esa especie; ack |
+| `retirada` con `cambioEn` mayor | `publica = false` y se borran los bytes; se invalida lo mismo; ack |
+| `cambioEn` igual o menor (repetido o desordenado) | Se ignora; ack |
+| `jpegBase64` que no decodifica, no empieza por `FF D8`, pasa de 600 KB, no coincide con `sha256` o trae segmentos `APP1` (Exif/XMP) o `APP13` | DLQ; no se guarda nada |
+| Coordenadas en cualquier campo **salvo** `jpegBase64` (que no es texto) | Descarte con ack e incidente, como §7.5 |
+| Sobre inválido, origen o `user_id` incorrecto, más de 1 MB | DLQ, como §7.5 |
 
 ## 8. Rutas del gateway para la parte de Juanita (las implementa o confirma Santiago)
 | Ruta | Destino | JWT | Acción |
@@ -841,7 +872,8 @@ Evidencia: `{ id, nombre, tipo: FOTOGRAFIA|AUDIO, contentType, tamanoBytes, sha2
 |---|---|---|
 | `GET /api/cientifico/especies?q=&familia=&page=&size=` | todos menos `analista_ambiental` | Página de especies (`size` de 1 a 48, por defecto 12): las de los hallazgos vigentes más las que solo tienen ficha. `q` busca en nombre científico y común |
 | `GET /api/cientifico/especies/sugerencias` | los 5 roles | `{ especies: [{ nombreCientifico, nombreComun, familia }], familias: [...], investigadores: [...] }` (tope 1000 cada una) |
-| `GET /api/cientifico/publico/especies/foto?nombre=` | **sin token** | La foto pública más reciente de la especie, en JPEG de a lo sumo 1200 px. **404** si no hay. Solo la usa consulta-publica (§4.4): el gateway exige rol en `/api/cientifico/**`, así que desde internet no se llega |
+| ~~`GET /api/cientifico/publico/especies/foto?nombre=`~~ | — | **Eliminada (D66).** Las fotos públicas salen por el evento `evidencia.publicada` (§7.6) |
+| `POST /api/cientifico/admin/fotos-publicas/republicar` | `administrador` | **202** `{ "fotos": n }`. Vuelve a publicar `evidencia.publicada` de todas las fotos marcadas como públicas (genera las miniaturas que falten). Es idempotente del lado del consumidor. Sirve para migrar y para recuperar eventos perdidos |
 
 Especie: `{ nombreCientifico, nombreComun, familia, estadoConservacion, categoriaUicn, registros, departamentos, ultimaRecoleccion, fichaVersion, atributosFicha, foto: { hallazgoId, evidenciaId, publica } | null }`. La foto prefiere una pública; si no hay, la más reciente. Se descarga con §13.9.
 

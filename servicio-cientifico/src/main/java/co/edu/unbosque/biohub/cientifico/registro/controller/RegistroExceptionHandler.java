@@ -16,6 +16,7 @@ import co.edu.unbosque.biohub.cientifico.registro.service.DatosHallazgoInvalidos
 import co.edu.unbosque.biohub.cientifico.registro.service.HallazgoNoEncontradoException;
 import co.edu.unbosque.biohub.cientifico.registro.service.EvidenciaNoEncontradaException;
 import co.edu.unbosque.biohub.cientifico.registro.service.PlantillaNoEncontradaException;
+import co.edu.unbosque.biohub.cientifico.registro.service.RepublicacionEnCursoException;
 import co.edu.unbosque.biohub.cientifico.registro.service.UbicacionDelHallazgoNoRegistradaException;
 
 /**
@@ -34,6 +35,7 @@ public class RegistroExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(RegistroExceptionHandler.class);
     private static final String TIPO_VALIDACION = "https://biohub/errores/validacion";
     private static final String TIPO_NO_ENCONTRADO = "https://biohub/errores/no-encontrado";
+    private static final String TIPO_CONFLICTO = "https://biohub/errores/conflicto";
 
     /** Datos del formulario que no cumplen las reglas de registro (HU-01, HU-03). */
     @ExceptionHandler(DatosHallazgoInvalidosException.class)
@@ -97,6 +99,16 @@ public class RegistroExceptionHandler {
                 .contentType(MediaType.APPLICATION_PROBLEM_JSON)
                 .body(new ProblemaRegistroResponse(TIPO_NO_ENCONTRADO, "Conflicto", HttpStatus.CONFLICT.value(),
                         "El hallazgo no tiene ubicacion registrada", ruta(peticion), "UBICACION_NO_REGISTRADA", null));
+    }
+
+    /** Ya hay una republicación de fotos públicas en curso (SEC-I27-7). */
+    @ExceptionHandler(RepublicacionEnCursoException.class)
+    public ResponseEntity<ProblemaRegistroResponse> republicacionEnCurso(RepublicacionEnCursoException e,
+                                                                         WebRequest peticion) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(new ProblemaRegistroResponse(TIPO_CONFLICTO, "Conflicto", HttpStatus.CONFLICT.value(),
+                        e.getMessage(), ruta(peticion), "CONFLICTO", null));
     }
 
     private static ResponseEntity<ProblemaRegistroResponse> validacion(String campo, String mensaje, String codigo,

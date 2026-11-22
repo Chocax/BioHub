@@ -12,6 +12,12 @@ public interface AlmacenEvidencias {
     /** Guarda el contenido y devuelve la ruta relativa con la que se vuelve a abrir. */
     String guardar(UUID hallazgoId, UUID evidenciaId, byte[] contenido);
 
+    /**
+     * Guarda la miniatura pública de una evidencia (D66) junto al original y devuelve su ruta relativa. Si ya había
+     * una, la reemplaza.
+     */
+    String guardarMiniatura(UUID hallazgoId, UUID evidenciaId, byte[] contenido);
+
     /** Abre el archivo de una ruta devuelta por {@link #guardar}. */
     InputStream abrir(String ruta);
 

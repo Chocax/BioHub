@@ -23,30 +23,46 @@ function leerPagina(valor) {
 }
 
 /**
- * Fondo del héroe: cuatro pinturas que se alternan con un fundido lento (cada 25 s, 3 s de transición). La primera
- * es el cielo de nubes; con movimiento reducido se queda quieta. `ancho` es el ancho real del archivo grande: si se
- * declara de menos, el navegador estira la versión pequeña y la pintura se ve pixelada.
+ * Fondo del héroe: cuatro pinturas que se alternan con un fundido lento (cada 25 s, 3 s de transición). Solo se
+ * renderizan la actual y la siguiente (que se precarga en silencio) y, durante el fundido, la anterior: nunca las
+ * cuatro a la vez (FE-R-5). `ancho` es el ancho real del archivo grande: si se declara de menos, el navegador estira
+ * la versión pequeña y la pintura se ve pixelada. Con movimiento reducido solo hay una pintura, quieta.
  */
-const FONDOS = [
-  { src: '/pinturas/nubes-grande.webp', chica: '/pinturas/nubes-800.webp', ancho: 2400 },
-  { src: '/pinturas/tropico.webp', chica: '/pinturas/tropico-800.webp', ancho: 1798 },
-  { src: '/pinturas/andes-grande.webp', chica: '/pinturas/andes-800.webp', ancho: 2400 },
-  { src: '/pinturas/rio-grande.webp', chica: '/pinturas/rio-800.webp', ancho: 2400 },
+export const FONDOS = [
+  { src: '/pinturas/nubes-grande.webp', media: '/pinturas/nubes-1600.webp', chica: '/pinturas/nubes-800.webp', ancho: 2400 },
+  { src: '/pinturas/tropico.webp', media: '/pinturas/tropico-1600.webp', chica: '/pinturas/tropico-800.webp', ancho: 1798 },
+  { src: '/pinturas/andes-grande.webp', media: '/pinturas/andes-1600.webp', chica: '/pinturas/andes-800.webp', ancho: 2400 },
+  { src: '/pinturas/rio-grande.webp', media: '/pinturas/rio-1600.webp', chica: '/pinturas/rio-800.webp', ancho: 2400 },
 ];
 const CADA_MS = 25000;
+const FUNDIDO_MS = 3000;
 
-function CieloRotativo() {
-  const [actual, setActual] = useState(0);
+export function CieloRotativo() {
+  const [pos, setPos] = useState({ actual: 0, anterior: null });
+  const [quieto] = useState(() => Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches));
   useEffect(() => {
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return undefined;
-    const t = window.setInterval(() => setActual((n) => (n + 1) % FONDOS.length), CADA_MS);
-    return () => window.clearInterval(t);
-  }, []);
-  return FONDOS.map((f, i) => (
-    <img key={f.src} className="cielo__pintura" data-activa={i === actual} src={f.src}
-      srcSet={`${f.chica} 800w, ${f.src} ${f.ancho}w`}
-      sizes="100vw" alt="" fetchPriority={i === 0 ? 'high' : 'low'} loading={i === 0 ? 'eager' : 'lazy'} />
-  ));
+    if (quieto) return undefined;
+    let limpiar;
+    const t = window.setInterval(() => {
+      setPos((p) => ({ actual: (p.actual + 1) % FONDOS.length, anterior: p.actual }));
+      window.clearTimeout(limpiar);
+      limpiar = window.setTimeout(() => setPos((p) => ({ ...p, anterior: null })), FUNDIDO_MS + 200);
+    }, CADA_MS);
+    return () => {
+      window.clearInterval(t);
+      window.clearTimeout(limpiar);
+    };
+  }, [quieto]);
+  const siguiente = (pos.actual + 1) % FONDOS.length;
+  const visibles = quieto ? [pos.actual] : [...new Set([pos.anterior, pos.actual, siguiente].filter((n) => n !== null))];
+  return visibles.map((i) => {
+    const f = FONDOS[i];
+    return (
+      <img key={f.src} className="cielo__pintura" data-activa={i === pos.actual} src={f.src}
+        srcSet={`${f.chica} 800w, ${f.media} 1600w, ${f.src} ${f.ancho}w`}
+        sizes="100vw" alt="" fetchPriority={i === 0 && pos.actual === 0 ? 'high' : 'low'} loading="eager" decoding="async" />
+    );
+  });
 }
 
 export default function Inicio() {

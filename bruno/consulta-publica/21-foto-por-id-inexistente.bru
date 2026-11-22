@@ -1,0 +1,24 @@
+meta {
+  name: foto-por-id-inexistente
+  type: http
+  seq: 21
+}
+
+get {
+  url: {{baseConsulta}}/api/publica/especies/fotos/00000000-0000-4000-8000-000000000000
+  body: none
+  auth: none
+}
+
+tests {
+  test("404 NO_ENCONTRADO: no existe o ya no es pública", function () {
+    expect(res.getStatus()).to.equal(404);
+    expect(res.getBody().codigo).to.equal("NO_ENCONTRADO");
+    expect(res.getHeader("cache-control")).to.equal("no-store");
+  });
+}
+
+docs {
+  Contrato 04 §4.4 (D66). Una foto válida devuelve 200 image/jpeg con Cache-Control public, max-age=31536000, immutable y ETag = sha256;
+  se comprueba en los tests de integración porque las fotos dependen de las que haya marcado el investigador.
+}

@@ -157,6 +157,37 @@ class HallazgoServiceTest {
         verify(hallazgos, never()).saveAndFlush(any());
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "colectado en 5.53214, -73.36712, ejemplar de 12 cm",
+            "colectado en 5,53214 -73,36712",
+            "lat 5.53214 lon -73.36712",
+            "4.6097, -74.0817 (a 100 m del camino)"})
+    @DisplayName("BE-R-1 / SEC-R-2: los textos con coordenadas que antes se colaban dan 400 y no guardan nada")
+    void rechazaLosTextosDeSecR2(String texto) {
+        RegistrarHallazgoComando c = new RegistrarHallazgoComando("Atelopus ebenoides", null, "Bufonidae",
+                "Adulto", LocalDate.of(2026, 3, 14), "Boyaca", CategoriaUicn.LC, texto, null, null, null);
+
+        assertThatThrownBy(() -> servicio.registrar(c, INVESTIGADOR))
+                .isInstanceOf(DatosHallazgoInvalidosException.class);
+        verify(hallazgos, never()).saveAndFlush(any());
+        verify(versiones, never()).save(any());
+        verify(publicador, never()).publishEvent(any(Object.class));
+    }
+
+    @Test
+    @DisplayName("SEC-R-2: un atributo de texto con coordenadas escritas se rechaza antes de guardar")
+    void rechazaCoordenadasEnAtributosDeTexto() {
+        RegistrarHallazgoComando c = new RegistrarHallazgoComando("Atelopus ebenoides", null, "Bufonidae",
+                "Adulto", LocalDate.of(2026, 3, 14), "Boyaca", CategoriaUicn.LC, "Anfibio", null, null,
+                Map.of("sitio", "cerca de 5.53214, -73.36712"));
+
+        assertThatThrownBy(() -> servicio.registrar(c, INVESTIGADOR))
+                .isInstanceOf(DatosHallazgoInvalidosException.class)
+                .extracting(e -> ((DatosHallazgoInvalidosException) e).campo()).isEqualTo("atributos.sitio");
+        verify(hallazgos, never()).saveAndFlush(any());
+    }
+
     @Test
     @DisplayName("una coordenada sin su pareja se rechaza")
     void exigeAmbasCoordenadas() {
@@ -215,6 +246,28 @@ class HallazgoServiceTest {
                 .filter(HallazgoReclasificado.class::isInstance).findFirst().orElseThrow();
         assertThat(aviso.version()).isEqualTo(2);
         assertThat(aviso.estadoConservacion()).isEqualTo("EN_PELIGRO");
+    }
+
+    @Test
+    @DisplayName("BE-R-1: reclasificar con una descripcion o un atributo con coordenadas da 400 antes de guardar")
+    void reclasificarRechazaCoordenadasEnTextoYAtributos() {
+        UUID id = UUID.randomUUID();
+        Hallazgo existente = new Hallazgo(id, "Atelopus ebenoides", null, "Bufonidae", "Adulto",
+                LocalDate.of(2026, 3, 14), INVESTIGADOR, "Boyaca", EstadoConservacion.NO_AMENAZADA,
+                CategoriaUicn.LC, null, null, null);
+        when(hallazgos.buscarVigente(id)).thenReturn(Optional.of(existente));
+
+        ReclasificarHallazgoComando conTexto = new ReclasificarHallazgoComando(null, null, null, null, null,
+                null, CategoriaUicn.CR, "visto en 5,53214 -73,36712", null, "Pruebas de laboratorio");
+        ReclasificarHallazgoComando conAtributo = new ReclasificarHallazgoComando(null, null, null, null, null,
+                null, CategoriaUicn.CR, null, Map.of("sitio", "lat 5.53214 lon -73.36712"), "Pruebas de laboratorio");
+
+        assertThatThrownBy(() -> servicio.reclasificar(id, conTexto, "cientifico1"))
+                .isInstanceOf(DatosHallazgoInvalidosException.class);
+        assertThatThrownBy(() -> servicio.reclasificar(id, conAtributo, "cientifico1"))
+                .isInstanceOf(DatosHallazgoInvalidosException.class);
+        verify(hallazgos, never()).saveAndFlush(any());
+        verify(publicador, never()).publishEvent(any(Object.class));
     }
 
     @Test

@@ -129,6 +129,9 @@ public class FichaPlantillaService {
                 throw new DatosHallazgoInvalidosException("atributos",
                         "clave invalida: use minusculas, numeros y guion bajo");
             }
+            // SEC-I27-2: ningún atributo puede llamarse como una coordenada (lat, lon, gps, utm, "longitud" o x/y numéricos).
+            boolean numerico = atributo.tipo() == TipoAtributo.NUMERO || atributo.tipo() == TipoAtributo.ENTERO;
+            validadorTexto.verificarClavePlantilla("atributos." + atributo.clave(), atributo.clave(), numerico);
             if (!vistas.add(atributo.clave())) {
                 throw new DatosHallazgoInvalidosException("atributos", "clave repetida: " + atributo.clave());
             }

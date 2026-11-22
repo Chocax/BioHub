@@ -40,7 +40,7 @@ class TodosLosEndpointsExigenRolTest {
      */
     static final Set<String> RUTAS_PUBLICAS = Set.of("GET /api/publica/ping", "GET /api/publica/fichas",
             "GET /api/publica/fichas/{id}", "GET /api/publica/especies", "GET /api/publica/especies/familias",
-            "GET /api/publica/especies/foto");
+            "GET /api/publica/especies/foto", "GET /api/publica/especies/fotos/{fotoId}");
 
     @Autowired
     private ApplicationContext ctx;
