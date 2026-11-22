@@ -484,3 +484,9 @@ Cambio de modelo: 27e pasa a sonnet/**high** (matriz: medium) porque levanta y p
 **Estado de Juanita (2026-11-22):** su parte de la revisión 2026-11-19 está **completa** (PR #18 hacia `develop`, lo mezcla ella). Las decisiones de grupo y los hallazgos de seguimiento (SEC-I27g-1..4, OBS-I27-1..3, caché de fotos para ASR1) quedan como seguimiento del grupo, sin asignar a Juanita.
 
 **Ciclo de corrección 2 (CI del PR #18):** `QaEventosInvalidosDlqTest` fallaba al azar en GitHub. Causa raíz: el patrón `PLANAS` del detector unificado (nuevo en esta iteración) aceptaba una letra suelta pegada a 7 cifras, así que un UUID que empieza por `e` y 7 dígitos (unos 2 de cada 1.000) se tomaba por coordenada plana y el evento se descartaba en silencio (en producción, la ficha no se habría publicado). Severidad Alta. Corrección del Tech Lead: la letra sola `n`/`e` exige espacio, `:` o `=` antes del número; corpus con UUID legítimos y resumen del bloque actualizados en los dos servicios; 0 de 200.000 UUID marcados. `verify`: científico 677 (+3 omitidos) y consulta-publica 408, 0 fallos. Se revirtió el aumento del tiempo de espera de la prueba (no era la causa). Efecto en seguridad: ya no se detecta una plana escrita sin separador (`e1045678`); se acepta.
+
+**Cierre de la iteración 27 (2026-11-22):** PR #18 mezclado en `develop` por Juanita (`800b198`), CI en verde (22/22). La parte de Juanita de la revisión 2026-11-19 queda **cerrada**. El seguimiento (SEC-I27g-1..4, OBS-I27-1..3, tercer detector y caché de fotos para ASR1) y las decisiones de grupo quedan sin asignar.
+
+| Fase | USD (sesión 2026-11-22) | Agente que más consumió | Cambios de modelo (motivo) |
+|---|---:|---|---|
+| Corrección de CI y cierre | ver medición final | Tech Lead (depuración de causa raíz hecha directamente, sin subagente) | Ninguno |

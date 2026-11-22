@@ -2781,3 +2781,10 @@ Es lo mismo que propone el plan ("≥ 4 decimales fuera del rango de Colombia").
   - de SEC-I27g-1, al menos colapsar los espacios en `normalizar`, el hemisferio en minúscula (`n`/`w`), el GMS sin `°` y el par con la longitud primero;
   - de SEC-I27g-2, las claves `norte`/`este` y la separación de camelCase.
 - **Puede ir después:** el resto de SEC-I27g-1 (MGRS, Plus Codes y enlaces), SEC-I27g-3, SEC-I27g-4 y los informativos.
+
+### Iteración 27 – hallazgo en CI: SEC-I27-CI-1 (Alto, cerrado)
+- **Archivo:** `DetectorCoordenadas.java` (patrón `PLANAS`, en las dos copias).
+- **Problema:** la letra sola `n`/`e` pegada a 7 cifras se tomaba por coordenada plana. Un UUID que empieza por `e` y 7 dígitos (≈ 2 de cada 1.000) hacía que el evento se descartara en silencio con ack; la ficha no se habría publicado. Se detectó porque `QaEventosInvalidosDlqTest` fallaba al azar en GitHub Actions.
+- **Corrección:** la letra sola exige espacio, `:` o `=` antes del número. Corpus con UUID legítimos y resumen del bloque actualizados en los dos servicios. 0 de 200.000 UUID aleatorios marcados.
+- **Efecto residual aceptado:** una plana escrita sin separador (`e1045678`) ya no se detecta.
+- **Verificación:** `verify` científico 677 (+3 omitidos) y consulta-publica 408, 0 fallos; CI del PR #18 22/22.
