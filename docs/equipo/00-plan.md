@@ -480,3 +480,5 @@ Cambio de modelo: 27e pasa a sonnet/**high** (matriz: medium) porque levanta y p
 | Fase | USD (sesión 2026-11-22) | Agente que más consumió | Cambios de modelo (motivo) |
 |---|---:|---|---|
 | Calidad y cierre (27d, 27e, 27h, 27i) | 5,14 (opus 2,95; sonnet 2,19) | qa-tester (1,75) | qa-tester sonnet/**high** (matriz: medium): sistema completo más k6 |
+
+**Estado de Juanita (2026-11-22):** su parte de la revisión 2026-11-19 está **completa** (PR #18 hacia `develop`, lo mezcla ella). Las decisiones de grupo y los hallazgos de seguimiento (SEC-I27g-1..4, OBS-I27-1..3, caché de fotos para ASR1) quedan como seguimiento del grupo, sin asignar a Juanita.

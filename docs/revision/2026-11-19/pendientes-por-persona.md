@@ -4,6 +4,9 @@ Reparto según la tabla de responsables del README y el autor del código afecta
 Prioridad: 🔴 antes de la sustentación · 🟡 importante · ⚪ si sobra tiempo.
 
 ## Juanita (`feature/ubicacion-consulta-publica`: ubicación, consulta pública, web-publica)
+
+**✅ Completo (2026-11-22, iteración 27, PR #18).** Todos los puntos de abajo quedaron hechos y verificados por QA y seguridad.
+
 - 🔴 **Fotos públicas D65 (ARQ-R-1), en conjunto con Santiago:** que consulta-pública deje de llamar al científico por cada foto. Guardar una miniatura ya procesada en el lado de lectura cuando se publica la foto (evento) o, como mínimo, circuit breaker + caché más grande + ADR.
 - 🔴 **Mediciones k6 con D42 (ARQ-R-2):** ASR1 (consulta viral, incluida la portada nueva `/api/publica/especies`) y ASR4 (par `CIENTIFICA=0/1`), con metadatos.
 - 🟡 **Unificar el detector de coordenadas con Hernando (BE-R-1, SEC-R-2):** el `DetectorCoordenadas` es el estricto; registro debe usar el mismo.
