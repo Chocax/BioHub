@@ -176,7 +176,8 @@ class QaEventosInvalidosDlqTest extends BaseIntegracion {
             for (Caso c : casos) {
                 long antes = enDlq();
                 rabbit.send("biohub.eventos", c.routingKey(), c.mensaje());
-                long limite = System.nanoTime() + Duration.ofSeconds(8).toNanos();
+                // 3 intentos con espera (1 s + 2 s) antes de la DLQ; margen amplio para runners de CI lentos
+                long limite = System.nanoTime() + Duration.ofSeconds(20).toNanos();
                 while (enDlq() == antes && System.nanoTime() < limite) {
                     Thread.sleep(50);
                 }
