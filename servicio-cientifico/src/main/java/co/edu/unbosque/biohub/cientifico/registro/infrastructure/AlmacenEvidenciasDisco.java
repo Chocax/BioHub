@@ -33,7 +33,16 @@ public class AlmacenEvidenciasDisco implements AlmacenEvidencias {
 
     @Override
     public String guardar(UUID hallazgoId, UUID evidenciaId, byte[] contenido) {
-        String relativa = hallazgoId + "/" + evidenciaId;
+        return escribir(hallazgoId + "/" + evidenciaId, contenido);
+    }
+
+    /** {@code <hallazgo>/<evidencia>.publica.jpg}: junto al original, con nombre derivado solo de UUID. */
+    @Override
+    public String guardarMiniatura(UUID hallazgoId, UUID evidenciaId, byte[] contenido) {
+        return escribir(hallazgoId + "/" + evidenciaId + ".publica.jpg", contenido);
+    }
+
+    private String escribir(String relativa, byte[] contenido) {
         Path destino = resolver(relativa);
         try {
             Files.createDirectories(destino.getParent());

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router';
+import { buscarEspecies, idFotoValido } from '../api/especies.js';
 import { buscarFichas, obtenerFicha } from '../api/fichas.js';
 import AvisoUbicacionProtegida from '../components/AvisoUbicacionProtegida.jsx';
 import ChipEstado from '../components/ChipEstado.jsx';
@@ -49,12 +50,33 @@ function OtrosRegistros({ ficha, volver }) {
   );
 }
 
+/**
+ * Id de la foto pública de la especie. Si se llega desde una tarjeta ya viene en el estado de la navegación; con el
+ * enlace directo se consulta el catálogo por nombre científico (la ficha no lo trae). Cualquier fallo: sin foto.
+ */
+function useFotoId(nombre, inicial) {
+  const [encontrado, setEncontrado] = useState({ nombre: null, id: null });
+  useEffect(() => {
+    if (!nombre || inicial) return undefined;
+    const control = new AbortController();
+    buscarEspecies({ q: nombre }, { signal: control.signal })
+      .then((r) => {
+        const e = r.especies.find((x) => x.nombreCientifico.toLowerCase() === nombre.toLowerCase());
+        setEncontrado({ nombre, id: e?.fotoId ?? null });
+      })
+      .catch(() => {});
+    return () => control.abort();
+  }, [nombre, inicial]);
+  return inicial ?? (encontrado.nombre === nombre ? encontrado.id : null);
+}
+
 export default function Ficha() {
   const { id } = useParams();
   const { state } = useLocation();
   const volver = typeof state?.volver === 'string' && state.volver.startsWith('?') ? state.volver : '';
   const [estado, setEstado] = useState({ tipo: 'cargando' });
   const [intento, setIntento] = useState(0);
+  const fotoId = useFotoId(estado.tipo === 'ok' ? estado.ficha.nombreCientifico : null, idFotoValido(state?.fotoId));
   const refH1 = useRef(null);
 
   useTitulo(
@@ -113,7 +135,7 @@ export default function Ficha() {
           {f.nombreComun ? <p className="ficha-comun">{f.nombreComun}</p> : null}
           <ChipEstado estado={f.estadoConservacion} />
         </div>
-        <FotoEspecie nombreCientifico={f.nombreCientifico} className="ficha-foto" prioridad />
+        <FotoEspecie nombreCientifico={f.nombreCientifico} fotoId={fotoId} className="ficha-foto" prioridad reintentable />
       </header>
 
       <div className="ficha-columnas">

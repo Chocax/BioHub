@@ -111,6 +111,9 @@ test.describe('Estados de la búsqueda (HU-06.2)', () => {
     const pedidas = await simularApi(page);
     await page.goto('/');
     await expect(page.getByRole('heading', { name: /especies/i }).first()).toBeVisible();
+    // La portada sigue pidiendo familias, catálogo y fotos: se espera a que termine toda la carga antes de contar.
+    await expect(page.getByRole('link', { name: /Atelopus ebenoides/ })).toBeVisible();
+    await page.waitForLoadState('networkidle');
     const antes = pedidas.length;
     await page.getByLabel('Nombre científico o común').fill('a');
     await page.getByRole('button', { name: 'Buscar' }).click();

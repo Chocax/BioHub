@@ -50,3 +50,14 @@ flyway -url="jdbc:mysql://HOST:PUERTO/consulta_publica?sslMode=VERIFY_CA&..." -u
 ```
 
 Flyway marca esa versión como aplicada, ignora las anteriores y aplica solo las posteriores. No actives `spring.flyway.baseline-on-migrate=true`: lo haría sin avisar sobre cualquier base no vacía, aunque le falten tablas.
+
+## Fotos públicas (D66)
+
+Este servicio **no llama** al Servicio Científico. Las miniaturas llegan por los eventos `evidencia.publicada` y
+`evidencia.retirada` a la cola `consulta-publica.fotos` (DLQ `consulta-publica.fotos.dlq`, enlazada con `evidencia.#`, mensajes de
+hasta 1 MB solo en esa cola) y se guardan en la tabla `foto_publica` de `mysql-lectura` (migración `V20261121_1000`). La especie
+de cada foto sale del `JOIN` con `ficha_publica` por `hallazgo_id`. Rutas: `GET /api/publica/especies/fotos/{fotoId}` (inmutable,
+`ETag` = sha256) y, por compatibilidad, `GET /api/publica/especies/foto?nombre=`. Una foto con Exif/XMP/IPTC, con sha256 que no
+coincide, de más de 600 KB o que no sea un JPEG bien formado va a la DLQ; si algún campo de texto parece una coordenada, el
+mensaje se descarta con ack y un incidente (como los `hallazgo.*`). Para reenviar la DLQ de fotos: "Move messages" de
+`consulta-publica.fotos.dlq` a `consulta-publica.fotos` (es seguro: los eventos se ordenan por `cambioEn`).

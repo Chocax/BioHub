@@ -114,4 +114,27 @@ class MigracionesIntegracionTest {
         assertThatThrownBy(() -> ejecutar(insertFicha(otro, 1, "EN_PELIGRO", "00"))).as("departamento inexistente")
                 .hasMessageContaining("fk_ficha_publica_departamento");
     }
+
+    @Test
+    void fotoPublicaNoGuardaLaEspecieNiCoordenadasYExigeLosDatosDeUnaFotoPublica() throws SQLException {
+        List<String> columnas = consultar("SELECT LOWER(column_name) FROM information_schema.columns "
+                + "WHERE table_schema = DATABASE() AND table_name = 'foto_publica'");
+        assertThat(columnas).containsExactlyInAnyOrder("evidencia_id", "hallazgo_id", "bytes", "sha256", "ancho", "alto",
+                "publica", "cambio_en");
+        assertThat(consultar("SELECT DISTINCT index_name FROM information_schema.statistics "
+                + "WHERE table_schema = DATABASE() AND table_name = 'foto_publica'"))
+                .contains("PRIMARY", "idx_foto_publica_hallazgo");
+
+        String foto = UUID.randomUUID().toString().replace("-", "");
+        String otra = UUID.randomUUID().toString().replace("-", "");
+        // Una retirada puede ir sin bytes; una pública no
+        ejecutar("INSERT INTO foto_publica (evidencia_id, hallazgo_id, publica, cambio_en) VALUES (UNHEX('" + foto
+                + "'), UNHEX('" + foto + "'), FALSE, '2026-11-21 10:00:00.000001')");
+        assertThatThrownBy(() -> ejecutar("INSERT INTO foto_publica (evidencia_id, hallazgo_id, publica, cambio_en)"
+                + " VALUES (UNHEX('" + otra + "'), UNHEX('" + otra + "'), TRUE, '2026-11-21 10:00:00')"))
+                .hasMessageContaining("ck_foto_publica_completa");
+        assertThatThrownBy(() -> ejecutar("INSERT INTO foto_publica VALUES (UNHEX('" + otra + "'), UNHEX('" + otra
+                + "'), 'x', REPEAT('a', 64), 1201, 10, TRUE, '2026-11-21 10:00:00')"))
+                .hasMessageContaining("ck_foto_publica_dimensiones");
+    }
 }

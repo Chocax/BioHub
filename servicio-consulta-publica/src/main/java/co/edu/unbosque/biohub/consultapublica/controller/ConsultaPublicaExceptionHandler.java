@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import co.edu.unbosque.biohub.consultapublica.service.ErrorCampo;
 import co.edu.unbosque.biohub.consultapublica.service.FichaNoEncontradaException;
+import co.edu.unbosque.biohub.consultapublica.service.FotoNoEncontradaException;
 import co.edu.unbosque.biohub.consultapublica.service.ParametroInvalidoException;
 
 /**
@@ -41,6 +42,12 @@ public class ConsultaPublicaExceptionHandler {
     @ExceptionHandler(FichaNoEncontradaException.class)
     ResponseEntity<ProblemaResponse> noEncontrada(FichaNoEncontradaException e, HttpServletRequest req) {
         return respuesta(HttpStatus.NOT_FOUND, "No encontrado", "La ficha solicitada no existe.",
+                "NO_ENCONTRADO", req, null);
+    }
+
+    @ExceptionHandler(FotoNoEncontradaException.class)
+    ResponseEntity<ProblemaResponse> fotoNoEncontrada(FotoNoEncontradaException e, HttpServletRequest req) {
+        return respuesta(HttpStatus.NOT_FOUND, "No encontrado", "La foto solicitada no existe.",
                 "NO_ENCONTRADO", req, null);
     }
 

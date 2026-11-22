@@ -100,7 +100,7 @@ class ArquitecturaSeguridadTest {
     /** Métodos que pueden declarar {@code permitAll()}, como {@code Clase.metodo}: las rutas públicas de HU-01. */
     static final Set<String> PUBLICOS_PERMIT_ALL = Set.of("PingController.ping", "FichasPublicasController.buscar",
             "FichasPublicasController.ficha", "EspeciesPublicasController.buscar", "EspeciesPublicasController.familias",
-            "EspeciesPublicasController.foto");
+            "EspeciesPublicasController.foto", "EspeciesPublicasController.fotoPorId");
 
     private static final String ROL_LITERAL = "'(?:" + String.join("|", ROLES) + ")'";
     private static final String TERMINO = "(?:hasRole\\(\\s*" + ROL_LITERAL + "\\s*\\)"

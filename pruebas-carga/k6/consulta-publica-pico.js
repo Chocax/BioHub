@@ -7,7 +7,8 @@
 // Ejecutar (desde pruebas-carga/):  ./correr-k6.sh k6/consulta-publica-pico.js -e N=20
 // Variables: BASE_URL, N (def. 20), MULT (def. 60), T_BASE (60s), T_RAMP (30s), T_PICO (120s), T_BAJA (10s),
 //            T_POST (180s), MAX_VUS (def. 4000), SALIDA (ruta del JSON de resultados).
-// Metadatos D42 que guarda en `parametros`: REPLICAS y CPUS (los exporta quien corre), COMMIT y RED_K6 (los pone correr-k6.sh).
+// Metadatos D42 que guarda en `parametros`: REPLICAS y CPUS (los exporta quien corre), COMMIT y RED_K6 (los pone correr-k6.sh),
+// la fecha y, opcionales, ENTORNO y CACHE (texto libre: -e ENTORNO=... -e CACHE=fria|caliente).
 import { sleep } from 'k6';
 import exec from 'k6/execution';
 import { mezcla, ventana, aSegundos, VENTANA_S } from './lib/comun.js';
@@ -98,7 +99,8 @@ export function handleSummary(data) {
     // Metadatos exigidos por D42 (un JSON sin ellos no cuenta como evidencia): réplicas, CPU por réplica, commit y red de k6.
     // correr-k6.sh rellena COMMIT y RED_K6; REPLICAS y CPUS los pasa quien corre la prueba (ver README).
     parametros: { N, MULT, pico_req_s: N * MULT, T, total_s: TOTAL, fin_rampa_s: FIN_RAMPA, fin_pico_s: FIN_PICO,
-      replicas: __ENV.REPLICAS || null, cpus_por_replica: __ENV.CPUS || null, commit: __ENV.COMMIT || null, red_k6: __ENV.RED_K6 || null },
+      replicas: __ENV.REPLICAS || null, cpus_por_replica: __ENV.CPUS || null, commit: __ENV.COMMIT || null, red_k6: __ENV.RED_K6 || null,
+      fecha: new Date().toISOString(), entorno: __ENV.ENTORNO || null, cache: __ENV.CACHE || null },
     peticiones: total,
     tasa_media_req_s: v('http_reqs', 'rate'),
     iteraciones_descartadas: v('dropped_iterations', 'count') || 0,

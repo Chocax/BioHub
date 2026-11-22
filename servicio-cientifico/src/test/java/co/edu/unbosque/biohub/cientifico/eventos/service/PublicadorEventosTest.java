@@ -190,4 +190,61 @@ class PublicadorEventosTest {
 
         assertThat(evento.tipo()).isEqualTo("prueba.ping");
     }
+
+    // ---- D66: evidencia.* pasa por la misma guarda, salvo jpegBase64 ----
+
+    private static Map<String, Object> fotoPublicada(String campoExtra, Object valorExtra) {
+        Map<String, Object> datos = new java.util.LinkedHashMap<>(Map.of(
+                "evidenciaId", "7b1e0d0e-5d6c-4b0e-9a55-1f2a6f0c2222",
+                "hallazgoId", "7b1e0d0e-5d6c-4b0e-9a55-1f2a6f0c1111",
+                "cambioEn", "2026-11-21T10:15:30.123456Z",
+                "sha256", "a".repeat(64), "ancho", 1200, "alto", 800,
+                "jpegBase64", "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/"));
+        if (campoExtra != null) {
+            datos.put(campoExtra, valorExtra);
+        }
+        return datos;
+    }
+
+    @Test
+    void evidenciaPublicadaNormalSePublicaSinEscanearElJpegBase64() {
+        // El Base64 puede contener '+', '/', dígitos y letras que casualmente parecerían coordenadas si se leyera como texto
+        Map<String, Object> datos = fotoPublicada("jpegBase64", "5.53214, -73.36712 5°31'55\"N lat: 5.5");
+
+        EventoSobre evento = publicador.publicar("evidencia.publicada", "inv1", datos);
+
+        assertThat(evento.tipo()).isEqualTo("evidencia.publicada");
+        verify(operaciones).waitForConfirmsOrDie(5000L);
+    }
+
+    @Test
+    void evidenciaRetiradaSePublica() {
+        EventoSobre evento = publicador.publicar("evidencia.retirada", "inv1", Map.of(
+                "evidenciaId", "7b1e0d0e-5d6c-4b0e-9a55-1f2a6f0c2222",
+                "hallazgoId", "7b1e0d0e-5d6c-4b0e-9a55-1f2a6f0c1111", "cambioEn", "2026-11-21T10:15:30.123456Z"));
+
+        assertThat(evento.tipo()).isEqualTo("evidencia.retirada");
+    }
+
+    @Test
+    void evidenciaConCoordenadasEnCualquierOtroCampoSeRechazaSinPublicar() {
+        assertThatThrownBy(() -> publicador.publicar("evidencia.publicada", "inv1", fotoPublicada("nota", "5.53214, -73.36712")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("evidencia.* no puede llevar coordenadas (D14)");
+        assertThatThrownBy(() -> publicador.publicar("evidencia.publicada", "inv1", fotoPublicada("latitud", 5.5)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> publicador.publicar("evidencia.retirada", "inv1", Map.of("sha256", "lat: 5.5")))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(template, never()).invoke(any(RabbitOperations.OperationsCallback.class));
+    }
+
+    @Test
+    void elIdentificadorYLaFechaDeUnaFotoNoDisparanLaGuarda() {
+        // UUID, ISO-8601 con microsegundos y SHA-256 en hexadecimal no son coordenadas
+        for (int i = 0; i < 50; i++) {
+            Map<String, Object> datos = fotoPublicada("sha256", java.util.UUID.randomUUID().toString().replace("-", "")
+                    + java.util.UUID.randomUUID().toString().replace("-", ""));
+            assertThat(publicador.publicar("evidencia.publicada", "inv1", datos).tipo()).isEqualTo("evidencia.publicada");
+        }
+    }
 }

@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { listado, mockFetch, renderizar, respuesta } from './ayudas.jsx';
+import { FICHA, listado, mockFetch, renderizar, respuesta } from './ayudas.jsx';
 
 /** Peticiones al catálogo (sin contar la de las familias, que se pide una vez al cargar). */
 const delCatalogo = (f) => f.mock.calls.map((c) => new URL(c[0])).filter((u) => u.pathname === '/api/publica/especies');
@@ -70,12 +70,24 @@ describe('Inicio: búsqueda', () => {
     await waitFor(() => expect(delCatalogo(f).at(-1).searchParams.get('familia')).toBe('Psittacidae'));
   });
 
-  it('cada tarjeta trae la foto pública de la especie desde la API', async () => {
-    mockFetch(() => respuesta(listado()));
+  it('cada tarjeta pide la foto por su fotoId y no por nombre (D66)', async () => {
+    const FOTO = '9b1d4c2e-7a3f-4d5b-8c6e-1f2a3b4c5d6e';
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: () => 'blob:foto', revokeObjectURL: () => {} }));
+    const f = mockFetch((url) => (url.pathname.includes('/fotos/')
+      ? { ok: true, status: 200, blob: () => Promise.resolve(new Blob(['x'], { type: 'image/jpeg' })) }
+      : respuesta(listado({ content: [{ ...FICHA, fotoId: FOTO }] }))));
     renderizar('/');
-    const foto = await screen.findByAltText('Fotografía de Atelopus ebenoides');
-    expect(new URL(foto.getAttribute('src')).pathname).toBe('/api/publica/especies/foto');
-    expect(new URL(foto.getAttribute('src')).searchParams.get('nombre')).toBe('Atelopus ebenoides');
+    await screen.findByAltText('Fotografía de Atelopus ebenoides');
+    const rutas = f.mock.calls.map((c) => new URL(c[0]));
+    expect(rutas.some((u) => u.pathname === `/api/publica/especies/fotos/${FOTO}`)).toBe(true);
+    expect(rutas.some((u) => u.pathname.endsWith('/especies/foto'))).toBe(false);
+  });
+
+  it('sin fotoId no hay petición de foto y se ve la ilustración', async () => {
+    const f = mockFetch(() => respuesta(listado()));
+    renderizar('/');
+    await screen.findByRole('img', { name: 'Esta especie todavía no tiene foto pública' });
+    expect(f.mock.calls.some((c) => String(c[0]).includes('/foto'))).toBe(false);
   });
 
   it('ofrece los 33 departamentos más la opción "Todos"', async () => {

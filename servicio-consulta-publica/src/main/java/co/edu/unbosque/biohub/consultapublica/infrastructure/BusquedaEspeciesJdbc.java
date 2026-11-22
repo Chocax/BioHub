@@ -1,13 +1,16 @@
 package co.edu.unbosque.biohub.consultapublica.infrastructure;
 
+import java.text.Normalizer;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 import co.edu.unbosque.biohub.consultapublica.service.CriterioBusquedaPublica;
@@ -23,6 +26,7 @@ import co.edu.unbosque.biohub.consultapublica.service.vista.EspecieResumenRespon
 public class BusquedaEspeciesJdbc {
 
     private static final String SEPARADOR = "|";
+    private static final Pattern MARCAS = Pattern.compile("\\p{M}+");
 
     private final JdbcClient jdbc;
 
@@ -61,12 +65,16 @@ public class BusquedaEspeciesJdbc {
             return List.of();
         }
 
-        Map<String, Reciente> recientes = recientes(grupos.stream().map(Agrupado::nombre).toList());
+        List<String> nombres = grupos.stream().map(Agrupado::nombre).toList();
+        Map<String, Reciente> recientes = recientes(nombres);
+        // ARQ-R-5: en modo degradado se omiten las fotos (una consulta menos por página); el portal usa su ilustración
+        Map<String, UUID> fotos = criterio.modoDegradado() ? Map.of() : fotoIdPorEspecie(nombres);
         return grupos.stream().map(g -> {
             Reciente r = recientes.get(g.nombre());
             return new EspecieResumenResponse(g.nombre(), r == null ? null : r.nombreComun(),
                     r == null ? null : r.familia(), r == null ? null : r.estado(), g.registros(),
-                    g.departamentos(), g.regiones(), g.ultima(), r == null ? null : r.fichaId());
+                    g.departamentos(), g.regiones(), g.ultima(), r == null ? null : r.fichaId(),
+                    fotos.get(claveNombre(g.nombre())));
         }).toList();
     }
 
@@ -76,6 +84,31 @@ public class BusquedaEspeciesJdbc {
                 .param(tope)
                 .query(String.class)
                 .list();
+    }
+
+    /**
+     * La foto pública más reciente de cada especie (D66): une {@code foto_publica} con las fichas por
+     * {@code hallazgo_id}; la especie de una foto es la de su ficha, así que una reclasificación no exige otro evento.
+     * No lee los bytes. La clave del mapa es el nombre sin mayúsculas ni tildes (la colación de la tabla los iguala).
+     */
+    private Map<String, UUID> fotoIdPorEspecie(List<String> nombres) {
+        String marcadores = String.join(",", Collections.nCopies(nombres.size(), "?"));
+        Map<String, UUID> porNombre = new LinkedHashMap<>();
+        jdbc.sql("SELECT f.nombre_cientifico, fp.evidencia_id"
+                        + " FROM foto_publica fp JOIN ficha_publica f ON f.hallazgo_id = fp.hallazgo_id"
+                        + " WHERE fp.publica = TRUE AND f.nombre_cientifico IN (" + marcadores + ")"
+                        + " ORDER BY fp.cambio_en DESC, fp.evidencia_id")
+                .params(new ArrayList<Object>(nombres))
+                .query((rs, n) -> Map.entry(claveNombre(rs.getString("nombre_cientifico")),
+                        UuidBinario.aUuid(rs.getBytes("evidencia_id"))))
+                .list()
+                .forEach(e -> porNombre.putIfAbsent(e.getKey(), e.getValue()));
+        return porNombre;
+    }
+
+    private static String claveNombre(String nombre) {
+        return MARCAS.matcher(Normalizer.normalize(nombre, Normalizer.Form.NFD)).replaceAll("")
+                .toLowerCase(Locale.ROOT).trim();
     }
 
     /** El registro más reciente de cada especie: el primero por fecha de recolección y luego por actualización. */

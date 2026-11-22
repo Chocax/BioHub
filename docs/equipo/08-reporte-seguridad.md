@@ -2283,3 +2283,501 @@ Hallazgos nuevos: **0 Críticos, 0 Altos, 0 Medios, 0 Bajos y 5 Informativos (SE
 - **SEC-J-I29** (XS): conviene aplicarlo en el mismo commit que añade `playwright.config.js`, para que las E2E de seguridad no se puedan desactivar en silencio.
 - **SEC-J-I30 a SEC-J-I33** (XS): no bloquean.
 - **Estados anteriores:** sin cambios. SEC-J-04 sigue pendiente solo de la prueba manual en navegador, que la guía nueva del README (pasos 5 y 6) ya describe. SEC-J-25, SEC-J-I25 (primera parte), SEC-J-I27 y SEC-J-07 siguen abiertos.
+
+---
+
+# Iteración 27 – D66 (fotos públicas por evento) y detector unificado (27f)
+
+**Fecha:** 2026-11-21. **Rama:** `feature/ubicacion-consulta-publica` con cambios sin commit (27a-c). **Alcance:** D66 productor y consumidor, detector unificado (BE-R-1 / SEC-R-2), web-publica (FE-R-1), permisos de RabbitMQ y dependencias. SEC-R-1 (GPS en audio/MPF del original) es de otra persona y queda fuera de alcance; solo se indica cuánto lo mitiga D66.
+
+## Resumen
+| Severidad | Cantidad |
+|---|---|
+| Crítico | 0 |
+| Alto | 0 |
+| Medio | 2 (SEC-I27-1, SEC-I27-2) |
+| Bajo | 6 (SEC-I27-3 a SEC-I27-8) |
+| Informativo | 4 (SEC-I27-I1 a SEC-I27-I4) |
+
+**D66 está bien resuelto desde la seguridad.** El tráfico público ya no llega al científico, la única ruta sin rol del científico desapareció junto con su `permitAll` y sus excepciones en las pruebas de arquitectura, y la miniatura sale sin ningún metadato (comprobado). Lo que falla está en el **detector unificado**: al reemplazar las reglas de `ValidadorTextoPublico` por las de `DetectorCoordenadas`, registro dejó de detectar formatos que antes sí rechazaba. Como consulta-publica usa los mismos patrones, esos textos llegan ahora **al portal público** (SEC-I27-1). Además, los atributos flexibles siguen aceptando coordenadas como números o con claves `lat`/`lon` (SEC-I27-2). **SEC-R-2 queda Parcial, no cerrado.**
+
+## Cómo se revisó
+- **Documentación:** `00-plan.md` (iteración 27), `03` D21, D44, D53, D54, D65 y D66, `04` §4.4, §7.5, §7.6 y §13.10, y `docs/revision/2026-11-19/seguridad.md` (SEC-R-1, SEC-R-2) y `arquitectura-asr.md` (ARQ-R-1).
+- **Código (estático):** `git diff` y los archivos nuevos sin seguimiento de `servicio-cientifico` (`FotoPublica`, `FotosPublicas`, `RepublicadorFotosPublicas`, `FotosPublicasAdminController`, `MigracionFotosPublicasAlArrancar`, `AlmacenEvidenciasDisco`, `EvidenciaService`, `PublicadorEventos`, `PublicadorCambiosHallazgo`, `DetectorCoordenadas`, `ValidadorTextoPublico`, `HallazgoService`, `SecurityConfig`, migraciones), de `servicio-consulta-publica` (`ConsumidorFotos`, `ValidadorSobre`, `ValidadorFotoJpeg`, `ProcesadorFotos`, `ProyectorFotos`, `FotosPublicasJdbc`, `BusquedaEspeciesJdbc`, `EspeciesPublicasController`, `FotosEspeciesService`, `InvalidadorCacheFichas`, `RabbitConfig`, `SecurityConfig`, migración), de `web-publica` (`index.html`, `especies.js`, `FotoEspecie.jsx`, `Ficha.jsx`, `TarjetaEspecie.jsx`, `Inicio.jsx`, `README.md`), `infra/rabbitmq/crear-usuarios.sh`, `docker-compose.yml` y las pruebas de arquitectura de seguridad de los dos servicios.
+- **Pruebas locales en el scratchpad, fuera del repo, sin servicios:**
+  1. Se compiló una **copia** de `DetectorCoordenadas` y se ejecutaron unos 60 textos: evasiones, formatos GPS habituales y falsos positivos conocidos.
+  2. Se compiló la versión **anterior** de `ValidadorTextoPublico` (`git show HEAD:`) y se comparó con el detector nuevo. Así se vieron las regresiones de SEC-I27-1.
+  3. Se compiló una **copia** de `FotoPublica` y se le pasó un JPEG de 3000×2000 con APP1 "Exif", COM, APP2 y un trailer después del EOI, todos con texto GPS. También un PNG que declara 100 000×100 000 px y uno de 20 000×2 000.
+  4. Se probaron los patrones que se proponen en SEC-I27-1 contra 15 evasiones y 13 textos legítimos.
+- **Dependencias:** ni `pom.xml` ni `package.json` cambiaron (`git diff --stat`), así que no hay dependencias nuevas. `npm audit --omit=dev` en web-publica da **0 vulnerabilidades**. Maven sigue sin escáner de CVE (SEC-15).
+- **No se leyeron** `.env` ni `certs/`. No se ejecutó nada contra servicios reales.
+
+## Hallazgos
+
+### SEC-I27-1 · **Medio** · El detector unificado tiene regresiones y deja pasar formatos GPS habituales, que ahora llegan al portal público
+- **Archivos:**
+  - `servicio-cientifico/.../eventos/service/DetectorCoordenadas.java:39-56`, los patrones.
+  - `servicio-consulta-publica/.../eventos/service/DetectorCoordenadas.java`, con los mismos patrones. Los dos detectores solo se diferencian en `contieneEnBruto`.
+  - `servicio-cientifico/.../registro/service/ValidadorTextoPublico.java:33`, que ahora solo delega en el detector.
+- **Problema:** resultados con la copia compilada (`viejo` es `ValidadorTextoPublico` en HEAD; `nuevo` es el detector unificado):
+
+  | Texto | viejo | nuevo | ¿Llega al portal? |
+  |---|---|---|---|
+  | `5.532, 73.367` / `4.609 74.081` (par sin signo, 3 decimales ≈ 110 m) | detecta | **no** | **Sí (regresión)** |
+  | `5 31 55 N 73 22 10 W` (GMS sin símbolos) | detecta | **no** | **Sí (regresión)** |
+  | `5°31N 73°22W` | detecta | **no** | **Sí (regresión)** |
+  | `N05 31.928 W073 22.027` (pantalla de un Garmin GPSMAP, formato hddd mm.mmm) | no | no | Sí |
+  | `N5.53214 W73.36712` / `latitud: N 5.53214` (hemisferio delante) | no | no | Sí |
+  | `5.53214,` + U+00A0 + `-73.36712` (espacio duro: se cuela al pegar desde Word o desde la web) | no | no | Sí |
+  | `latitud norte 5.53214 y longitud oeste 73.36712` / `5.53214 norte, 73.36712 oeste` | no | no | Sí |
+  | `Norte 1012345 Este 1045678` (coordenadas planas MAGNA/IGAC, muy comunes en Colombia) | no | no | Sí |
+  | `５.５３２１４, -７３.３６７１２` (dígitos de ancho completo) | no | no | Sí |
+
+  Los casos que SEC-R-2 pedía corregir (coma decimal, `lat … lon …` y una unidad en el mismo texto) **sí** se detectan ahora.
+- **Por qué importa:** antes registro era una barrera **más estricta** que consulta-publica para estos tres formatos. Al unificar, las dos barreras quedan iguales, así que todo lo que pase una pasa también la otra: el texto se guarda en claro en `hallazgo` y en el historial append-only (D60), viaja en `hallazgo.*` y **se publica en el portal**. El formato Garmin y las coordenadas planas son justo lo que un investigador copia de su equipo de campo. No hace falta un atacante: basta un error humano, el mismo escenario de SEC-J-02.
+- **Corrección:**
+  1. Normalizar el texto antes de buscar.
+  2. Añadir patrones en **las dos copias** del detector.
+  3. Añadir una prueba de paridad que ejecute el mismo corpus contra las dos copias (D4: sin módulo común).
+
+  Probado en el scratchpad: los 15 textos que debe detectar dan positivo, salvo `‐ 73.36712`, que tiene un espacio después del signo. Los 12 textos legítimos dan negativo: `3.200, 3.500 msnm`, `12,5 cm`, `12.500, 13.000 individuos`, `peso 1.250 g`, `longitud total 12 cm`, `E3 y N2 son parcelas`, `altitud 2.600 msnm, 14 °C`, etc. El único falso positivo nuevo es `talla 5 12 N`.
+  ```java
+  static String normalizar(String t) {             // dígitos de ancho completo, espacios duros y guiones Unicode
+      String n = Normalizer.normalize(t, Normalizer.Form.NFKC);
+      return n.replaceAll("[\\u00A0\\u2007\\u202F\\u2000-\\u200B]", " ").replaceAll("[\\u2010-\\u2015\\u2212]", "-");
+  }
+  /** Hemisferio delante: "N5.53214 W73.36712", "N05 31.928 W073 22.027", "latitud: N 5.53214". */
+  private static final Pattern HEMISFERIO_DELANTE = Pattern.compile(
+          "\\b[NSEOW]\\s{0,2}\\d{1,3}(?:[.,]\\d{3,}|\\s{0,2}[°º˚]|\\s{1,2}\\d{1,2}[.,]\\d{1,4})");
+  /** GMS sin símbolos y hemisferio detrás: "5 31 55 N", "5°31N". */
+  private static final Pattern GMS_SIN_SIMBOLOS = Pattern.compile(
+          "\\b\\d{1,3}(?:\\s{0,2}[°º˚]\\s{0,2}|\\s{1,2})\\d{1,2}(?:\\s{1,2}\\d{1,2}(?:[.,]\\d+)?)?\\s{0,2}[NSEOW]\\b");
+  /** Par sin signo dentro de Colombia (lat 0-13, lon 66-82): "5.532, 73.367". No confunde "3.200, 3.500 msnm". */
+  private static final Pattern PAR_COLOMBIA = Pattern.compile(
+          "\\b\\d{1,2}[.,]\\d{3,}" + SEP + "0?(?:6[6-9]|7\\d|8[0-2])[.,]\\d{3,}\\b");
+  /** Hemisferio en palabras: "5.53214 norte", "latitud norte 5.53214". */
+  private static final Pattern PALABRA_HEMISFERIO = Pattern.compile(
+          "(?iu)\\b(?:\\d{1,3}[.,]\\d{3,}\\s{0,2}(?:norte|sur|este|oeste)\\b"
+          + "|(?:latitud|longitud)\\s{0,2}(?:norte|sur|este|oeste)\\s{0,2}:?\\s{0,2}\\d)");
+  /** Coordenadas planas: "Norte 1012345", "N: 1.012.345". */
+  private static final Pattern PLANAS = Pattern.compile("(?iu)\\b(?:norte|este|n|e)\\s{0,2}[:=]?\\s{0,2}\\d(?:\\.?\\d{3}){2}\\b");
+
+  public static boolean pareceCoordenada(String texto) {
+      if (texto == null || texto.isEmpty()) return false;
+      String n = normalizar(texto);
+      return DECIMAL_CON_SIGNO.matcher(n).find() || DECIMAL_PRECISO.matcher(n).find()
+              || DECIMAL_HEMISFERIO.matcher(n).find() || GRADOS_MINUTOS.matcher(n).find()
+              || CLAVE_Y_NUMERO.matcher(n).find() || HEMISFERIO_DELANTE.matcher(n).find()
+              || GMS_SIN_SIMBOLOS.matcher(n).find() || PAR_COLOMBIA.matcher(n).find()
+              || PALABRA_HEMISFERIO.matcher(n).find() || PLANAS.matcher(n).find();
+  }
+  ```
+  Además, `NEG + "\\s?"` en `DECIMAL_CON_SIGNO` para `- 73.36712`.
+- **Esfuerzo:** S. **Responsable sugerido:** Juanita (las dos copias). Avisar a Hernando de los falsos positivos nuevos, como se hizo con "lat 3".
+
+### SEC-I27-2 · **Medio** · Atributos flexibles: se aceptan coordenadas como números, con claves `lat`/`lon` o repartidas en dos claves (SEC-R-2, parte 2, sin hacer)
+- **Archivos:**
+  - `servicio-cientifico/.../registro/service/ValidadorTextoPublico.java:52-75`: `verificarAtributos` solo revisa los **valores `String`**. No revisa las claves y se salta los números (el javadoc lo dice: "Los números y booleanos no son texto y no se revisan aquí").
+  - `RegistrarHallazgoRequest.java:28` y `ReclasificarHallazgoRequest.java:23`: `Map<String, Object>` libre.
+  - `FichaPlantillaService.java:31`: `CLAVE_VALIDA` sigue admitiendo `latitud_gps` de tipo `NUMERO`.
+  - `FichaPlantillaService.validarValores` sigue sin llamarse desde producción (ARQ-R-3).
+- **Problema** (con la copia compilada). Todo esto se guarda sin error:
+  - `{"lat": 5.53214, "lon": -73.36712}`: el detector reconocería la clave `lat`, pero `verificarAtributos` nunca le pasa las claves.
+  - `{"latitud_gps": 5.53214}` y `{"punto": [5.53214, -73.36712]}`: números sin revisar.
+  - `{"x": "5.53214", "y": "-73.36712"}`: cada valor por separado no tiene forma de coordenada.
+
+  Los atributos no viajan en el evento (`ConstructorSnapshotPublico` usa una lista fija de campos), así que **el portal no se ve afectado**. Pero la coordenada queda en claro en `hallazgo.atributos` y en el historial append-only, y `HallazgoResponse.java:27` la muestra a `administrador` y `auditor_cientifico`, a quienes RF12/D21 se lo prohíben.
+- **Por qué importa:** es la vía más directa para guardar una coordenada en claro, fuera de AES-GCM (D15), y no se puede borrar (D60). Un formulario de plantilla con un campo "GPS" numérico la provoca sin mala intención.
+- **Corrección:**
+  1. Revisar también las claves y los números en `verificarAtributos`.
+  2. Prohibir esas claves en la plantilla.
+  ```java
+  private static final Pattern CLAVE_COORDENADA = Pattern.compile(
+          "(?i)(^|_)(lat|latitud|latitude|lon|lng|long|longitud|longitude|coord|coordenadas|gps|utm|geo|este|norte|x|y)(_|$)");
+
+  private void verificarValor(String campo, Object clave, Object valor, int profundidad) {
+      if (clave != null && (CLAVE_COORDENADA.matcher(clave.toString()).find()
+              || DetectorCoordenadas.pareceCoordenada(clave.toString()))) {
+          throw new DatosHallazgoInvalidosException(campo, "las coordenadas van en latitud/longitud del hallazgo, cifradas");
+      }
+      if (valor instanceof Number) {
+          return;                         // un número suelto con clave neutra (p. ej. "talla_cm") es legítimo
+      }
+      if (valor instanceof Collection<?> c && c.size() == 2 && c.stream().allMatch(Number.class::isInstance)) {
+          throw new DatosHallazgoInvalidosException(campo, "un par de números parece una coordenada");
+      }
+      // ... resto igual (String → verificar; Map/Collection → recursión pasando la clave)
+  }
+  ```
+  3. Revisar también el texto **concatenado** de todos los valores `String`, para detectar `x`/`y` repartidos: `verificar("atributos", String.join(" ", valoresTexto))`.
+  4. En `FichaPlantillaService.guardarVersion`, rechazar las claves que cumplan `CLAVE_COORDENADA`.
+- **Esfuerzo:** S. **Responsable sugerido:** Hernando (`registro`, `FichaPlantillaService`), con Juanita por el validador.
+
+### SEC-I27-3 · **Bajo** · El tope de 1 MB se aplica después de recibir el mensaje; el broker admite 16 MiB y las colas no tienen límite
+- **Archivos:**
+  - `servicio-consulta-publica/.../eventos/service/ConsumidorFotos.java:46-49`: `traeCoordenadas` y luego `interpretar(…, 1 MB)`.
+  - `RabbitConfig.java:68-80`: colas sin `x-max-length-bytes`.
+  - `docker-compose.yml:108`: `rabbitmq:4.1` sin `rabbitmq.conf`, así que se aplica el `max_message_size` por defecto de 16 MiB.
+- **Problema:** el cliente AMQP carga el cuerpo completo antes de que el código compruebe el tamaño. Con `prefetch=4` caben hasta unos 64 MiB por consumidor. Un mensaje de más de 1 MB se analiza en bruto solo en su primer MB y va a la DLQ, que crece sin límite. Ese mensaje solo lo puede publicar `cientifico_mq`: `crear-usuarios.sh` no da `write` sobre `biohub.eventos` a ningún consumidor, y `user_id` se verifica. Por eso el riesgo se limita a una credencial del científico comprometida o a un fallo del productor.
+- **Por qué importa:** si la DLQ llena el disco del broker, salta la alarma de disco y RabbitMQ bloquea a **todos** los publicadores, también `hallazgo.*` y reportes.
+- **Corrección:**
+  - Límite en el broker: ningún mensaje del sistema necesita más de 1 MiB.
+    ```ini
+    # infra/rabbitmq/rabbitmq.conf (montado en el servicio rabbitmq de docker-compose.yml)
+    max_message_size = 1048576
+    ```
+  - Política de longitud en las DLQ:
+    ```bash
+    rabbitmqctl set_policy dlq-acotadas '^.*\.dlq$' '{"max-length-bytes":104857600,"overflow":"drop-head"}' --apply-to queues
+    ```
+- **Esfuerzo:** S. **Responsable sugerido:** Santiago o devops (`docker-compose.yml`), con Juanita.
+
+### SEC-I27-4 · **Bajo** · `ValidadorFotoJpeg` usa una lista negra (solo APP1 y APP13) y no comprueba las dimensiones reales
+- **Archivo:** `servicio-consulta-publica/.../eventos/service/ValidadorFotoJpeg.java:96-98`.
+- **Problema:** se aceptan COM (`FFFE`), APP2 (ICC/MPF), APP0 JFXX (miniatura incrustada), APP3-APP12, APP14 y APP15. Además, el `ancho`/`alto` del evento no se compara con el SOF real: un JPEG de 600 KB puede declarar 65 535×65 535 px en el SOF. El productor de hoy solo emite `E0, DB, C0, C4, DA` (lo comprobé), así que esto es **defensa en profundidad**. Aun así, el javadoc dice que "una foto pública sale al visitante sin ninguna otra revisión", y el detector de coordenadas excluye a propósito `jpegBase64`.
+- **Por qué importa:** si el productor cambia (otro codificador, o se copia el original por error), un comentario `COM` con "5.53214, -73.36712" o una miniatura JFXX del original llegarían al portal sin ninguna barrera. Un SOF gigante podría colgar la pestaña del visitante.
+- **Corrección:** usar una lista blanca y comparar el SOF con lo declarado:
+  ```java
+  private static final Set<Integer> PERMITIDOS = Set.of(0xE0, 0xDB, 0xC4, 0xC0, 0xC2, 0xDD, 0xDA);
+  if (!PERMITIDOS.contains(marcador)) throw new EventoInvalidoException("Segmento JPEG no permitido");
+  if (marcador == 0xE0 && !esJfif(b, i + 2)) throw new EventoInvalidoException("APP0 que no es JFIF");
+  if (marcador == 0xC0 || marcador == 0xC2) {
+      int alto = ((b[i + 3] & 0xFF) << 8) | (b[i + 4] & 0xFF), ancho = ((b[i + 5] & 0xFF) << 8) | (b[i + 6] & 0xFF);
+      if (ancho != anchoDeclarado || alto != altoDeclarado) throw new EventoInvalidoException("Dimensiones distintas");
+  }
+  ```
+  Actualizar 04 §7.6: "solo APP0 JFIF, DQT, DHT, SOF0/SOF2, DRI y SOS".
+- **Esfuerzo:** S. **Responsable sugerido:** Juanita.
+
+### SEC-I27-5 · **Bajo** · `immutable` de un año en una foto que se puede retirar
+- **Archivo:** `servicio-consulta-publica/.../controller/EspeciesPublicasController.java:42` (`public, max-age=31536000, immutable`).
+- **Problema:** retirar una foto (`evidencia.retirada`) borra los bytes de `foto_publica`, pero la URL sigue sirviéndose desde las cachés **compartidas** (CDN o proxy, si existen) hasta un año, sin revalidar. Ya figura como "decisión a llevar al grupo" (2) en el plan.
+- **Por qué importa:** retirar es la única forma de corregir una foto publicada por error. Una foto puede revelar el lugar exacto por su contenido: un letrero, un hito, o la pantalla del GPS fotografiada. Hoy no hay CDN delante del gateway, así que el riesgo real es bajo. Si se añade una, pasa a ser Medio.
+- **Corrección:** `public` permite que la guarde la CDN; una caché corta con revalidación por ETag (el 304 ya está implementado) evita que la sirva un año.
+  ```java
+  private static final String INMUTABLE = "public, max-age=86400, stale-while-revalidate=3600";   // sin immutable
+  ```
+  Si se quiere conservar `immutable`, la alternativa es que cada publicación genere un `fotoId` nuevo (no el `evidenciaId`) y que una CDN, si llega a existir, se purgue al retirar.
+- **Esfuerzo:** S. **Responsable sugerido:** Juanita (y decisión del grupo).
+
+### SEC-I27-6 · **Bajo** · La miniatura se genera en el hilo de la petición, dentro de la transacción y sin límite de concurrencia
+- **Archivos:** `servicio-cientifico/.../registro/service/EvidenciaService.java:129-145` (`@Transactional`) → `FotosPublicas.java:67-86` → `FotoPublica.generar`.
+- **Problema:** con el tope de 40 MP, que se comprobó y funciona, el heap de Java queda acotado gracias al submuestreo. Pero un JPEG **progresivo** de 9 MB obliga a libjpeg a reservar memoria **nativa** para todos los coeficientes (unos 120-240 MB a 40 MP), y un archivo con miles de escaneos consume CPU durante segundos. Mientras tanto se mantiene una conexión del pool de MySQL. Varias peticiones `PUT …/publica` a la vez (`investigador_campo`, `cientifico_alto_rango`) pueden agotar la memoria nativa o el pool.
+- **Por qué importa:** afecta a la disponibilidad del científico (ASR2), aunque solo lo pueden disparar usuarios autenticados con rol. Es mucho menos que antes de D66, cuando cada visita pública decodificaba la imagen.
+- **Corrección:**
+  ```java
+  private static final Semaphore DECODIFICANDO = new Semaphore(2);
+  static Miniatura generar(byte[] original) throws IOException {
+      if (!DECODIFICANDO.tryAcquire(5, TimeUnit.SECONDS)) throw new ImagenNoAdmitidaException("Inténtalo de nuevo en unos segundos.");
+      try { /* ... */ } finally { DECODIFICANDO.release(); }
+  }
+  ```
+  Además, rechazar un JPEG con más de 100 SOS antes de decodificarlo, o al subirlo en `TipoArchivoEvidencia`. Opcional: generar la miniatura antes de abrir la transacción.
+- **Esfuerzo:** S. **Responsable sugerido:** Juanita.
+
+### SEC-I27-7 · **Bajo** · La republicación no deja constancia de qué administrador la pidió y responde 202 aunque no arranque
+- **Archivos:**
+  - `servicio-cientifico/.../registro/controller/FotosPublicasAdminController.java:31-35`: no recibe el `Jwt`.
+  - `RepublicadorFotosPublicas.java:123-126`: si ya hay una en curso, devuelve `ids.size()` sin lanzar nada.
+  - `RepublicadorFotosPublicas.java:120`: usa el usuario `"sistema"`.
+- **Problema:** el rol es correcto (`hasRole('administrador')`, `denyAll` fuera del prefijo y la prueba `TodosLosEndpointsExigenRolTest`), y el *single-flight* evita que varias ejecuciones se acumulen. Pero el log no dice **quién** republicó. Además, el administrador recibe "n fotos" aunque no se haya iniciado nada.
+- **Por qué importa:** es una acción masiva que reenvía todas las fotos públicas al portal, y HU-11 c.3 pide saber quién cambia la visibilidad.
+- **Corrección:**
+  ```java
+  public ResponseEntity<Map<String, Object>> republicar(@AuthenticationPrincipal Jwt jwt) {
+      String admin = jwt.getClaimAsString("preferred_username");
+      log.info("Republicación de fotos públicas solicitada por {}", admin);
+      var r = republicador.republicarTodas(admin);            // devuelve también si se inició o ya había una en curso
+      return ResponseEntity.status(r.iniciada() ? HttpStatus.ACCEPTED : HttpStatus.CONFLICT).body(Map.of("fotos", r.fotos()));
+  }
+  ```
+- **Esfuerzo:** S. **Responsable sugerido:** Juanita.
+
+### SEC-I27-8 · **Bajo** · La CSP de producción que documenta el README no tiene `blob:`
+- **Archivo:** `web-publica/README.md:28` y `:36` (cabecera y `vercel.json`, `img-src 'self' data:`), frente a `web-publica/index.html:10` (`img-src 'self' data: blob: …`).
+- **Problema:** si se despliega tal como dice el README, el navegador aplica **las dos** políticas (la `<meta>` y la cabecera), es decir, su intersección. Las fotos, que ahora se cargan como `blob:`, quedarían bloqueadas en producción. Ya figura como "pendiente al integrar" en 27c.
+- **Por qué importa:** la reacción típica ante "las fotos no cargan en producción" es aflojar o quitar la CSP de la cabecera, que es la única que aplica `frame-ancestors`.
+- **Corrección:** en las dos líneas del README, `img-src 'self' data: blob:`. Ya no hace falta el origen del gateway en `img-src` (SEC-I27-I1).
+- **Esfuerzo:** S. **Responsable sugerido:** Juanita (27c).
+
+### Informativos
+- **SEC-I27-I1 (`img-src` más amplio de lo necesario):** `index.html:10` sigue permitiendo `%CONNECT_SRC%` en `img-src`, pero las fotos ya no se piden con `<img src>` al gateway: llegan por `fetch` y se muestran como `blob:`. Basta con `img-src 'self' data: blob:`, y hay que actualizar el comentario de `vite.config.js:5`. **Esfuerzo:** S.
+- **SEC-I27-I2 (carrera mínima al revocar el blob):** en `FotoEspecie.jsx:22-36`, si el `then` ya estaba encolado cuando se ejecuta la limpieza, se crea un `blob:` que nunca se revoca y hay un `setEstado` sobre un componente desmontado. Es solo una pequeña fuga de memoria, sin efecto en la seguridad. Se arregla con `if (control.signal.aborted) return;` al principio del `then`. **Esfuerzo:** S.
+- **SEC-I27-I3 (republicar no excluye hallazgos anulados):** la consulta anterior filtraba `h.anuladoEn IS NULL`, y `idsFotosPublicas()` (`EvidenciaHallazgoRepository.java:20-24`) ya no. Hoy `Hallazgo.anular` no se llama desde ningún sitio, así que no hay efecto. Cuando exista la anulación, debe emitir `evidencia.retirada`, y la republicación debe filtrar por hallazgo vigente.
+- **SEC-I27-I4 (log del listener poco útil para las fotos):** `PublicadorCambiosHallazgo.java:44-51` escribe "Hallazgo {hallazgoId} guardado…" también en los `evidencia.*`. No filtra datos, porque solo registra ids, el tipo y la clase de la excepción. Pero falta el `evidenciaId`, que es lo que hace falta para republicar una sola foto. Se puede añadir `cambio.datos().get("evidenciaId")` cuando el tipo empiece por `evidencia.`.
+
+## Respuestas por punto del alcance
+| Punto | Resultado |
+|---|---|
+| **1. Límite de 40 MP antes de decodificar** | **Correcto.** `FotoPublica.java:72-81` lee el encabezado con `setInput(…, ignoreMetadata=true)` y rechaza antes de llamar a `read`. Probado: el PNG que declara 100 000×100 000 da `ImagenNoAdmitidaException`. 20 000×2 000 se reduce a 1200×120 en 155 ms con submuestreo |
+| **1. Formatos raros** | Solo entran JPEG y PNG (`TipoArchivoEvidencia`, por magic bytes). Un JPEG CMYK o con ICC dañado da 400 genérico, sin la causa. Recomendación menor: limitar el lector a `ImageIO.getImageReadersByFormatName("jpeg"/"png")` en lugar de autodetectar. Lo de JPEG progresivo está en SEC-I27-6 |
+| **1. Rutas de la miniatura / path traversal** | **Sin riesgo.** `AlmacenEvidenciasDisco.java:40-41`: `<hallazgoUUID>/<evidenciaUUID>.publica.jpg`, solo con UUID, y `resolver()` con `normalize()` + `startsWith(base)`. La escritura es atómica (temporal + `ATOMIC_MOVE`). La ruta nunca sale en una respuesta ni en un evento |
+| **1. Metadatos en la miniatura** | **Ninguno.** Con EXIF, COM, APP2 y un trailer en la entrada, la salida solo tiene los marcadores `E0 (JFIF), DB, C0, C4, DA`, y no aparecen "GPS" ni "Exif". `IIOImage(img, null, null)` sobre `TYPE_INT_RGB` tampoco escribe ICC |
+| **1. Guarda que omite `jpegBase64`** | **Correcto y acotada.** En el productor (`PublicadorEventos.java:63-71`) se quita solo esa clave de **una copia** y el resto pasa por `DetectorCoordenadas.contiene`. En el consumidor (`ValidadorSobre.java:121-139`) solo se excluye si es Base64 válido: con puntos, comas o grados sí se analiza. El riesgo que queda (contenido dentro del JPEG) es SEC-I27-4 |
+| **1. `POST …/republicar`** | Rol correcto, con *single-flight*, en un hilo propio y una transacción por foto. Lo que falta está en SEC-I27-7 |
+| **1. Runner de arranque** | `MigracionFotosPublicasAlArrancar`: en segundo plano, captura los errores y escribe en el log solo la clase. Se puede apagar por variable. Solo toca fotos `publica = true` sin miniatura. Sin observaciones |
+| **1. Ruta sin rol eliminada** | **Sí, por completo.** Se borraron `FotoPublicaController` y `FotosCientificoHttp`, y `SecurityConfig` ya no tiene `permitAll`. `PUBLICOS_PERMIT_ALL = Set.of()` y `RUTAS_PUBLICAS = Set.of()`. Una prueba comprueba 401 sin token y 404 con token. No queda ninguna referencia en código ni en configuración (`grep`) |
+| **2. Validación del JPEG y del sobre** | Sobre: reutiliza `ValidadorSobre` (claves duplicadas, tipo conocido, routing key igual al tipo, origen, `user_id`). Datos: UUID canónico, `cambioEn` entre 2020 y ahora + 1 día (evita "congelar" la foto), sha256 de 64 hex, lados entre 1 y 1200 como entero y tope del Base64 **antes** de decodificar. JPEG: SOI, sha256, recorrido de segmentos y escaneos y nada después del EOI. Falta la lista blanca (SEC-I27-4) |
+| **2. `user_id` / origen en la cola nueva** | **Sí.** `ConsumidorFotos.java:51` aplica `validarOrigen` igual que en `hallazgo.*`, con la verificación activa por defecto |
+| **2. Tope de 1 MB y memoria** | Ver SEC-I27-3 |
+| **2. Prefetch** | 4, configurable, en una fábrica propia que hereda reintentos y `default-requeue-rejected: false`. Es adecuado |
+| **2. Permisos de RabbitMQ** | **Mínimos.** `crear-usuarios.sh:54-57` solo amplía `consulta-publica.(eventos\|fotos)(.dlq)?`. El consumidor sigue sin `write` sobre `biohub.eventos`. `reportes.eventos` no recibe `evidencia.#`: `PATRONES` de reportes es `prueba.#` y `hallazgo.#` |
+| **2. Rutas `/fotos/{fotoId}` y `?nombre=`** | **Inyección:** no la hay. `fotoId` se valida con una regex de UUID canónico y `nombre` con `[\p{L} .'-]{2,150}`, y todo el SQL va parametrizado. **Enumeración:** con UUID v4 es inviable, y por nombre solo se obtiene lo que ya publica el catálogo. Una foto retirada da 404 al instante y su ETag también (el 304 exige `publica = TRUE`). **Cabeceras:** `nosniff`, `image/jpeg`, ETag con sha256 y errores en problem+json sin detalles. El riesgo de `immutable` está en SEC-I27-5 |
+| **2. `SecurityConfig`** | `permitAll` solo para `GET` y rutas exactas. `denyAll` por defecto. `fotoPorId` está registrado en `ArquitecturaSeguridadTest` |
+| **3. Detector unificado** | Ver SEC-I27-1 (texto) y SEC-I27-2 (atributos anidados, números y claves). **Atributos anidados:** los `String` se revisan a cualquier profundidad (tope de 16, y si se supera se rechaza). Las claves y los números no |
+| **3. Logs del listener AFTER_COMMIT** | **Ya no filtra datos.** `PublicadorCambiosHallazgo.java:46-51` captura `RuntimeException` y registra solo `hallazgoId`, tipo y `getClass().getSimpleName()`. La `IllegalArgumentException` de la guarda tampoco lleva valores. Ya no se devuelve un 500 después del commit (BE-R-1) |
+| **4. CSP con `blob:`** | Correcta en `index.html`, y `blob:` solo en `img-src`. Falta en el README (SEC-I27-8) |
+| **4. `credentials: 'omit'`** | **Sí** (`especies.js:68`). No se envían cookies ni token al gateway |
+| **4. Lista blanca de `fotoId`** | **Sí**, en tres puntos: `aEspeciePublica` (`idFotoValido`), `pedirFotoEspecie` (vuelve a validar antes de construir la URL) y `Ficha.jsx` sobre `location.state`. Un valor que no sea un UUID nunca llega a la URL |
+| **4. Revocación de blob URLs** | Se revoca al desmontar el componente o al cambiar de foto, nunca mientras la URL está en uso. La carrera mínima está en SEC-I27-I2. Sin sinks XSS: `<img src=blob:>` no ejecuta contenido |
+| **5. Dependencias** | Ninguna nueva. npm da 0 vulnerabilidades |
+
+## Estado de hallazgos previos
+| ID | Estado | Evidencia |
+|---|---|---|
+| **ARQ-R-1** (seguridad) | **Cerrado** | No queda ninguna ruta pública → científico. La única ruta sin rol desapareció del código, de la configuración y de las pruebas de arquitectura |
+| **SEC-R-2** | **Parcial (mejorado)** | **Resuelto:** un solo detector sin el atajo de "cualquier unidad", con coma decimal y `lat … lon …`. Los atributos de texto se revisan a cualquier profundidad. Se valida en `registrar` y en `reclasificar`/`actualizar` **antes** del commit. El listener ya no da 500. **Pendiente:** SEC-I27-1 (regresiones y formatos GPS) y SEC-I27-2 (claves y números en atributos, claves de plantilla) |
+| **SEC-R-1** | **Abierto** (fuera de alcance) | **D66 lo mitiga solo para el portal:** la miniatura se vuelve a codificar desde los píxeles y no hereda segundas imágenes MPF, trailers ni EXIF (comprobado). El consumidor rechaza además datos después del EOI y APP1/APP13. **No cambia nada** en la descarga interna del original ni en el audio: sigue en Alto para su responsable |
+| **SEC-R-4** (píxeles) | **Cerrado para la miniatura** | Tope de 40 MP antes de decodificar y submuestreo. Lo que queda es SEC-I27-6 (concurrencia y JPEG progresivo) |
+| **SEC-R-5** (autoría al publicar) | **Abierto, sin cambios** | `marcarPublica` sigue sin comprobar que quien publica sea el autor del hallazgo |
+| **SEC-15** | **Abierto** | Maven sigue sin escáner de CVE |
+
+## Bien hecho
+- **D66 elimina una superficie entera:** sin ruta sin rol en el científico, sin cliente HTTP en consulta-publica y sin decodificar imágenes en el camino público. Las pruebas de arquitectura vaciaron las excepciones (`Set.of()`), así que cualquier ruta pública nueva en el científico rompe el build.
+- **Miniatura sin metadatos de verdad:** se vuelve a codificar desde los píxeles sobre `TYPE_INT_RGB`. La salida solo tiene JFIF y las tablas, y ni siquiera hereda los restos de SEC-R-1.
+- **Tope de 40 MP leído del encabezado**, con submuestreo dentro del límite y mensajes al cliente sin la causa interna.
+- **Consumidor muy defensivo:** tope del Base64 **antes** de decodificar, sha256, recorrido completo de los segmentos (incluidos los datos de escaneo y los RST), nada después del EOI, `cambioEn` acotado contra eventos "del futuro", UUID canónico, lados enteros y un `CHECK` en la tabla que repite las reglas.
+- **Idempotencia sin bloqueos:** `UPDATE … WHERE cambio_en < ?` y una "lápida" `publica = FALSE` cuando la retirada llega antes que la publicación, para que una publicación vieja no reviva la foto.
+- **Exclusión acotada de `jpegBase64`:** solo esa clave, solo en una copia y, en el consumidor, solo si es Base64 válido.
+- **Mínimo privilegio en RabbitMQ:** la cola nueva solo amplía lo justo y reportes no recibe las fotos.
+- **web-publica:** el `fotoId` se valida en tres puntos, `credentials: 'omit'`, blobs propios del componente y revocados al desmontar, y sin sinks HTML.
+- **Logs limpios:** en los dos servicios solo se registran ids, tipo, origen y la clase de la excepción. Nunca bytes, textos ni claves que coincidieron.
+
+## Veredicto (iteración 27, 27f)
+**APROBADO CON OBSERVACIONES.** No hay Críticos ni Altos.
+- **Corregir antes del PR** (los tres son de esfuerzo S):
+  - **SEC-I27-1**, al menos las **regresiones**: el par sin signo de 3 decimales y el GMS sin símbolos, que antes se rechazaban y ahora llegan al portal. Lo ideal es incluir también el formato Garmin, el hemisferio delante y la normalización Unicode, con la prueba de paridad entre las dos copias.
+  - **SEC-I27-2:** claves y números en `verificarAtributos`. Es lo que falta para cerrar SEC-R-2, y coordinarlo con Hernando.
+  - **SEC-I27-8:** `blob:` en la CSP del README, para que no se rompan las fotos en producción.
+- **Pueden ir después del PR:** SEC-I27-3 a SEC-I27-7 y los informativos. SEC-I27-5 queda sujeto a la decisión del grupo sobre `immutable`.
+
+---
+
+# Iteración 27 – re-verificación del ciclo 27g
+
+**Fecha:** 2026-11-22. **Rama:** `feature/ubicacion-consulta-publica`, con cambios sin commit (27g ya está en la rama). **Alcance:** SEC-I27-1, SEC-I27-2, SEC-I27-7 y SEC-I27-8, además de una búsqueda de evasiones del detector y de los atributos que el corpus no cubre.
+
+## Resumen
+| Hallazgo de 27f | Estado | Evidencia |
+|---|---|---|
+| **SEC-I27-1** (Medio) regresiones del detector | **Cerrado** | Las tres regresiones (`5.532, 73.367`, `5 31 55 N`, `5°31N`), el formato Garmin, el hemisferio delante, la normalización Unicode, el hemisferio en palabras, las coordenadas planas y UTM se detectan. Patrones en `servicio-cientifico/.../eventos/service/DetectorCoordenadas.java:57-104` y normalización en `:115-142`. En consulta-publica, el bloque `<reglas-compartidas>` es idéntico byte a byte (`diff` sin diferencias en `:39-190`). Hay un corpus compartido (`detector-corpus.txt`, idéntico en los dos servicios, con 41 casos `+`, 37 `-` y 6 `?`) y `DetectorCoordenadasParidadTest`, que también fija el SHA-256 del bloque. Las pruebas pasan: científico 2/2 y consulta-publica 2/2. Hay residuos nuevos en SEC-I27g-1, SEC-I27g-3 y SEC-I27g-4 |
+| **SEC-I27-2** (Medio) claves y números en atributos | **Cerrado** (los casos que se reportaron) | `ValidadorTextoPublico.java:78-130` revisa claves y valores a cualquier profundidad, y `:133-155` busca pares numéricos (número o texto). La plantilla rechaza claves de coordenadas (`FichaPlantillaService.java:132-134`). Con la copia compilada se rechazan los cuatro casos de 27f: `{"lat":…,"lon":…}`, `{"latitud_gps":…}`, `{"punto":[…]}` y `{"x":"5.53214","y":"-73.36712"}`. El error no repite una clave que parezca coordenada (`:106-110`). `ValidadorTextoPublicoTest` pasa 80/80 y `FichaPlantillaServiceTest` 8/8. Lo que queda se describe en SEC-I27g-2 |
+| **SEC-I27-7** (Bajo) quién republica y 409 | **Cerrado** | `FotosPublicasAdminController.java:36-42` recibe el `Jwt` y pasa el `preferred_username`. `RepublicadorFotosPublicas.java:82` y `:101` registran quién lo pidió; `:111` registra el resultado. Si ya hay una republicación en curso, `RepublicacionEnCursoException` devuelve un 409 problem+json (`RegistroExceptionHandler`, `TIPO_CONFLICTO`). `RepublicadorFotosPublicasTest` pasa 3/3 |
+| **SEC-I27-8** (Bajo) `blob:` en la CSP del README | **Cerrado** | `web-publica/README.md:28` y `:36` usan `img-src 'self' data: blob:`, igual que `index.html:10`. El README explica el motivo en `:22` |
+
+| Severidad (hallazgos nuevos) | Cantidad |
+|---|---|
+| Crítico | 0 |
+| Alto | 0 |
+| Medio | 2 (SEC-I27g-1, SEC-I27g-2) |
+| Bajo | 2 (SEC-I27g-3, SEC-I27g-4) |
+| Informativo | 3 (SEC-I27g-I1 a SEC-I27g-I3) |
+
+## Cómo se revisó
+- **Documentación:** `00-plan.md` (iteración 27, fila 27g y "Pendiente para el grupo") y `04` §4.4, §7.6 y §13.10.
+- **Código:** las dos copias de `DetectorCoordenadas` (con `diff`), los dos `DetectorCoordenadasParidadTest` (idénticos salvo el paquete), los dos `detector-corpus.txt` (`diff` sin diferencias), `ValidadorTextoPublico`, `FichaPlantillaService`, `HallazgoService` (llamadas en `:82` y `:164`), `RepublicadorFotosPublicas`, `RepublicacionEnCursoException`, `FotosPublicasAdminController`, `RegistroExceptionHandler`, `FotosPublicas` (el `usuario` del sobre), `logback-spring.xml` y `web-publica/README.md`.
+- **Pruebas autorizadas (`mvn -o test`, sin la suite completa):**
+  - servicio-cientifico, `-Dtest='DetectorCoordenadas*,ValidadorTextoPublico*,FichaPlantilla*,RepublicadorFotos*'`: **97 pruebas, 0 fallos**.
+  - consulta-publica, `-Dtest='DetectorCoordenadas*'`: **9 pruebas, 0 fallos**.
+- **Pruebas en el scratchpad (copias compiladas, fuera del repo y sin servicios):**
+  1. Se pasaron 63 textos de evasión por las dos copias del detector. Siempre dieron el mismo resultado.
+  2. Se pasaron 30 mapas de atributos por `ValidadorTextoPublico`.
+  3. Se probó la resistencia a ReDoS con entradas hostiles de 90 000 a 105 000 caracteres: todas tardaron entre 41 y 266 ms, en tiempo lineal y sin retroceso catastrófico.
+  4. Se escribió un prototipo de las correcciones que se proponen y se midió contra el corpus y textos adicionales.
+- No se leyeron `.env` ni `certs/`. No se ejecutó nada contra servicios reales.
+
+## Hallazgos nuevos
+
+### SEC-I27g-1 · **Medio** · El detector no cubre varios formatos que se escriben sin mala intención, y esos textos llegan al portal
+- **Archivos:** las dos copias de `DetectorCoordenadas`:
+  - en servicio-cientifico: `SEP` en `:57`, `HEMISFERIO_DELANTE` en `:82-84`, `GMS_SIN_SIMBOLOS` en `:86-87`, `GRADOS_EN_PALABRAS` en `:89-90`, `PAR_COLOMBIA` en `:92-93` y `UTM` en `:103-104`;
+  - en consulta-publica: `:47`, `:72`, `:76`, `:79`, `:82` y `:93`.
+- **Problema:** estos textos pasan las dos barreras (el resultado es el mismo en las dos copias):
+
+  | Texto | Por qué pasa |
+  |---|---|
+  | `5.53214    -73.36712` (4 espacios) o `5.53214,` + salto de línea + 4 espacios + `-73.36712` | `SEP` admite como mucho 3 espacios. Es lo típico al pegar desde una hoja de cálculo o desde un texto con sangría |
+  | `5.53214 y -73.36712` | `y` no cuenta como separador |
+  | `5 31 55 n 73 22 10 w` / `n05 31.928 w073 22.027` / `5°31 n` | El hemisferio solo se reconoce en mayúscula |
+  | `5 31' 55" N` (sin el símbolo de grado, que casi ningún teclado tiene) | `GRADOS_MINUTOS` exige `°` |
+  | `05:31:55 N, 073:22:10 W` / `5-31-55 N` | GMS separado con `:` o `-` |
+  | `5 grados, 31 minutos y 55 segundos norte` / `5 gr 31 min N` | Hay una coma después de "grados", o aparece la abreviatura |
+  | `73.367, 5.532` / `POINT(-73.367 5.532)` (longitud primero y 3 decimales: es el orden de GeoJSON, WKT y QGIS) | `PAR_COLOMBIA` solo admite el orden latitud, longitud. Con 4 decimales ya se detecta |
+  | `18 N 612345 1012345` / `18N 612345E 1012345N` / `UTM 18 612345 1012345` | `UTM` exige la zona pegada a la banda y no admite los sufijos E/N |
+  | `18NWL1234567890` / `18N WL 12345 67890` (MGRS, una opción de los Garmin) | No hay patrón |
+  | `Norte 1 012 345 Este 1 045 678` / `X: 1045678 Y: 1012345` / `Easting … Northing …` | `PLANAS` no admite el espacio como separador de miles, ni las etiquetas X/Y ni las inglesas |
+  | `67P7GFXM+QH` / `GFXM+QH Arcabuco` (Plus Code: Google Maps lo muestra en cada lugar y tiene unos 14 m de precisión) | No hay patrón |
+  | `https://www.openstreetmap.org/?mlat=5.532&mlon=-73.367` / `…data=!3d5.53214!4d-73.36712` | `&` y `!4d` no cuentan como separadores. Los enlaces cortos (`maps.app.goo.gl/…`) no se pueden detectar por su forma |
+- **Por qué importa:** es el mismo escenario de SEC-J-02 y SEC-I27-1. Un investigador copia lo que muestra su equipo o el navegador, el texto se guarda en claro en el hallazgo y en el historial append-only (D60), y **se publica en el portal**. El riesgo es menor que el de SEC-I27-1 porque ninguno de estos formatos es una regresión. Pero los cuatro primeros son tan probables como los que se corrigieron.
+- **Corrección:** en las dos copias, dentro de `<reglas-compartidas>`, añadiendo los casos al corpus y actualizando el resumen.
+  ```java
+  // normalizar(): al final, colapsar cualquier racha de espacios (así "SEP" vuelve a bastar)
+  return sb.toString().replaceAll("\\s+", " ");
+
+  /** Hemisferio en minúscula: solo n y w (la "o" y la "e" son conjunciones; la "s" choca con los segundos). */
+  private static final Pattern HEMISFERIO_MINUSCULA = Pattern.compile(
+          "\\b\\d{1,3}(?:\\s{0,2}°\\s{0,2}|\\s{1,2})\\d{1,2}(?:\\s{1,2}\\d{1,2}(?:[.,]\\d+)?)?\\s{0,2}[nw]\\b"
+          + "|\\b[nsw]\\s{0,2}\\d{1,3}(?:[.,]\\d{4,}|\\s{0,2}°\\s{0,2}\\d|\\s{1,2}\\d{1,2}[.,]\\d{1,4})");
+  /** GMS sin "°" pero con minutos ("5 31' 55"), o separado con ":" o "-" y con hemisferio. */
+  private static final Pattern GMS_OTROS = Pattern.compile(
+          "\\b\\d{1,3}\\s{1,2}\\d{1,2}(?:[.,]\\d+)?\\s{0,2}['′’´]\\s{0,2}\\d{1,2}"
+          + "|(?i)\\b\\d{1,3}[:\\-]\\d{2}[:\\-]\\d{2}(?:[.,]\\d+)?\\s{0,2}[nw]\\b"
+          + "|\\b\\d{1,3}[:\\-]\\d{2}[:\\-]\\d{2}(?:[.,]\\d+)?\\s{0,2}[NSEOW]\\b");
+  /** "5 grados, 31 minutos", "5 gr 31 min". Sustituye a GRADOS_EN_PALABRAS. */
+  private static final Pattern GRADOS_EN_PALABRAS = Pattern.compile(
+          "(?iu)\\b\\d{1,3}\\s{0,2}(?:grados?|gr\\.?)\\s{0,2},?\\s{0,2}\\d{1,2}\\s{0,2}(?:minutos?|min\\.?|['′’´])");
+  /** Par de Colombia con la longitud delante (GeoJSON/WKT). */
+  private static final Pattern PAR_COLOMBIA_LON_LAT = Pattern.compile(
+          "[-+]?\\b0?(?:6[6-9]|7\\d|8[0-2])[.,]\\d{3,}" + SEP + "[-+]?(?:\\d|1[0-3])[.,]\\d{3,}\\b");
+  /** Pares con "y" (con 4 decimales, para no marcar "CV 2.345 y -1.234"). */
+  private static final Pattern PAR_CON_Y = Pattern.compile(
+          "[-+]?\\d{1,3}[.,]\\d{4,}\\s{1,3}y\\s{1,3}[-+]\\d{1,3}[.,]\\d{4,}");
+  /** UTM con la zona separada o sufijos E/N, y MGRS. */
+  private static final Pattern UTM = Pattern.compile(
+          "\\b\\d{1,2}\\s?[C-HJ-NP-X]\\s{1,3}\\d{5,7}\\s?[mE]?" + SEP + "\\d{5,8}\\s?[mN]?\\b"
+          + "|\\b\\d{1,2}[C-HJ-NP-X]\\s?[A-HJ-NP-Z]{2}\\s?(?:\\d{4}\\s?\\d{4}|\\d{5}\\s?\\d{5})\\b");
+  /** Planas con el espacio como separador de miles, X/Y y etiquetas inglesas. Sustituye a PLANAS. */
+  private static final Pattern PLANAS = Pattern.compile(
+          "(?iu)\\b(?:norte|este|northing|easting|n|e|x|y)\\s{0,2}[:=]?\\s{0,2}\\d(?:[ .,]?\\d{3}){2}\\b");
+  /** Plus Codes y enlaces de mapas: en un texto público no hay motivo para ninguno de los dos. */
+  private static final Pattern PLUS_CODE_O_ENLACE = Pattern.compile(
+          "(?i)\\b[23456789CFGHJMPQRVWX]{4,8}\\+[23456789CFGHJMPQRVWX]{2,3}\\b"
+          + "|[?&#](?:mlat|mlon|ll|lat|lon|lng|center)=-?\\d|![34]d-?\\d"
+          + "|maps\\.app\\.goo\\.gl|goo\\.gl/maps|osm\\.org/go/|what3words|w3w\\.co");
+  ```
+  **Probado en el scratchpad** (prototipo con estos patrones más SEC-I27g-3, encadenado detrás del detector actual):
+  - Se detectan **69 de 70** positivos: los 41 del corpus más los 29 nuevos de esta revisión, incluidos los de SEC-I27g-3. Solo se escapa `5.53214` + U+2063 + `-73.36712`: al borrar el carácter invisible no queda ningún separador.
+  - Hay **0 falsos positivos en 63 legítimos**: los 37 del corpus y 26 más, como `a las 05:31:55`, `duración 5 12 s`, `CV 2.345 y -1.234`, `Muestra 18N 2 tubos`, `Teléfono 601 3216549`, `precio 1.250.000 pesos` y `Colección ICN 12345 y 67890`.
+  - Para la primera versión de `PAR_CON_Y` y `[nsw]` se encontraron 3 falsos positivos. Con los ajustes de arriba bajaron a 0.
+- **Esfuerzo:** M (dos copias, el corpus y el resumen). **Responsable sugerido:** Juanita. Avisar a Hernando de las reglas nuevas.
+
+### SEC-I27g-2 · **Medio** · Atributos: todavía entran coordenadas planas con las claves `norte`/`este`, claves en camelCase o con punto, y `x`/`y` con el símbolo de grado
+- **Archivos:**
+  - `servicio-cientifico/.../registro/service/ValidadorTextoPublico.java:38-42`: los prefijos y términos no incluyen `norte`, `este`, `northing` ni `easting`.
+  - `:195-196`: la normalización no separa camelCase ni el `.`.
+  - `:133-155`: la búsqueda de pares solo mira el mismo contenedor y solo usa los primeros 64 números con 3 o más decimales.
+  - `:203`: `x`/`y` solo se rechazan si el valor es numérico.
+- **Problema** (con la copia compilada). Todo esto se guarda sin error:
+
+  | Atributos | Por qué pasa |
+  |---|---|
+  | `{"norte": 1012345, "este": 1045678}` o los mismos valores como texto, o `{"northing":…, "easting":…}` | Coordenadas planas MAGNA, como enteros: ni la clave ni el par (escala 0) se marcan. **Una plantilla puede definir `norte`/`este` de tipo NUMERO** (`FichaPlantillaService.java:134` lo permite) |
+  | `{"latInicio": 5.53, "lonInicio": -73.36}`, `{"geoLat": 5.53214}`, `{"latE7": 55321400, "lngE7": -733671200}`, `{"punto.lat": 5.53214}` | `lat_inicio` se rechaza, pero `latInicio` queda como `latinicio` y no coincide. `.` no cuenta como separador. Además, `validarValores` sigue sin llamarse en producción (ARQ-R-3), así que la regla de minúsculas de la plantilla no limita las claves del hallazgo |
+  | `{"x": "5.53214°", "y": "-73.36712°"}` / `{"x": "5.53214 grados", …}` | El valor no es numérico, así que la clave `x` se admite. Cada valor por separado no tiene forma de coordenada y el par no se analiza porque `comoDecimal` falla con el `°`. El punto 3 de la corrección de 27f (revisar el texto concatenado) no se implementó |
+  | `{"inicio": {"v": 5.53214}, "fin": {"v": -73.36712}}` | El par se reparte entre dos objetos hermanos |
+  | 65 números `1000.001` y después `5.53214, -73.36712` en la misma lista o en el mismo objeto | El tope de `:143-145` corta el recorrido antes de llegar al par (solo con intención) |
+- **Por qué importa:** el impacto es el mismo que en SEC-I27-2. La coordenada queda en claro en `hallazgo.atributos` y en el historial que no se puede borrar (D60), fuera de AES-GCM, y `HallazgoResponse` la muestra a `administrador` y `auditor_cientifico`. **No llega al portal**, porque los atributos no viajan en el evento. El primer caso no necesita mala intención: en Colombia es habitual anotar la coordenada plana como "Norte/Este", y el propio detector de texto ya la reconoce (`PLANAS`).
+- **Corrección:**
+  ```java
+  // 1) Separar camelCase y "." antes de normalizar la clave
+  String n = Normalizer.normalize(clave.replaceAll("([a-z0-9])([A-Z])", "$1_$2"), Normalizer.Form.NFKD)
+          .replaceAll("\\p{M}", "").toLowerCase(Locale.ROOT).strip().replaceAll("[_\\-\\s.]+", "_");
+  // 2) Planas: norte/este/northing/easting (y con sufijo de unidad) cuando el valor es numérico
+  private static final Pattern PLANAS_CLAVE = Pattern.compile("^(?:norte|este|northing|easting)(?:_|\\d|$)");
+  return valorNumerico && (… || PLANAS_CLAVE.matcher(n).find());
+  // 3) Clave + valor juntos y texto concatenado del contenedor: "norte 1012345", "x 5.53214°"…
+  verificar(campo, clave + " " + valorComoTexto);                   // en verificarClave
+  verificar(campo, String.join(" ", textosYNumerosDelContenedor));  // en verificarContenedor
+  // 4) Sin tope que deje pasar: guardar solo los que estén en [-180, 180] y rechazar al encontrar el par
+  if (n != null && n.scale() >= 3 && enRango(n, 180)) { if (hayLatitud(precisos, n)) throw …; precisos.add(n); }
+  ```
+  El par repartido entre objetos hermanos se cubre con el punto 3 si se aplica al texto concatenado de **todo** el árbol, igual que hace `DetectorCoordenadas.contiene`.
+- **Esfuerzo:** S. **Responsable sugerido:** Hernando (`registro`) con Juanita (validador).
+
+### SEC-I27g-3 · **Bajo** · La normalización deja caracteres Unicode con los que se puede evadir el detector a propósito
+- **Archivos:** `DetectorCoordenadas.normalizar` y `esEspacioRaro`, en servicio-cientifico `:115-142` y en consulta-publica `:105-133`.
+- **Problema:** pasan (con el mismo resultado en las dos copias):
+  - caracteres de formato (Cf) que no están en la lista: U+2062, U+2063 y U+180E;
+  - marcas sin espacio (Mn): U+034F y el selector de variante U+FE0F, dentro de un número o como separador;
+  - separadores decimales U+00B7 (`5·53214`) y U+066B (`5٫53214`);
+  - comas U+3001, U+060C y U+201A;
+  - dígitos fuera del plano básico, como los osmanya U+104A0 y siguientes, porque el bucle recorre `char` y no puntos de código.
+
+  NFKC ya resuelve los dígitos de ancho completo, los superíndices y los dígitos matemáticos.
+- **Por qué importa:** solo lo aprovecha alguien que quiera evadir el detector, y esa persona puede partir la coordenada entre campos de muchas otras formas. Aun así, borrar estos caracteres sale casi gratis y cierra la familia de trucos de "carácter invisible".
+- **Corrección** (incluida en el prototipo probado de SEC-I27g-1):
+  ```java
+  texto.codePoints().forEach(cp -> {
+      int t = Character.getType(cp);
+      if (t == Character.FORMAT || t == Character.NON_SPACING_MARK || t == Character.ENCLOSING_MARK) return; // borrar
+      if (cp == 0x00B7 || cp == 0x066B) { sb.append('.'); return; }
+      if (cp == 0x3001 || cp == 0x060C || cp == 0x201A) { sb.append(','); return; }
+      if (cp >= 128 && Character.isDigit(cp)) { sb.append((char) ('0' + Character.digit(cp, 10))); return; }
+      sb.appendCodePoint(cp);
+  });
+  ```
+  Opcional: analizar el texto **dos veces**, una borrando los Cf y otra cambiándolos por un espacio, para cubrir `5.53214` + U+2063 + `-73.36712`.
+- **Esfuerzo:** S. **Responsable sugerido:** Juanita.
+
+### SEC-I27g-4 · **Bajo** · La paridad entre las dos copias del detector solo se comprueba dentro de cada módulo
+- **Archivos:** `DetectorCoordenadasParidadTest.java:58-78` (los dos) y `detector-corpus.txt:100` (los dos).
+- **Problema:** cada servicio compara su bloque con el resumen de **su propio** corpus. Si alguien cambia el bloque de una copia y actualiza el resumen solo en el corpus de ese módulo, las dos pruebas siguen en verde y las copias se separan sin que nadie lo note. Ni `ci.yml` ni ningún script comparan los dos corpus.
+- **Por qué importa:** la regresión de SEC-I27-1 salió justo de una diferencia entre dos barreras. Esta prueba existe para evitarlo, pero hoy depende de que se cumpla una convención.
+- **Corrección:** comprobar los dos lados en la propia prueba (solo cuando existe el directorio hermano, para no romper los builds aislados) o añadir un paso en el CI:
+  ```java
+  Path otro = Path.of("..", "servicio-consulta-publica", "src/test/resources/detector-corpus.txt"); // y a la inversa
+  Assumptions.assumeTrue(Files.exists(otro));
+  assertThat(Files.readString(otro)).isEqualTo(Files.readString(Path.of("src/test/resources/detector-corpus.txt")));
+  ```
+  ```yaml
+  - run: cmp servicio-cientifico/src/test/resources/detector-corpus.txt servicio-consulta-publica/src/test/resources/detector-corpus.txt
+  ```
+- **Esfuerzo:** S. **Responsable sugerido:** Juanita.
+
+### Informativos
+- **SEC-I27g-I1 (contrato sin el 409):** `04-contrato-api.md:876` solo documenta el 202 de `POST …/republicar`. Hay que añadir `409 CONFLICTO` ("ya hay una republicación en curso; no se inició otra"). **Esfuerzo:** S.
+- **SEC-I27g-I2 (un tercer detector sin endurecer):** `ubicacion/domain/DetectorCoordenadasEnTexto.java` conserva las reglas antiguas y lo usa `UbicacionServiceImpl.java:94` para `nombreCientifico`. Hoy no hay riesgo, porque `HallazgoService` valida el nombre con el detector unificado antes de llamar a ubicación. Aun así, es una tercera copia que puede dar una falsa sensación de cobertura. Conviene que delegue en el detector unificado o que se elimine si D53 lo permite. **Esfuerzo:** S.
+- **SEC-I27g-I3 (auditoría de la republicación):** el `preferred_username` va al log general (`RepublicadorFotosPublicas.java:82`), no al de auditoría, que tiene retención propia. Basta para SEC-I27-7. Si HU-11 c.3 exige conservarlo, hay que moverlo a un logger de auditoría. La inyección en el log no es realista, porque Keycloak no admite caracteres de control en el nombre de usuario. El usuario también viaja en el sobre de `evidencia.publicada`, pero los consumidores no lo guardan (§7.2), así que no se expone.
+
+## Respuestas por punto del alcance
+| Punto | Resultado |
+|---|---|
+| **Copias equivalentes** | **Sí.** El bloque `<reglas-compartidas>` es idéntico, el corpus también y las pruebas de paridad son iguales salvo el paquete. Al pasar los 63 textos de evasión por las dos copias, **ninguno** dio un resultado distinto. Fuera del bloque solo está `contieneEnBruto`, propio de consulta-publica |
+| **Separadores Unicode** | NBSP, U+2007, U+202F, U+3000, U+2028, ancho cero, guiones Unicode y dígitos de ancho completo, árabes, matemáticos y superíndices: **detectados**. U+2062/2063, U+180E, U+034F, U+FE0F, U+00B7, U+066B y las comas no latinas: **no** (SEC-I27g-3) |
+| **GMS** | Con símbolos, `º`/`˚`, sin símbolos en mayúscula, Garmin y "grados … minutos": detectados. En minúscula, sin `°`, con `:` y "grados, …": no (SEC-I27g-1) |
+| **Coma decimal** | `5,532 73,367`, `5,532; 73,367` y `-4,215; -69,940`: **detectados** |
+| **Partidas en dos atributos** | `{"x":"5.53214","y":"-73.36712"}` y pares en el mismo objeto o lista: **rechazados**. Con `°`, con "grados" o repartidas en objetos hermanos: **no** (SEC-I27g-2). Entre dos campos de texto distintos (por ejemplo `descripcion` y `nombreComun`) ningún detector por forma puede ser completo: es un límite conocido |
+| **Valores negativos** | Latitud sur (Leticia) con 3 decimales y longitud sin signo: detectado. Longitud primero con 3 decimales: **no** (SEC-I27g-1). Con 2 decimales (≈1 km) no se detecta, por diseño |
+| **Garmin / UTM** | Garmin en mayúscula y UTM `18N 612345 1012345`: detectados. Garmin en minúscula, UTM con la zona separada o con sufijos E/N y MGRS: **no** (SEC-I27g-1) |
+| **ReDoS** | Lineal: entre 41 y 266 ms con entradas de 90 000 a 105 000 caracteres. Todos los cuantificadores están acotados |
+| **409** | No filtra nada: el mensaje es fijo, con `ruta` y el código `CONFLICTO`. No dice quién tiene la republicación en curso ni cuántas fotos hay. El conteo solo sale en el 202, y solo para `administrador` |
+| **Log del administrador** | Solo el `preferred_username` y los conteos. Nunca ids de hallazgo junto a datos, bytes ni texto. Los errores por foto solo registran el `evidenciaId` y la clase de la excepción (`:138`) |
+
+## Sobre el falso positivo `{"largo": 1.234, "ancho": 2.345}`
+**Es aceptable como medida temporal, pero conviene afinarlo.** Falla del lado seguro: rechaza con un 400 que explica qué hacer, y no causa ninguna fuga. Sin embargo, no es raro: una balanza de 0,001 g y una medida en cm con 3 decimales en el mismo objeto (`{"peso_g": 1.234, "longitud_cm": 23.456}`) también se rechazan (comprobado). Eso empuja a los investigadores a redondear o a mover datos al texto libre. Se puede afinar sin abrir una vía de evasión:
+- **Dentro de Colombia, 3 decimales o más:** un valor en |lat| ≤ 13,5 y otro en 66 ≤ |lon| ≤ 82. Esto cubre todo el territorio continental e insular, y descarta `1.234`/`2.345` porque ninguno cae en el rango de longitud.
+- **En cualquier otro lugar, 4 decimales o más:** la regla genérica actual.
+
+Es lo mismo que propone el plan ("≥ 4 decimales fuera del rango de Colombia"). Lo que sigue dando falso positivo (dos medidas pequeñas con 4 decimales) es muy raro. **Recomendación:** adoptarlo junto con SEC-I27g-2 y anotar el falso positivo restante en el javadoc y en el corpus.
+
+## Estado de hallazgos previos
+| ID | Estado |
+|---|---|
+| SEC-I27-1, SEC-I27-2, SEC-I27-7, SEC-I27-8 | **Cerrados** (ver Resumen) |
+| SEC-R-2 | **Cerrado en lo que se pidió**: un detector único, paridad, atributos con claves y números, y plantillas. Lo que queda está en SEC-I27g-1 y SEC-I27g-2 |
+| SEC-I27-3 a SEC-I27-6, SEC-I27-I1 a SEC-I27-I4 | Sin cambios: abiertos y aplazados según el veredicto de 27f. `index.html:10` sigue con `%CONNECT_SRC%` en `img-src` (SEC-I27-I1) |
+| SEC-R-1, SEC-R-5, SEC-15 | Sin cambios |
+
+## Bien hecho
+- **La paridad ahora es verificable:** hay un bloque marcado, su resumen SHA-256 y un corpus compartido con falsos positivos conocidos (`?`) documentados en el javadoc. Es la forma correcta de mantener dos copias sin un módulo común (D4). Solo falta compararlas entre módulos (SEC-I27g-4).
+- **La normalización corrige un detalle difícil:** cambia `º`/`˚` por `°` **antes** de NFKC, que de otro modo convertiría `º` en la letra "o".
+- **El error del atributo no repite una clave que parezca coordenada** (`campoDe`), y el mensaje nunca incluye el valor.
+- **SEC-I27-7 está bien resuelto:** hay un `record Resultado` con `yaEnCurso` y un 409 problem+json probado, y el log registra quién pidió la republicación y cuál fue el resultado. El *single-flight* se libera en `finally` y también si el ejecutor rechaza la tarea (`:118-121`).
+- **Patrones sin ReDoS**, con todos los cuantificadores acotados.
+
+## Veredicto (iteración 27, re-verificación del ciclo 27g)
+**APROBADO CON OBSERVACIONES.** No hay hallazgos Críticos ni Altos. Los cuatro hallazgos de 27f que había que corregir antes del PR (SEC-I27-1, SEC-I27-2, SEC-I27-7 y SEC-I27-8) están **cerrados**.
+- **Recomendado antes del PR** (no bloquea; esfuerzo S en cada caso):
+  - de SEC-I27g-1, al menos colapsar los espacios en `normalizar`, el hemisferio en minúscula (`n`/`w`), el GMS sin `°` y el par con la longitud primero;
+  - de SEC-I27g-2, las claves `norte`/`este` y la separación de camelCase.
+- **Puede ir después:** el resto de SEC-I27g-1 (MGRS, Plus Codes y enlaces), SEC-I27g-3, SEC-I27g-4 y los informativos.

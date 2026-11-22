@@ -1,0 +1,222 @@
+{
+  "parametros": {
+    "escenario": "portada",
+    "N_visitas_s": 2,
+    "MULT": 60,
+    "pico_visitas_s": 120,
+    "peticiones_por_visita_aprox": 13.5,
+    "pico_peticiones_s_aprox": 1625,
+    "repetida_pct": 0,
+    "T": {
+      "base": 30,
+      "rampa": 30,
+      "pico": 90,
+      "baja": 10,
+      "post": 150
+    },
+    "total_s": 310,
+    "fin_rampa_s": 60,
+    "fin_pico_s": 150,
+    "replicas": "2",
+    "cpus_por_replica": "2",
+    "commit": "14f140c (sucio, iteración 27)",
+    "red_k6": "biohub_default",
+    "fecha": "2026-11-22T04:29:54.985Z",
+    "entorno": "anfitrion compartido (16 CPU); loadavg 1/5/15 min antes: 4.54 5.99 8.32; otros procesos: libvirt qemu biohub-backend ~4 CPU, ollama; k6 y NGINX en el mismo equipo",
+    "cache": "fria"
+  },
+  "visitas": 1675,
+  "visitas_degradadas": 83,
+  "visitas_degradadas_pct": 4.955223880597015,
+  "visitas_sin_fotoid": 83,
+  "peticiones": 22686,
+  "fotos_pedidas": 19182,
+  "tasa_media_req_s": 385.4516854341171,
+  "iteraciones_descartadas": 37,
+  "vus_max": 77,
+  "exito_d42_pct": 97.83878504672897,
+  "exito_d42_peticiones_pct": 97.83878504672897,
+  "fallos_no_esperados_pct": 0,
+  "errores_5xx_pct": 0,
+  "latencia_ms": {
+    "p50": 16.6676535,
+    "p90": 141.0177565,
+    "p95": 197.38442575,
+    "p99": 311.5657064500002,
+    "max": 813.879618
+  },
+  "visita_ms": {
+    "p50": 103,
+    "p95": 740,
+    "p99": 934.3,
+    "max": 1445
+  },
+  "por_tipo": {
+    "lista": {
+      "p50": 10.675133,
+      "p95": 156.87957519999986,
+      "p99": 259.52348356000005,
+      "max": 624.977938
+    },
+    "familias": {
+      "p50": 12.8507345,
+      "p95": 169.17892865,
+      "p99": 329.5313982900001,
+      "max": 763.947048
+    },
+    "foto": {
+      "p50": 17.491943,
+      "p95": 201.38208619999986,
+      "p99": 311.9513485599996,
+      "max": 813.879618
+    }
+  },
+  "por_fase": {
+    "base": {
+      "p50": 6.1008759999999995,
+      "p95": 15.30521375,
+      "p99": 101.865197
+    },
+    "pico": {
+      "p50": 0,
+      "p95": 0,
+      "p99": 0
+    },
+    "post": {
+      "p50": 0,
+      "p95": 0,
+      "p99": 0
+    }
+  },
+  "bytes_recibidos": 6543202805,
+  "bytes_recibidos_mb_s": 111.17378776886595,
+  "estabilizacion_s": 0,
+  "ventanas": [
+    {
+      "ventana": "w00",
+      "desde_s": 0,
+      "p95": 19.57920225,
+      "p99": 171.64355659999995
+    },
+    {
+      "ventana": "w01",
+      "desde_s": 15,
+      "p95": 10.273524649999997,
+      "p99": 12.491886280000001
+    },
+    {
+      "ventana": "w02",
+      "desde_s": 30,
+      "p95": 8.04057735,
+      "p99": 9.72915233
+    },
+    {
+      "ventana": "w03",
+      "desde_s": 45,
+      "p95": 217.68093784999996,
+      "p99": 348.9883000299997
+    },
+    {
+      "ventana": "w04",
+      "desde_s": 60,
+      "p95": 0,
+      "p99": 0
+    },
+    {
+      "ventana": "w05",
+      "desde_s": 75,
+      "p95": 0,
+      "p99": 0
+    },
+    {
+      "ventana": "w06",
+      "desde_s": 90,
+      "p95": 0,
+      "p99": 0
+    },
+    {
+      "ventana": "w07",
+      "desde_s": 105,
+      "p95": 0,
+      "p99": 0
+    },
+    {
+      "ventana": "w08",
+      "desde_s": 120,
+      "p95": 0,
+      "p99": 0
+    },
+    {
+      "ventana": "w09",
+      "desde_s": 135,
+      "p95": 0,
+      "p99": 0
+    },
+    {
+      "ventana": "w10",
+      "desde_s": 150,
+      "p95": 0,
+      "p99": 0
+    },
+    {
+      "ventana": "w11",
+      "desde_s": 165,
+      "p95": 0,
+      "p99": 0
+    },
+    {
+      "ventana": "w12",
+      "desde_s": 180,
+      "p95": 0,
+      "p99": 0
+    },
+    {
+      "ventana": "w13",
+      "desde_s": 195,
+      "p95": 0,
+      "p99": 0
+    },
+    {
+      "ventana": "w14",
+      "desde_s": 210,
+      "p95": 0,
+      "p99": 0
+    },
+    {
+      "ventana": "w15",
+      "desde_s": 225,
+      "p95": 0,
+      "p99": 0
+    },
+    {
+      "ventana": "w16",
+      "desde_s": 240,
+      "p95": 0,
+      "p99": 0
+    },
+    {
+      "ventana": "w17",
+      "desde_s": 255,
+      "p95": 0,
+      "p99": 0
+    },
+    {
+      "ventana": "w18",
+      "desde_s": 270,
+      "p95": 0,
+      "p99": 0
+    },
+    {
+      "ventana": "w19",
+      "desde_s": 285,
+      "p95": 0,
+      "p99": 0
+    },
+    {
+      "ventana": "w20",
+      "desde_s": 300,
+      "p95": 0,
+      "p99": 0
+    }
+  ]
+}

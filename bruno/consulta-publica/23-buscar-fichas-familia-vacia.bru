@@ -1,0 +1,26 @@
+meta {
+  name: buscar-fichas-familia-vacia
+  type: http
+  seq: 23
+}
+
+get {
+  url: {{baseConsulta}}/api/publica/fichas?familia=
+  body: none
+  auth: none
+}
+
+params:query {
+  familia: 
+}
+
+tests {
+  test("QA-R-5: familia vacía equivale a ausente (04 §1): 200 con las mismas fichas que sin filtro", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().total).to.be.at.least(1);
+  });
+}
+
+docs {
+  Un parámetro de consulta vacío se ignora (04 §1). Una familia de más de 100 caracteres sí es 400.
+}

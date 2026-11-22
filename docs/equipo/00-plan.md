@@ -416,3 +416,71 @@ Despliegue de bases, Redis y RabbitMQ en VMs locales con una VPN de malla, y su 
 **Pendientes tras la iteración 25:**
 - Quien tenga Keycloak ya importado no necesita reimportar: `levantar.ps1` activa el tema del login por la API de administración.
 - Al subir, avisar al equipo: cambian `docker-compose.yml` (monta el tema) e `infra/` (`.gitattributes` de MySQL y espera en `crear-usuarios.sh`).
+
+---
+# Iteración 26: revisión general del 2026-11-19 (solo lectura)
+
+**Rama:** `develop` (`8d23981` → `14f140c`, mismo árbol). **Modo:** equilibrado, sin tope. Informe: `docs/revision/2026-11-19/INFORME.md`.
+
+| # | Tarea | Responsable | Modelo | Estado |
+|---|---|---|---|---|
+| 26a | Quitar coautoría de Claude de 19 commits (develop + 5 feature) y restaurar protección | Tech Lead | opus | Hecho |
+| 26b | Arquitectura, RNF y ASR | arquitecto-software | opus / high | Hecho (7,0) |
+| 26c | RF y HU | product-owner | sonnet / medium | Hecho (8,0) |
+| 26d | Backend | backend-senior | sonnet / high | Hecho (7,0) |
+| 26e | Bases de datos | dba | sonnet / high | Hecho (7,5) |
+| 26f | Frontend | frontend-senior | sonnet / medium | Hecho (7,5) |
+| 26g | Seguridad | ciberseguridad | opus / high | Hecho (7,0, Rechazado por SEC-R-1) |
+| 26h | DevOps | devops | sonnet / medium | Hecho (6,5) |
+| 26i | QA: build, tests y app viva | qa-tester | sonnet / high | Hecho (8,5, Aprobado) |
+
+**Modelos y consumo (iteración 26):**
+| Fase | USD | Agente que más consumió | Cambios de modelo (motivo) |
+|---|---:|---|---|
+| R1 + R2 (8 informes y consolidado) | 15,06 (opus 10,30; sonnet 4,77) | arquitecto-software (4,22) | qa-tester sonnet/**high** (matriz: medium): levanta y prueba todo el sistema |
+
+---
+# Iteración 27: pendientes de Juanita de la revisión 2026-11-19
+
+**Rama:** `feature/ubicacion-consulta-publica` (al día con `develop` `14f140c`). **Modo:** equilibrado, sin tope. **Fuente:** `docs/revision/2026-11-19/pendientes-por-persona.md` (sección Juanita). **Decisión nueva:** D66 (fotos públicas por evento), contrato 04 §4.4, §7.6 y §13.10.
+
+| # | Tarea | Responsable | Modelo | Estado |
+|---|---|---|---|---|
+| 27a | D66 lado científico (miniatura al publicar, eventos `evidencia.*`, republicación, quitar ruta sin rol), BE-R-1/SEC-R-2 (un solo detector, listener sin 500), DB-J22-1 (`ANALYZE TABLE`) | backend-senior | sonnet / high | Hecho: `verify` 605 tests, 0 fallos (3 omitidos: broker/BD externos). Migraciones `V20261121_1000` y `_1010`. Falsos positivos nuevos: "long. 12 cm", "lat 3" |
+| 27b | D66 lado consulta-publica (cola `consulta-publica.fotos`, `foto_publica`, rutas de foto, `fotoId`), ARQ-R-5 (monitor en `/api/publica/**` y catálogo degradado), invalidación de caché acotada, QA-R-5 (`familia=` vacío) | backend-senior | sonnet / high | Hecho: `verify` 406 tests, 0 fallos. Migración `foto_publica`. QA-R-5 ya ignoraba el vacío (solo se agregaron pruebas). Búsquedas por TTL |
+| 27c | web-publica: FE-R-1 (foto por `fotoId`, sin 404 falsos), FE-R-5 (fondos de la portada), QA-R-3 (E2E intermitente) | frontend-senior | sonnet / medium | Hecho: 55 unitarios, build OK, E2E 38/38 ×3. Pendiente al integrar: `fotoId` real, CORS de la foto, `blob:` en CSP |
+| 27d | Mediciones k6 con metadatos D42: ASR1 (incluida la portada) y ASR4 | qa-tester | sonnet / high | Hecho: ASR4 CUMPLE (p95 7,2 ms con 30 eventos/s). ASR1 CUMPLE en fichas y en la portada a 60 visitas/s; CUMPLE CON RESERVAS en la portada a 120 visitas/s con 2 réplicas (visita completa hasta 10 s; el cuello son las fotos leídas de MySQL; una caché de fotos en NGINX lo elimina: decisión pendiente del arquitecto). Detalle en 07 |
+| 27e | Verificación QA de 27a-c y 27g | qa-tester | sonnet / **high** | Aprobado: científico 654, consulta-publica 408, web-publica 55 unitarios y E2E 38/38 ×3; Bruno 132/133 (el fallo es de datos locales). Verificación en vivo de D66, CORS y CSP OK. Bajos: OBS-I27-1 (`creadoEn` null en el 201 de evidencias), OBS-I27-2 (409 y fallos en segundo plano de `republicar` sin documentar), OBS-I27-3 (404 sin problem+json) |
+| 27f | Auditoría de seguridad de D66 y del detector | ciberseguridad | opus / high | Aprobado con observaciones: 0 Crít/Alt. Medios SEC-I27-1 (regresiones del detector unificado: "5.532, 73.367", "5°31N", Garmin) y SEC-I27-2 (claves/números en atributos); Bajo SEC-I27-8 (CSP del README) |
+
+**Coordinación:** D65 lo diseñó Santiago; avisarle de D66 antes del PR. BE-R-1 toca `registro` (Hernando): avisarle también.
+
+**Modelos y consumo (iteración 27):**
+| Fase | USD acumulado | Agente que más consumió | Cambios de modelo (motivo) |
+|---|---:|---|---|
+| Construcción (27a-c) | 5,61 (sonnet 3,89; opus 1,72) | backend-senior consulta-publica (1,97) | Ninguno: todo según la matriz equilibrada |
+
+**Decisiones a llevar al grupo:** (1) el detector unificado rechaza "long. 12 cm" y "lat 3" (Hernando); (2) una foto retirada puede seguir hasta un año en navegadores por `immutable` (D66); (3) búsquedas y catálogo tardan hasta ~90 s en reflejar un cambio (TTL).
+
+**Ciclo de corrección 1 (seguridad):**
+| # | Tarea | Responsable | Modelo | Estado |
+|---|---|---|---|---|
+| 27g | SEC-I27-1 (detector endurecido en las 2 copias + paridad), SEC-I27-2 (claves y pares numéricos en atributos y plantillas), SEC-I27-7 (log del administrador y 409), SEC-I27-8 (`blob:` en la CSP del README) | backend-senior | sonnet / high | Hecho en la copia `/home/toji/biohub-fix27`: científico 654 tests y consulta-publica 408, 0 fallos. Corpus 41/41 detectados, 37/37 legítimos. **Pasado a la rama el 2026-11-22** (solo código, tests y README de web-publica; `pruebas-carga/` de la rama es más nuevo y se conservó) |
+| 27h | Re-verificación de seguridad del ciclo 27g | ciberseguridad | opus / high | Aprobado con observaciones: SEC-I27-1/2/7/8 cerrados. Nuevos: Medios SEC-I27g-1 (formatos no detectados: espacios múltiples, hemisferio en minúscula, GMS sin °, UTM/MGRS, Plus Codes) y SEC-I27g-2 (claves `norte`/`este`, camelCase, tope de 64); Bajos SEC-I27g-3 (Unicode) y SEC-I27g-4 (paridad de corpus entre módulos). Pasan a la siguiente iteración |
+| 27i | Partes rápidas de SEC-I27g-1 (espacios, hemisferio en minúscula, GMS sin °, longitud primero) y SEC-I27g-2 (camelCase/punto en claves, `norte`/`este`), pedidas por Juanita antes del PR | backend-senior | sonnet / high | Hecho en `biohub-fix27`: científico 677 tests y consulta-publica 408, 0 fallos (3 omitidos de siempre). Corpus 65 detectados / 57 legítimos / 9 dudosos. Nuevos falsos positivos: `talla 5 12 n`, `n 12 3.5`, `70.250, 3.100 g`. Pasado a la rama; el Tech Lead corrió `verify`: científico 680 (3 omitidos) y consulta-publica 408, 0 fallos |
+
+Pendiente para el grupo: la regla de pares numéricos rechaza `{"largo": 1.234, "ancho": 2.345}` (≥ 3 decimales y en rango). Si molesta, exigir ≥ 4 decimales fuera del rango de Colombia.
+
+Cambio de modelo: 27e pasa a sonnet/**high** (matriz: medium) porque levanta y prueba todo el sistema y además consolida k6.
+
+**Pasan a la siguiente iteración:** SEC-I27g-1 (UTM/MGRS, Plus Codes, enlaces de mapas), SEC-I27g-2 (tope de 64, `x`/`y` con grado, objetos hermanos, `geo_latitud`), SEC-I27g-3, SEC-I27g-4, OBS-I27-1..3, el tercer detector `DetectorCoordenadasEnTexto` y la decisión sobre la caché de fotos para ASR1.
+
+**Falsos positivos nuevos para el grupo:** `talla 5 12 n`, `n 12 3.5`, `70.250, 3.100 g`.
+
+| Fase | USD (sesión 2026-11-22) | Agente que más consumió | Cambios de modelo (motivo) |
+|---|---:|---|---|
+| Calidad y cierre (27d, 27e, 27h, 27i) | 5,14 (opus 2,95; sonnet 2,19) | qa-tester (1,75) | qa-tester sonnet/**high** (matriz: medium): sistema completo más k6 |
+
+**Estado de Juanita (2026-11-22):** su parte de la revisión 2026-11-19 está **completa** (PR #18 hacia `develop`, lo mezcla ella). Las decisiones de grupo y los hallazgos de seguimiento (SEC-I27g-1..4, OBS-I27-1..3, caché de fotos para ASR1) quedan como seguimiento del grupo, sin asignar a Juanita.
+
+**Ciclo de corrección 2 (CI del PR #18):** `QaEventosInvalidosDlqTest` fallaba al azar en GitHub. Causa raíz: el patrón `PLANAS` del detector unificado (nuevo en esta iteración) aceptaba una letra suelta pegada a 7 cifras, así que un UUID que empieza por `e` y 7 dígitos (unos 2 de cada 1.000) se tomaba por coordenada plana y el evento se descartaba en silencio (en producción, la ficha no se habría publicado). Severidad Alta. Corrección del Tech Lead: la letra sola `n`/`e` exige espacio, `:` o `=` antes del número; corpus con UUID legítimos y resumen del bloque actualizados en los dos servicios; 0 de 200.000 UUID marcados. `verify`: científico 677 (+3 omitidos) y consulta-publica 408, 0 fallos. Se revirtió el aumento del tiempo de espera de la prueba (no era la causa). Efecto en seguridad: ya no se detecta una plana escrita sin separador (`e1045678`); se acepta.

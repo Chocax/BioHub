@@ -26,7 +26,7 @@ import co.edu.unbosque.biohub.sondaseguridad.VerificadorDeEndpoints.Registrado;
  * SEC-J-22 y SEC-J-I22: prueba de comportamiento sobre TODOS los endpoints de servicio-cientifico. Carga todos los
  * controladores del paquete base ({@code @WebMvcTest} sin lista; sus servicios se simulan solos con
  * {@link MocksDeDependencias}), recorre cada mapping registrado en Spring MVC y exige que un JWT sin roles reciba
- * 403 y nunca ejecute el método. Todo {@code /api/cientifico/**} exige rol (D55), salvo la foto pública de RUTAS_PUBLICAS (D65).
+ * 403 y nunca ejecute el método. Todo {@code /api/cientifico/**} exige rol (D55), sin excepciones (D66 eliminó la foto pública sin rol de D65).
  * Si mañana aparece un endpoint sin control (por la vía que sea), esta prueba falla aunque
  * {@code ArquitecturaSeguridadTest} no conozca esa vía.
  */
@@ -35,11 +35,10 @@ import co.edu.unbosque.biohub.sondaseguridad.VerificadorDeEndpoints.Registrado;
 class TodosLosEndpointsExigenRolTest {
 
     /**
-     * Rutas que no exigen rol (método + patrón exactos). Solo la foto pública de una especie (D65): entrega fotos que
-     * un investigador marcó como públicas, para el Servicio de Consulta Pública. Desde internet no se llega (el
-     * gateway exige rol en /api/cientifico/**); cualquier otra ruta sin rol hace fallar esta prueba.
+     * Rutas que no exigen rol (método + patrón exactos). Ninguna: la foto pública de D65 se eliminó en D66 (las
+     * fotos viajan por el evento {@code evidencia.publicada}); cualquier ruta sin rol hace fallar esta prueba.
      */
-    static final Set<String> RUTAS_PUBLICAS = Set.of("GET /api/cientifico/publico/especies/foto");
+    static final Set<String> RUTAS_PUBLICAS = Set.of();
 
     @Autowired
     private ApplicationContext ctx;

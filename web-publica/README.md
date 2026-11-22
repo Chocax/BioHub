@@ -19,13 +19,13 @@ Variables: `E2E_SIN_WEBKIT=1` omite Safari si faltan sus librerías del sistema;
 ## Seguridad: CSP y cabeceras (SEC-J-07)
 `index.html` lleva una `<meta http-equiv="Content-Security-Policy">`; el build sustituye `%CONNECT_SRC%` por el origen de
 `VITE_API_URL`. En `vite dev` la meta se quita (el refresco en caliente usa scripts en línea). No hay `unsafe-inline` en
-`script-src` ni en `style-src`. El portal no usa mapas, así que no se permiten teselas en `img-src`.
+`script-src` ni en `style-src`. El portal no usa mapas, así que no se permiten teselas en `img-src`; `blob:` sí, porque las fotos se piden con `fetch` y se muestran como `blob:` (D66).
 
 Una `<meta>` no admite `frame-ancestors`, `X-Content-Type-Options` ni `Referrer-Policy` (esta última sí por `<meta name="referrer">`).
 El servidor o CDN que sirva `dist/` debe enviar estas cabeceras en todas las respuestas (sustituye `<gateway>` por el origen de la API):
 
 ```
-Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://<gateway>; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://<gateway>; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 X-Content-Type-Options: nosniff
 Referrer-Policy: strict-origin-when-cross-origin
 Permissions-Policy: geolocation=(), camera=(), microphone=()
@@ -33,7 +33,7 @@ Permissions-Policy: geolocation=(), camera=(), microphone=()
 Ejemplo `vercel.json` (SEC-J-07):
 ```json
 { "headers": [{ "source": "/(.*)", "headers": [
-  { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://<gateway>; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" },
+  { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://<gateway>; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" },
   { "key": "X-Content-Type-Options", "value": "nosniff" },
   { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
   { "key": "Permissions-Policy", "value": "geolocation=(), camera=(), microphone=()" }

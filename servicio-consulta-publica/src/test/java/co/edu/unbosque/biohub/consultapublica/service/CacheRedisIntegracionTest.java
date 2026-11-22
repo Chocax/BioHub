@@ -64,7 +64,7 @@ class CacheRedisIntegracionTest extends BaseIntegracion {
     }
 
     @Test
-    void laBusquedaSeCacheaPor60SegundosYSeVaciaTrasUnEvento() throws Exception {
+    void laBusquedaSeCacheaPor60SegundosYUnEventoNoLaVacia() throws Exception {
         UUID id = crear("cache2", "Atelopus dos");
         mvc.perform(get("/api/publica/fichas").param("q", "atelopus")).andExpect(jsonPath("$.total").value(1));
         Set<String> claves = claves("busquedas::*");
@@ -77,8 +77,26 @@ class CacheRedisIntegracionTest extends BaseIntegracion {
         mvc.perform(get("/api/publica/fichas").param("q", "atelopus").param("page", "1"));
         assertThat(claves("busquedas::*")).hasSize(2);
 
+        // ARQ-R-5: un evento de hallazgo evicta solo su ficha; las búsquedas conservan su entrada hasta que expire el TTL
         invalidador.invalidar(id);
-        assertThat(claves("busquedas::*")).isEmpty();
+        assertThat(claves("busquedas::*")).hasSize(2);
+    }
+
+    @Test
+    void unaFotoVaciaSoloElCatalogoPorEspecies() throws Exception {
+        UUID id = crear("cache6", "Atelopus seis");
+        mvc.perform(get("/api/publica/especies")).andExpect(status().isOk());
+        mvc.perform(get("/api/publica/especies/familias")).andExpect(status().isOk());
+        mvc.perform(get("/api/publica/fichas").param("q", "atelopus")).andExpect(status().isOk());
+        assertThat(claves("especies::*")).hasSize(1);
+        assertThat(claves("familias::*")).hasSize(1);
+        assertThat(claves("busquedas::*")).hasSize(1);
+
+        invalidador.invalidarCatalogoPorFoto(id);
+
+        assertThat(claves("especies::*")).isEmpty();
+        assertThat(claves("familias::*")).hasSize(1);
+        assertThat(claves("busquedas::*")).hasSize(1);
     }
 
     @Test

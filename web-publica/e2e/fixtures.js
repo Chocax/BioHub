@@ -28,7 +28,10 @@ export const FICHA_COMUN = {
   departamentoCodigo: '05',
 };
 
-const resumen = ({ tipoEspecimen, fechaRecoleccion, descripcion, ubicacionProtegida, ...r }) => r;
+export const FOTO_ID_PELIGRO = '9b1d4c2e-7a3f-4d5b-8c6e-1f2a3b4c5d6e';
+// La especie en peligro trae fotoId (la foto responde 404 en el arnés); la otra no trae (no se pide nada).
+const resumen = ({ tipoEspecimen, fechaRecoleccion, descripcion, ubicacionProtegida, ...r }) =>
+  ({ ...r, fotoId: r.id === ID_PELIGRO ? FOTO_ID_PELIGRO : null });
 
 export function pagina(fichas) {
   return {
@@ -66,7 +69,7 @@ export async function simularApi(page, { modo = 'normal' } = {}) {
     if (url.pathname.endsWith('/api/publica/especies/familias')) {
       return route.fulfill(json(200, { familias: ['Bufonidae'] }));
     }
-    if (url.pathname.endsWith('/api/publica/especies/foto')) {
+    if (url.pathname.includes('/api/publica/especies/fotos/')) {
       return route.fulfill({ status: 404, body: '' }); // sin foto: el portal muestra la ilustración
     }
     const m = url.pathname.match(/\/api\/publica\/fichas\/([^/]+)$/);

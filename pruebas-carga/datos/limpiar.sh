@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Borra TODO lo que dejaron las pruebas de carga: fichas con prefijo c0a9a000 (semilla + eventos), claves de caché
+# Borra TODO lo que dejaron las pruebas de carga: fichas con prefijo c0a9a000 (semilla + eventos), fotos públicas de carga
+# (evidencia_id con prefijo c0a9a000, sembrar-fotos.sh), claves de caché
 # de consulta-publica en Redis (son solo caché) y los objetos temporales de la carga científica en RabbitMQ
 # (exchange biohub.eventos.carga y la cola de carga con su DLQ; la cola/DLQ de desarrollo NO se tocan).
 # Ejecutar con la carga detenida (docker compose ... down): si las réplicas siguen vivas, perderían su cola.
@@ -11,7 +12,7 @@ set -a; . ./.env; set +a
 COLA_CARGA="${COLA_CARGA:-consulta-publica.carga.eventos}"
 # `docker exec -e NOMBRE` (sin valor) toma la variable del entorno de este proceso: no aparece en `ps`.
 MYSQL_PWD="$MYSQL_LECTURA_ROOT_PASSWORD" docker exec -i -e MYSQL_PWD biohub-mysql-lectura mysql -uroot consulta_publica \
-  -e "DELETE FROM ficha_publica WHERE HEX(hallazgo_id) LIKE 'C0A9A000%'; SELECT COUNT(*) AS fichas_de_carga_restantes FROM ficha_publica WHERE HEX(hallazgo_id) LIKE 'C0A9A000%'; SELECT COUNT(*) AS fichas_totales FROM ficha_publica;"
+  -e "DELETE FROM foto_publica WHERE HEX(evidencia_id) LIKE 'C0A9A000%'; DELETE FROM ficha_publica WHERE HEX(hallazgo_id) LIKE 'C0A9A000%'; SELECT COUNT(*) AS fichas_de_carga_restantes FROM ficha_publica WHERE HEX(hallazgo_id) LIKE 'C0A9A000%'; SELECT COUNT(*) AS fichas_totales FROM ficha_publica;"
 # Caché de Redis: solo claves del servicio (biohub:publica:*), que son caché reconstruible.
 REDISCLI_AUTH="$REDIS_PASSWORD" docker exec -e REDISCLI_AUTH biohub-redis sh -c "redis-cli --scan --pattern 'biohub:publica:*' | xargs -r redis-cli del" >/dev/null 2>&1 || true
 # RabbitMQ (API de management): las credenciales se entregan a curl por stdin (-K -), no por -u.

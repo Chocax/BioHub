@@ -47,13 +47,14 @@ crear "$RABBITMQ_CIENTIFICO_USER" "$RABBITMQ_CIENTIFICO_PASSWORD" \
   '^biohub\\.eventos$' \
   '^$'
 
-# Cada consumidor declara los exchanges, su cola y su DLQ, y solo escribe en lo suyo. Necesita write sobre
+# Cada consumidor declara los exchanges, sus colas y sus DLQ, y solo escribe en lo suyo (consulta-publica tiene dos
+# colas: eventos y fotos, D66). Necesita write sobre
 # biohub.eventos.dlx porque RabbitMQ lo exige para declarar una cola con dead-letter exchange. Lo protegido
 # es biohub.eventos: ahí ningún consumidor puede publicar.
 crear "$RABBITMQ_CONSULTA_USER" "$RABBITMQ_CONSULTA_PASSWORD" \
-  '^(biohub\\.eventos|biohub\\.eventos\\.dlx|consulta-publica\\.eventos(\\.dlq)?)$' \
-  '^(biohub\\.eventos\\.dlx|consulta-publica\\.eventos(\\.dlq)?)$' \
-  '^(biohub\\.eventos|biohub\\.eventos\\.dlx|consulta-publica\\.eventos(\\.dlq)?)$'
+  '^(biohub\\.eventos|biohub\\.eventos\\.dlx|consulta-publica\\.(eventos|fotos)(\\.dlq)?)$' \
+  '^(biohub\\.eventos\\.dlx|consulta-publica\\.(eventos|fotos)(\\.dlq)?)$' \
+  '^(biohub\\.eventos|biohub\\.eventos\\.dlx|consulta-publica\\.(eventos|fotos)(\\.dlq)?)$'
 
 # Reportes además publica sus propias solicitudes de reporte (HU-09, SD-08) en biohub.reportes y las consume de
 # reportes.solicitudes: es una cola interna suya y nadie más escribe ahí.
