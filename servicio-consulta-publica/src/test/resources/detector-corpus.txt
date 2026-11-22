@@ -77,6 +77,12 @@
 +|Norte 1012345 Este 1045678 (Magna Origen Bogotá)
 +|N: 1.012.345 E: 1.045.678
 +|E 1045678 N 1012345
++|N=1012345 E=1045678
+# --- Identificadores: un UUID o un hash que empieza por "e" y 7 cifras no es una coordenada plana (CI del PR #18) ---
+-|e5926615-93c3-4e3a-809c-8d03fe2da7c5
+-|{"id":"e3370060-353a-42fe-88e8-c26a810ae484","tipo":"hallazgo.registrado"}
+-|hallazgo E9165664-A04B-4D78-8688-C8405F8D1DEC
+-|n1012345
 +|18N 612345 1012345
 # --- Legítimos que deben pasar ---
 -|Longitud total: 12 cm
@@ -149,4 +155,4 @@
 ?|70.250, 3.100 g
 #
 # Resumen SHA-256 del bloque <reglas-compartidas> sin espacios (se actualiza al cambiar las reglas, en las dos copias):
-@reglas-sha256=750e7b3a6d52d6edd72f14bbcd277d24a83a2fe7ade05777df2485479ee22f56
+@reglas-sha256=d5e5b899395850da81ce20f98c5d94817ae61f5f09610ab524fa33d2eaa6643e

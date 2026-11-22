@@ -90,9 +90,12 @@ public final class DetectorCoordenadas {
             "(?iu)\\b(?:\\d{1,3}[.,]\\d{3,}\\s{0,2}(?:norte|sur|este|oeste)\\b"
                     + "|(?:latitud|longitud)\\s{0,2}(?:norte|sur|este|oeste)\\s{0,2}:?\\s{0,2}\\d"
                     + "|(?:norte|sur|este|oeste)\\s{0,2}:?\\s{0,2}\\d{1,3}[.,]\\d{4,})");
-    /** Coordenadas planas MAGNA/IGAC (7 cifras): "Norte 1012345 Este 1045678", "N: 1.012.345". */
+    /**
+     * Coordenadas planas MAGNA/IGAC (7 cifras): "Norte 1012345 Este 1045678", "N: 1.012.345". La letra sola (n/e) exige
+     * espacio, ":" o "=" antes del número: pegada ("e5926615") es el inicio de un UUID o de un hash, no una coordenada.
+     */
     private static final Pattern PLANAS = Pattern.compile(
-            "(?iu)\\b(?:norte|este|n|e)\\s{0,2}[:=]?\\s{0,2}\\d(?:\\.?\\d{3}){2}\\b");
+            "(?iu)\\b(?:(?:norte|este)\\s{0,2}[:=]?|[ne](?:\\s{1,2}|\\s{0,2}[:=]))\\s{0,2}\\d(?:\\.?\\d{3}){2}\\b");
     /** UTM con zona y banda: "18N 612345 1012345". */
     private static final Pattern UTM = Pattern.compile(
             "\\b\\d{1,2}[C-HJ-NP-X]\\s{1,3}\\d{5,7}" + SEP + "\\d{5,8}\\b");
