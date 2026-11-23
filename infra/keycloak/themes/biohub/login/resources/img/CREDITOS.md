@@ -25,3 +25,13 @@ Church viajó por Colombia en 1853 (río Magdalena, Bogotá, el Tequendama, el p
 | `sudamerica.webp` | Paisaje sudamericano (*South American Landscape*) | Frederic Edwin Church, década de 1850 | `ld1-1643399887910-1643399894685-0` | `CHSDM-23497_02-000001` |
 | `chimborazo.webp` | Chimborazo y Carihuairazo desde Riobamba, Ecuador (*Chimborazo and Carihuairazo from Riobamba, Ecuador*) | Frederic Edwin Church, década de 1850 | `ld1-1643399887910-1643399894681-0` | `CHSDM-23492_01` |
 | `sangay.webp` | El Sangay en erupción, Ecuador (*Sangay Erupting, Ecuador*) | Frederic Edwin Church, década de 1850 | `ld1-1643399887910-1643399894350-0` | `CHSDM-23043_01-000001` |
+
+## Historia de Colombia (Wikimedia Commons, dominio público)
+
+Acuarelas de la Comisión Corográfica y de Edward Walhouse Mark, una lámina de la Expedición Botánica y un grabado de Humboldt. Las bajó Santiago desde su navegador (Commons bloquea las descargas automáticas). Se recortaron dentro del marco pintado (sin el papel, los rótulos manuscritos ni los sellos de la colección), se redujeron y se pasaron a WebP.
+
+| Archivo | Obra | Autor y año | Colección | Licencia | Fuente |
+|---|---|---|---|---|---|
+| `chita.webp` | Vista del nevado de Chita y del gran nevero que tiene hacia Güicán (Tundama) | Carmelo Fernández, Comisión Corográfica, 1851 | Biblioteca Nacional de Colombia | Dominio público | https://commons.wikimedia.org/wiki/File:Vista_del_nevado_de_Chita_i_del_gran_nevero_que_tiene_hacia_Guicán.jpg |
+| `cachiri.webp` | Casa principal de Cachirí (Soto) | Carmelo Fernández, Comisión Corográfica, 1850 | Biblioteca Nacional de Colombia | Dominio público | https://commons.wikimedia.org/wiki/File:Soto_-_Casa_principal_de_Cachirí_(1850).jpg |
+| `mariquita.webp` | Minas de plata de Santa Ana (provincia de Mariquita) | Henry Price, Comisión Corográfica, 1852 | Biblioteca Nacional de Colombia | Dominio público | https://commons.wikimedia.org/wiki/File:Wdl_09138-fc_corografica_140-V02.jpg |

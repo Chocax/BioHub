@@ -20,4 +20,12 @@ Church viajó por Colombia en 1853 (río Magdalena, Bogotá, el Tequendama, el p
 | `chimborazo-grande.webp`, `chimborazo-1600.webp`, `chimborazo-800.webp` | Chimborazo y Carihuairazo desde Riobamba, Ecuador (*Chimborazo and Carihuairazo from Riobamba, Ecuador*) | Frederic Edwin Church, década de 1850 | `ld1-1643399887910-1643399894681-0` | `CHSDM-23492_01` |
 | `sangay-grande.webp`, `sangay-1600.webp`, `sangay-800.webp` | El Sangay en erupción, Ecuador (*Sangay Erupting, Ecuador*) | Frederic Edwin Church, década de 1850 | `ld1-1643399887910-1643399894350-0` | `CHSDM-23043_01-000001` |
 
+## Historia de Colombia (Wikimedia Commons, dominio público)
+
+Acuarelas de la Comisión Corográfica y de Edward Walhouse Mark, una lámina de la Expedición Botánica y un grabado de Humboldt. Las bajó Santiago desde su navegador (Commons bloquea las descargas automáticas). Se recortaron dentro del marco pintado (sin el papel, los rótulos manuscritos ni los sellos de la colección), se redujeron y se pasaron a WebP.
+
+| Archivo | Obra | Autor y año | Colección | Licencia | Fuente |
+|---|---|---|---|---|---|
+| `chita-grande.webp`, `chita-1600.webp`, `chita-800.webp` | Vista del nevado de Chita y del gran nevero que tiene hacia Güicán (Tundama) | Carmelo Fernández, Comisión Corográfica, 1851 | Biblioteca Nacional de Colombia | Dominio público | https://commons.wikimedia.org/wiki/File:Vista_del_nevado_de_Chita_i_del_gran_nevero_que_tiene_hacia_Guicán.jpg |
+
 Las ilustraciones (monograma, follaje, mariposa morpho) son SVG propios del proyecto, en `src/components/Ilustraciones.jsx`.

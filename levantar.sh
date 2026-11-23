@@ -253,7 +253,7 @@ docker compose version >/dev/null 2>&1 || salir 'Falta el plugin docker compose 
 # ------------------------------------------------------------------------------------- 2. variables
 titulo "2/7 Revisando variables ($(basename "$RUTA_ENV"), perfil $PERFIL)"
 [ -f "$RUTA_ENV" ] || salir "No existe $RUTA_ENV. Cópialo del ejemplo:  cp .env.example .env  y cambia las contraseñas."
-obligatorias=(REDIS_PASSWORD RABBITMQ_USER RABBITMQ_PASSWORD KEYCLOAK_ADMIN_USER KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_TEST_USERS_PASSWORD KEYCLOAK_GATEWAY_CLIENT_SECRET)
+obligatorias=(REDIS_PASSWORD RABBITMQ_USER RABBITMQ_PASSWORD KEYCLOAK_ADMIN_USER KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_TEST_USERS_PASSWORD)
 [ "$PERFIL" = local ] && obligatorias+=(MYSQL_TRANSACCIONAL_ROOT_PASSWORD MYSQL_CIENTIFICO_USER MYSQL_CIENTIFICO_PASSWORD MYSQL_EQUIPOS_USER
   MYSQL_EQUIPOS_PASSWORD MYSQL_LECTURA_ROOT_PASSWORD MYSQL_LECTURA_USER MYSQL_LECTURA_PASSWORD MYSQL_ANALITICA_ROOT_PASSWORD
   MYSQL_ANALITICA_USER MYSQL_ANALITICA_PASSWORD MYSQL_GATEWAY_ROOT_PASSWORD MYSQL_GATEWAY_USER MYSQL_GATEWAY_PASSWORD)
@@ -278,6 +278,12 @@ UBICACION_CLAVE_ACTIVA=v1"
   leer_env; aviso 'no había UBICACION_CLAVES: generé una llave local y la agregué al final del .env'
 else
   bien 'llave de cifrado de coordenadas presente'
+fi
+# Secreto del cliente biohub-gateway de Keycloak (siempre en Docker): si falta se genera y más abajo se le pone al cliente.
+if [ -z "$(valor KEYCLOAK_GATEWAY_CLIENT_SECRET '')" ]; then
+  agregar_al_env "# Secreto del cliente biohub-gateway de Keycloak: lo generó levantar.sh.
+KEYCLOAK_GATEWAY_CLIENT_SECRET=$(clave_al_azar 24)"
+  leer_env; aviso 'no había KEYCLOAK_GATEWAY_CLIENT_SECRET: generé uno y lo agregué al final del .env'
 fi
 # Usuarios de migraciones de las bases locales: uno por servicio, distinto del de la app (como en Aiven).
 if [ "$PERFIL" = local ]; then
@@ -360,19 +366,27 @@ if curl -fsS --max-time 8 -o /dev/null "$URL_TOKEN" --data-urlencode grant_type=
      --data-urlencode username=admin1 --data-urlencode "password=$(valor KEYCLOAK_TEST_USERS_PASSWORD '')"; then
   bien 'usuarios de prueba entran con la contraseña del .env'
 else aviso 'los usuarios de prueba NO entran con la contraseña del .env (el realm se importó con otra).'; nota 'Arréglalo con:  ./levantar.sh --reimportar-realm'; fi
-if curl -fsS --max-time 8 -o /dev/null "$URL_TOKEN" --data-urlencode grant_type=client_credentials --data-urlencode client_id=biohub-gateway \
-     --data-urlencode "client_secret=$(valor KEYCLOAK_GATEWAY_CLIENT_SECRET '')"; then
-  bien 'cliente del gateway listo (administración de usuarios)'
-else aviso 'el cliente biohub-gateway no acepta el secreto del .env: la sala Usuarios fallará.'; nota 'Arréglalo con:  ./levantar.sh --reimportar-realm'; fi
-# Tema de inicio de sesión de BioHub (D64): un realm importado antes no lo tiene; se activa por la API de administración.
-token_admin="$(curl -fsS --max-time 8 "http://localhost:$KC/realms/master/protocol/openid-connect/token" --data-urlencode grant_type=password \
-  --data-urlencode client_id=admin-cli --data-urlencode "username=$(valor KEYCLOAK_ADMIN_USER '')" --data-urlencode "password=$(valor KEYCLOAK_ADMIN_PASSWORD '')" 2>/dev/null |
+gateway_entra() { curl -fsS --max-time 8 -o /dev/null "$URL_TOKEN" --data-urlencode grant_type=client_credentials   --data-urlencode client_id=biohub-gateway --data-urlencode "client_secret=$(valor KEYCLOAK_GATEWAY_CLIENT_SECRET '')"; }
+# Token de administración (realm master): lo usan el secreto del gateway y el tema del login.
+token_admin="$(curl -fsS --max-time 8 "http://localhost:$KC/realms/master/protocol/openid-connect/token" --data-urlencode grant_type=password   --data-urlencode client_id=admin-cli --data-urlencode "username=$(valor KEYCLOAK_ADMIN_USER '')" --data-urlencode "password=$(valor KEYCLOAK_ADMIN_PASSWORD '')" 2>/dev/null |
   sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')"
+if gateway_entra; then
+  bien 'cliente del gateway listo (administración de usuarios)'
+else
+  # El secreto solo se toma al importar el realm la primera vez: se le pone al cliente el del .env, sin reimportar.
+  id_cliente=""
+  [ -n "$token_admin" ] && id_cliente="$(curl -fsS --max-time 8 -H "Authorization: Bearer $token_admin"     "http://localhost:$KC/admin/realms/biohub/clients?clientId=biohub-gateway" 2>/dev/null | sed -n 's/^\[{"id":"\([^"]*\)".*/\1/p')"
+  [ -n "$id_cliente" ] && curl -fsS --max-time 8 -X PUT -H "Authorization: Bearer $token_admin" -H 'Content-Type: application/json'     -d "{\"clientId\":\"biohub-gateway\",\"secret\":\"$(valor KEYCLOAK_GATEWAY_CLIENT_SECRET '')\"}"     "http://localhost:$KC/admin/realms/biohub/clients/$id_cliente" -o /dev/null
+  if gateway_entra; then bien 'cliente del gateway listo: le puse en Keycloak el secreto del .env'
+  elif [ -z "$id_cliente" ]; then aviso 'tu Keycloak no tiene el cliente biohub-gateway (se importó antes de que existiera): la sala Usuarios fallará.'
+    nota 'Arréglalo con:  ./levantar.sh --reimportar-realm   (borra los usuarios que hayas creado a mano en Keycloak)'
+  else aviso 'el cliente biohub-gateway no acepta el secreto del .env: la sala Usuarios fallará.'; nota 'Arréglalo con:  ./levantar.sh --reimportar-realm'; fi
+fi
+# Tema de inicio de sesión de BioHub (D64): un realm importado antes no lo tiene; se activa por la API de administración.
 if [ -n "$token_admin" ]; then
   if curl -fsS --max-time 8 -H "Authorization: Bearer $token_admin" "http://localhost:$KC/admin/realms/biohub" | grep -q '"loginTheme":"biohub"'; then
     bien 'tema de inicio de sesión de BioHub'
-  elif curl -fsS --max-time 8 -X PUT -H "Authorization: Bearer $token_admin" -H 'Content-Type: application/json' \
-         -d '{"loginTheme":"biohub"}' "http://localhost:$KC/admin/realms/biohub" -o /dev/null; then
+  elif curl -fsS --max-time 8 -X PUT -H "Authorization: Bearer $token_admin" -H 'Content-Type: application/json'          -d '{"loginTheme":"biohub"}' "http://localhost:$KC/admin/realms/biohub" -o /dev/null; then
     bien 'tema de inicio de sesión de BioHub activado'
   fi
 else aviso 'no se pudo activar el tema de inicio de sesión (no impide entrar): revisa KEYCLOAK_ADMIN_USER y KEYCLOAK_ADMIN_PASSWORD'; fi

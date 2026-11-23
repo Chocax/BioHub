@@ -15,7 +15,7 @@ const MODULOS = [
   { capacidad: 'verMapa', ruta: '/mapa', titulo: 'Mapa de coordenadas', texto: 'Ubicaciones exactas, solo para alto rango.', imagen: 'chimborazo', encuadre: '50% 35%' },
   { capacidad: 'verPlantillas', ruta: '/plantillas', titulo: 'Fichas taxonómicas', texto: 'Atributos flexibles por especie.', imagen: 'pitahaya', encuadre: '35% 68%' },
   { capacidad: 'equipos', ruta: '/equipos', titulo: 'Equipos de campo', texto: 'Drones, cámaras trampa y sensores con su custodio.', imagen: 'sangay', encuadre: '58% 40%' },
-  { capacidad: 'reportes', ruta: '/reportes', titulo: 'Presión sobre ecosistemas', texto: 'Reporte mensual con zonas de alerta.', imagen: 'rio', encuadre: '85% 30%' },
+  { capacidad: 'reportes', ruta: '/reportes', titulo: 'Presión sobre ecosistemas', texto: 'Reporte mensual con zonas de alerta.', imagen: 'mariquita', encuadre: '45% 60%' },
   { capacidad: 'usuarios', ruta: '/usuarios', titulo: 'Usuarios y roles', texto: 'Altas, cambios de rol y accesos.', imagen: 'sudamerica', encuadre: '45% 55%' },
   { capacidad: 'apiKeys', ruta: '/api-keys', titulo: 'API para externos', texto: 'Llaves y límites para universidades y ONG.', imagen: 'tequendama-cima', encuadre: '42% 50%' },
 ];
@@ -38,7 +38,7 @@ const DIAPOSITIVAS = [
     texto: 'Los investigadores definen qué se mide de cada especie, como el canto de un ave o la temperatura del agua de una rana, sin tocar código.' },
   { pintura: 'tequendama', titulo: 'Un país que cabe en un inventario',
     texto: 'Colombia es uno de los países más biodiversos del planeta. Cada hallazgo que registras suma al inventario que ayuda a protegerla.' },
-  { pintura: 'lluvia', titulo: 'Dos siglos de expedicionarios',
+  { pintura: 'chita', titulo: 'Dos siglos de expedicionarios',
     texto: 'De la Expedición Botánica de Mutis a la Comisión Corográfica, el país lleva más de doscientos años documentando su naturaleza. BioHub continúa ese trabajo.' },
   { pintura: 'chimborazo', titulo: 'Del páramo al bosque de niebla',
     texto: 'En pocos kilómetros de cordillera cambian el clima, las plantas y los animales. Por eso cada hallazgo guarda su departamento y, cifrado, su punto exacto.' },

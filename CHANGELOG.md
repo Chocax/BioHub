@@ -7,6 +7,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 ### Added (obras, 2026-11-22)
 - Seis obras nuevas de dominio público (CC0, Cooper Hewitt): Frederic E. Church en Colombia y los Andes. Entran a las pinturas al azar de las salas, a las tarjetas y al carrusel del inicio interno (dos diapositivas nuevas), al fondo del inicio de sesión (12 obras) y al cielo del portal (7 obras).
 - El carrusel del inicio interno respeta el encuadre de cada obra.
+- Ocho obras de historia de Colombia (Comisión Corográfica, E. W. Mark, Expedición Botánica, Humboldt), dominio público, en las salas, el carrusel, el login (15 obras) y el cielo del portal (8 obras).
 
 ### Security (revisión del equipo, 2026-11-21)
 - Evidencias sin ubicación también en audios y en JPEG con datos pegados: el JPEG se recorre completo y se corta en el fin de imagen; WAV, MP3, FLAC y OGG se reconstruyen solo con el sonido.

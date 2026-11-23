@@ -100,7 +100,7 @@ export default function Marco() {
       </main>
       <footer className="marco__pie">
         <span>BioHub · Sistema Nacional de Registro y Vigilancia de Biodiversidad</span>
-        <span>Pinturas de dominio público: F. E. Church, M. J. Heade</span>
+        <span>Pinturas de dominio público: F. E. Church, M. J. Heade, Comisión Corográfica, E. W. Mark, Expedición Botánica y Humboldt</span>
       </footer>
     </div>
   );

@@ -366,7 +366,7 @@ if (-not (Test-Path $script:RutaEnv)) {
   Salir "No existe $script:RutaEnv. Cópialo del ejemplo:  Copy-Item .env.example .env  y cambia las contraseñas."
 }
 $obligatorias = @('REDIS_PASSWORD', 'RABBITMQ_USER', 'RABBITMQ_PASSWORD', 'KEYCLOAK_ADMIN_USER', 'KEYCLOAK_ADMIN_PASSWORD',
-  'KEYCLOAK_TEST_USERS_PASSWORD', 'KEYCLOAK_GATEWAY_CLIENT_SECRET')
+  'KEYCLOAK_TEST_USERS_PASSWORD')
 if ($Perfil -eq 'local') {
   $obligatorias += @('MYSQL_TRANSACCIONAL_ROOT_PASSWORD', 'MYSQL_CIENTIFICO_USER', 'MYSQL_CIENTIFICO_PASSWORD', 'MYSQL_EQUIPOS_USER',
     'MYSQL_EQUIPOS_PASSWORD', 'MYSQL_LECTURA_ROOT_PASSWORD', 'MYSQL_LECTURA_USER', 'MYSQL_LECTURA_PASSWORD',
@@ -400,6 +400,20 @@ if (-not (Valor 'UBICACION_CLAVES' '') -and -not $enCientifico.Contains('UBICACI
   Aviso 'no había UBICACION_CLAVES: generé una llave local y la agregué al final del .env'
 } else {
   Bien 'llave de cifrado de coordenadas presente'
+}
+# Secreto del cliente biohub-gateway de Keycloak (el gateway administra usuarios con él, HU-10). Keycloak siempre corre
+# en Docker, así que si falta se genera (solo letras y números) y más abajo se le pone el mismo al cliente.
+if (-not (Valor 'KEYCLOAK_GATEWAY_CLIENT_SECRET' '')) {
+  $bytes = New-Object byte[] 24
+  (New-Object Security.Cryptography.RNGCryptoServiceProvider).GetBytes($bytes)
+  $texto = [IO.File]::ReadAllText($script:RutaEnv)
+  $nuevo = ''
+  if ($texto.Length -gt 0 -and -not $texto.EndsWith("`n")) { $nuevo = "`r`n" }
+  $nuevo += "`r`n# Secreto del cliente biohub-gateway de Keycloak: lo generó levantar.ps1.`r`n"
+  $nuevo += "KEYCLOAK_GATEWAY_CLIENT_SECRET=$(($bytes | ForEach-Object { $_.ToString('x2') }) -join '')`r`n"
+  [IO.File]::AppendAllText($script:RutaEnv, $nuevo)
+  $script:Vars = Leer-Env $script:RutaEnv
+  Aviso 'no había KEYCLOAK_GATEWAY_CLIENT_SECRET: generé uno y lo agregué al final del .env'
 }
 # Usuarios de migración de las bases locales: uno por servicio, distinto del de la app (como en Aiven). Si faltan
 # en el .env se generan contraseñas al azar y se agregan al final, igual que la llave de coordenadas.
@@ -514,19 +528,48 @@ try {
   Aviso 'los usuarios de prueba NO entran con la contraseña del .env (el realm se importó con otra).'
   Nota 'Arréglalo con:  .\levantar.ps1 -ReimportarRealm'
 }
-try {
-  $null = Invoke-RestMethod -Method Post -Uri $urlToken -Body @{ grant_type = 'client_credentials'; client_id = 'biohub-gateway'; client_secret = (Valor 'KEYCLOAK_GATEWAY_CLIENT_SECRET' '') }
-  Bien 'cliente del gateway listo (administración de usuarios)'
-} catch {
-  Aviso 'el cliente biohub-gateway no acepta el secreto del .env: la sala Usuarios fallará.'
-  Nota 'Arréglalo con:  .\levantar.ps1 -ReimportarRealm'
+function Gateway-Entra {
+  try {
+    $null = Invoke-RestMethod -Method Post -Uri $urlToken -Body @{ grant_type = 'client_credentials'; client_id = 'biohub-gateway'; client_secret = (Valor 'KEYCLOAK_GATEWAY_CLIENT_SECRET' '') }
+    return $true
+  } catch { return $false }
 }
-# Tema de inicio de sesión de BioHub (D64). Un realm importado antes de que existiera no lo tiene: se activa por la
-# API de administración, sin tener que reimportar (y sin perder usuarios creados a mano).
+# Token de administración de Keycloak (realm master): lo usan el secreto del gateway y el tema del login.
+$cabeceras = $null
 try {
   $tokenAdmin = Invoke-RestMethod -Method Post -Uri "http://localhost:$kc/realms/master/protocol/openid-connect/token" -Body @{
     grant_type = 'password'; client_id = 'admin-cli'; username = (Valor 'KEYCLOAK_ADMIN_USER' ''); password = (Valor 'KEYCLOAK_ADMIN_PASSWORD' '') }
   $cabeceras = @{ Authorization = "Bearer $($tokenAdmin.access_token)" }
+} catch { }
+if (Gateway-Entra) {
+  Bien 'cliente del gateway listo (administración de usuarios)'
+} else {
+  # El secreto solo se toma al importar el realm la primera vez. Si el .env tiene otro (o uno recién generado), se le
+  # pone al cliente por la API de administración: así no hay que reimportar ni se pierden los usuarios creados a mano.
+  $cliente = $null
+  if ($cabeceras) {
+    try { $cliente = @(Invoke-RestMethod -Uri "http://localhost:$kc/admin/realms/biohub/clients?clientId=biohub-gateway" -Headers $cabeceras)[0] } catch { }
+  }
+  if ($cliente -and $cliente.id) {
+    try {
+      $null = Invoke-RestMethod -Method Put -Uri "http://localhost:$kc/admin/realms/biohub/clients/$($cliente.id)" -Headers $cabeceras `
+        -ContentType 'application/json' -Body (@{ clientId = 'biohub-gateway'; secret = (Valor 'KEYCLOAK_GATEWAY_CLIENT_SECRET' '') } | ConvertTo-Json)
+    } catch { }
+  }
+  if (Gateway-Entra) {
+    Bien 'cliente del gateway listo: le puse en Keycloak el secreto del .env'
+  } elseif (-not $cliente) {
+    Aviso 'tu Keycloak no tiene el cliente biohub-gateway (se importó antes de que existiera): la sala Usuarios fallará.'
+    Nota 'Arréglalo con:  .\levantar.cmd -ReimportarRealm   (borra los usuarios que hayas creado a mano en Keycloak)'
+  } else {
+    Aviso 'el cliente biohub-gateway no acepta el secreto del .env: la sala Usuarios fallará.'
+    Nota 'Arréglalo con:  .\levantar.cmd -ReimportarRealm'
+  }
+}
+# Tema de inicio de sesión de BioHub (D64). Un realm importado antes de que existiera no lo tiene: se activa por la
+# API de administración, sin tener que reimportar (y sin perder usuarios creados a mano).
+try {
+  if (-not $cabeceras) { throw 'sin token de administración' }
   $realm = Invoke-RestMethod -Uri "http://localhost:$kc/admin/realms/biohub" -Headers $cabeceras
   if ($realm.loginTheme -ne 'biohub') {
     $null = Invoke-RestMethod -Method Put -Uri "http://localhost:$kc/admin/realms/biohub" -Headers $cabeceras `
