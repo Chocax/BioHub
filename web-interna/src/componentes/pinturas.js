@@ -15,6 +15,8 @@ export const PINTURAS = {
   guacamaya: { src: '/pinturas/guacamaya.webp', chica: '/pinturas/guacamaya-800.webp', titulo: 'Guacamaya, Bogotá', autor: 'F. E. Church, 1853', encuadre: '55% 12%' },
   sudamerica: { src: '/pinturas/sudamerica.webp', chica: '/pinturas/sudamerica-800.webp', titulo: 'Paisaje sudamericano', autor: 'F. E. Church, década de 1850', encuadre: '45% 55%' },
   chimborazo: { src: '/pinturas/chimborazo.webp', chica: '/pinturas/chimborazo-800.webp', titulo: 'Chimborazo y Carihuairazo desde Riobamba', autor: 'F. E. Church, década de 1850', encuadre: '50% 35%' },
+  nubes: { src: '/pinturas/nubes.webp', chica: '/pinturas/nubes-800.webp', titulo: 'Estudio de cúmulos', autor: 'Círculo de J. Constable, siglo XIX' },
+  tropico: { src: '/pinturas/tropico.webp', chica: '/pinturas/tropico-800.webp', titulo: 'Mañana en el trópico', autor: 'F. E. Church, 1858' },
   // Historia de Colombia: Comisión Corográfica (1850-1852), E. W. Mark (1843-1846), la Expedición Botánica y Humboldt
   chita: { src: '/pinturas/chita.webp', chica: '/pinturas/chita-800.webp', titulo: 'Nevado de Chita, hacia Güicán', autor: 'C. Fernández, Comisión Corográfica, 1851', encuadre: '50% 40%' },
   cachiri: { src: '/pinturas/cachiri.webp', chica: '/pinturas/cachiri-800.webp', titulo: 'Casa principal de Cachirí', autor: 'C. Fernández, Comisión Corográfica, 1850', encuadre: '50% 60%' },
@@ -28,6 +30,16 @@ export const PINTURAS = {
 };
 
 const CLAVES = Object.keys(PINTURAS);
+
+/**
+ * Las obras que se ven a pantalla completa: el carrusel del inicio interno, el cielo del portal y el fondo del login
+ * usan exactamente estas 19 (en orden aleatorio). Quedan fuera las tres verticales y pequeñas (Mutisia, Icononzo y la
+ * catedral de Santa Marta), que solo aparecen en las salas. La prueba listasDeFondos.test.js vigila que las tres listas
+ * (aquí, web-publica/src/paginas/Inicio.jsx y el fondos.js del tema de Keycloak) sigan iguales.
+ */
+export const FONDOS_GRANDES = ['andes', 'rio', 'colibri', 'tequendama', 'lluvia', 'pasiflora', 'nubes', 'tropico',
+  'tequendama-cima', 'pitahaya', 'guacamaya', 'sudamerica', 'chimborazo', 'sangay', 'chita', 'cachiri', 'mariquita',
+  'bongo', 'choachi'];
 
 /** Una pintura al azar (distinta de `evitar`, si se da): cada vez que se abre una sala cambia la obra. */
 export function pinturaAlAzar(evitar) {

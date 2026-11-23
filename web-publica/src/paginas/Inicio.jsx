@@ -11,6 +11,7 @@ import Paginacion from '../components/Paginacion.jsx';
 import TarjetaEspecie from '../components/TarjetaEspecie.jsx';
 import { Follaje, Mariposa } from '../components/Ilustraciones.jsx';
 import { textoTotal } from '../utilidades/formato.js';
+import { ordenAleatorio } from '../utilidades/ordenAleatorio.js';
 import { useTitulo } from '../utilidades/useTitulo.js';
 
 const TEXTO_DEGRADADO =
@@ -23,32 +24,45 @@ function leerPagina(valor) {
 }
 
 /**
- * Fondo del héroe: ocho pinturas que se alternan con un fundido lento (cada 25 s, 3 s de transición). Solo se
+ * Fondo del héroe: las 19 pinturas de pantalla completa (las mismas del carrusel interno y del login), que se alternan con un fundido lento (cada 25 s, 3 s de transición). Solo se
  * renderizan la actual y la siguiente (que se precarga en silencio) y, durante el fundido, la anterior: nunca las
- * ocho a la vez (FE-R-5). `ancho` es el ancho real del archivo grande: si se declara de menos, el navegador estira
+ * diecinueve a la vez (FE-R-5). `ancho` es el ancho real del archivo grande: si se declara de menos, el navegador estira
  * la versión pequeña y la pintura se ve pixelada. Con movimiento reducido solo hay una pintura, quieta.
  */
 export const FONDOS = [
-  { src: '/pinturas/nubes-grande.webp', media: '/pinturas/nubes-1600.webp', chica: '/pinturas/nubes-800.webp', ancho: 2400 },
-  { src: '/pinturas/tropico.webp', media: '/pinturas/tropico-1600.webp', chica: '/pinturas/tropico-800.webp', ancho: 1798 },
   { src: '/pinturas/andes-grande.webp', media: '/pinturas/andes-1600.webp', chica: '/pinturas/andes-800.webp', ancho: 2400 },
   { src: '/pinturas/rio-grande.webp', media: '/pinturas/rio-1600.webp', chica: '/pinturas/rio-800.webp', ancho: 2400 },
-  { src: '/pinturas/chita-grande.webp', media: '/pinturas/chita-1600.webp', chica: '/pinturas/chita-800.webp', ancho: 1615 },
+  { src: '/pinturas/colibri-grande.webp', media: '/pinturas/colibri-1600.webp', chica: '/pinturas/colibri-800.webp', ancho: 1600 },
+  { src: '/pinturas/tequendama-grande.webp', media: '/pinturas/tequendama-1600.webp', chica: '/pinturas/tequendama-800.webp', ancho: 1920 },
+  { src: '/pinturas/lluvia-grande.webp', media: '/pinturas/lluvia-1600.webp', chica: '/pinturas/lluvia-800.webp', ancho: 1920 },
+  { src: '/pinturas/pasiflora-grande.webp', media: '/pinturas/pasiflora-1600.webp', chica: '/pinturas/pasiflora-800.webp', ancho: 1920 },
+  { src: '/pinturas/nubes-grande.webp', media: '/pinturas/nubes-1600.webp', chica: '/pinturas/nubes-800.webp', ancho: 2400 },
+  { src: '/pinturas/tropico.webp', media: '/pinturas/tropico-1600.webp', chica: '/pinturas/tropico-800.webp', ancho: 1798 },
+  { src: '/pinturas/tequendama-cima-grande.webp', media: '/pinturas/tequendama-cima-1600.webp', chica: '/pinturas/tequendama-cima-800.webp', ancho: 2400 },
+  { src: '/pinturas/pitahaya-grande.webp', media: '/pinturas/pitahaya-1600.webp', chica: '/pinturas/pitahaya-800.webp', ancho: 2400 },
+  { src: '/pinturas/guacamaya-grande.webp', media: '/pinturas/guacamaya-1600.webp', chica: '/pinturas/guacamaya-800.webp', ancho: 2080 },
   { src: '/pinturas/sudamerica-grande.webp', media: '/pinturas/sudamerica-1600.webp', chica: '/pinturas/sudamerica-800.webp', ancho: 2400 },
   { src: '/pinturas/chimborazo-grande.webp', media: '/pinturas/chimborazo-1600.webp', chica: '/pinturas/chimborazo-800.webp', ancho: 2400 },
   { src: '/pinturas/sangay-grande.webp', media: '/pinturas/sangay-1600.webp', chica: '/pinturas/sangay-800.webp', ancho: 2400 },
+  { src: '/pinturas/chita-grande.webp', media: '/pinturas/chita-1600.webp', chica: '/pinturas/chita-800.webp', ancho: 1615 },
+  { src: '/pinturas/cachiri-grande.webp', media: '/pinturas/cachiri-1600.webp', chica: '/pinturas/cachiri-800.webp', ancho: 1745 },
+  { src: '/pinturas/mariquita-grande.webp', media: '/pinturas/mariquita-1600.webp', chica: '/pinturas/mariquita-800.webp', ancho: 1905 },
+  { src: '/pinturas/bongo-grande.webp', media: '/pinturas/bongo-1600.webp', chica: '/pinturas/bongo-800.webp', ancho: 1488 },
+  { src: '/pinturas/choachi-grande.webp', media: '/pinturas/choachi-1600.webp', chica: '/pinturas/choachi-800.webp', ancho: 1270 },
 ];
 const CADA_MS = 25000;
 const FUNDIDO_MS = 3000;
 
 export function CieloRotativo() {
+  // Orden al azar en cada visita, y nunca la misma pintura de arranque que la vez anterior.
+  const [fondos] = useState(() => ordenAleatorio(FONDOS, 'biohub.cielo.primera', (f) => f.src));
   const [pos, setPos] = useState({ actual: 0, anterior: null });
   const [quieto] = useState(() => Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches));
   useEffect(() => {
     if (quieto) return undefined;
     let limpiar;
     const t = window.setInterval(() => {
-      setPos((p) => ({ actual: (p.actual + 1) % FONDOS.length, anterior: p.actual }));
+      setPos((p) => ({ actual: (p.actual + 1) % fondos.length, anterior: p.actual }));
       window.clearTimeout(limpiar);
       limpiar = window.setTimeout(() => setPos((p) => ({ ...p, anterior: null })), FUNDIDO_MS + 200);
     }, CADA_MS);
@@ -57,10 +71,10 @@ export function CieloRotativo() {
       window.clearTimeout(limpiar);
     };
   }, [quieto]);
-  const siguiente = (pos.actual + 1) % FONDOS.length;
+  const siguiente = (pos.actual + 1) % fondos.length;
   const visibles = quieto ? [pos.actual] : [...new Set([pos.anterior, pos.actual, siguiente].filter((n) => n !== null))];
   return visibles.map((i) => {
-    const f = FONDOS[i];
+    const f = fondos[i];
     return (
       <img key={f.src} className="cielo__pintura" data-activa={i === pos.actual} src={f.src}
         srcSet={`${f.chica} 800w, ${f.media} 1600w, ${f.src} ${f.ancho}w`}

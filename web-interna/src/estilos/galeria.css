@@ -400,10 +400,9 @@ table.tabla { width: 100%; border-collapse: collapse; font-size: 14px; }
 .lienzo__imagen[data-activa="true"] { opacity: 1; }
 .lienzo__texto { transition: opacity .8s ease; }
 .lienzo__texto[data-cambiando="true"] { opacity: 0; }
-.lienzo__puntos { display: inline-flex; gap: 10px; }
-.lienzo__punto { width: 12px; height: 12px; padding: 0; border: 0; background: none; color: #9d9b94; cursor: pointer; }
-.lienzo__punto[aria-current="true"] { color: var(--paper); }
-.lienzo__punto svg { width: 12px; height: 12px; }
+.lienzo__pie > span:first-child { white-space: nowrap; }
+.lienzo__progreso { flex: 1; height: 2px; margin-left: 16px; background: rgb(255 255 255 / .18); overflow: hidden; }
+.lienzo__progreso > span { display: block; height: 100%; background: var(--paper); transition: width .45s ease; }
 .lienzo__flecha {
   position: absolute; top: 50%; z-index: 2; width: 52px; height: 52px; margin-top: -26px; border-radius: 50%;
   display: grid; place-items: center; cursor: pointer; color: var(--paper);

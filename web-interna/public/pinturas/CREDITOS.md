@@ -39,4 +39,13 @@ Acuarelas de la Comisión Corográfica y de Edward Walhouse Mark, una lámina de
 | `mutisia.webp`, `mutisia-800.webp` | *Mutisia clematis*, lámina de la Real Expedición Botánica del Nuevo Reino de Granada | Salvador Rizo, 1783-1816 | Real Jardín Botánico de Madrid | Dominio público | https://commons.wikimedia.org/wiki/File:Mutisia_Clematis_RealExpedicionBotanicaNuevaGranada.jpg |
 | `icononzo.webp`, `icononzo-800.webp` | Puentes naturales de Icononzo (*Vues des Cordillères*) | Alexander von Humboldt, 1810 | — | Dominio público | https://commons.wikimedia.org/wiki/File:Puentes_de_icononzo.jpg |
 
+## Nubes y trópico (también en el portal)
+
+| Archivo | Obra | Autor y año | Museo | Licencia | Fuente |
+|---|---|---|---|---|---|
+| `nubes.webp`, `nubes-800.webp` | Estudio de cúmulos (*Study of Cumulus Clouds*) | Círculo de John Constable, siglo XIX | Touchstones Rochdale | Dominio público | https://commons.wikimedia.org/wiki/File:John_Constable_(1776-1837)_(circle_of)_-_Study_of_Cumulus_Clouds_-_743_-_Touchstones_Rochdale.jpg |
+| `tropico.webp`, `tropico-800.webp` | Mañana en el trópico (*Morning in the Tropics*) | Frederic Edwin Church, 1858 | The Walters Art Museum | Dominio público | https://commons.wikimedia.org/wiki/File:Frederick_Edwin_Church_-_Morning_in_the_Tropics_-_Walters_37147.jpg |
+
+El original del estudio de nubes mide 1200 px: la versión de 2000 se reescaló con Lanczos y un enfoque suave.
+
 Las ilustraciones (monograma, follaje, mariposa morpho, frailejón) son SVG propios del proyecto, en `src/componentes/Ilustraciones.jsx`.
