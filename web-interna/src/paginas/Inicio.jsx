@@ -6,7 +6,8 @@ import { nombreRol, puede } from '../auth/permisos.js';
 import { useSesion } from '../componentes/Marco.jsx';
 import { Follaje, Hex, Mariposa } from '../componentes/Ilustraciones.jsx';
 import { useRevelar, useTitulo } from '../componentes/ui.jsx';
-import { PINTURAS } from '../componentes/pinturas.js';
+import { ordenAleatorio } from '../componentes/ordenAleatorio.js';
+import { FONDOS_GRANDES, PINTURAS } from '../componentes/pinturas.js';
 
 /** Módulos de la sala, con la pintura y el encuadre de cada viñeta. */
 const MODULOS = [
@@ -28,26 +29,32 @@ const ACCION_PRINCIPAL = [
   ['buscarHallazgos', '/buscar', 'Explorar hallazgos'],
 ];
 
-/** Pinturas que se alternan despacio, cada una con su mensaje (la tarjeta negra flotante de la galería). */
-const DIAPOSITIVAS = [
-  { pintura: 'andes', titulo: 'La ciencia se corrige, el historial se conserva',
+/**
+ * Mensajes de la tarjeta negra del carrusel. Las pinturas son las 19 de FONDOS_GRANDES en orden aleatorio, y estos
+ * mensajes se turnan encima de ellas (no dependen de una obra en particular).
+ */
+const MENSAJES = [
+  { titulo: 'La ciencia se corrige, el historial se conserva',
     texto: 'Cada hallazgo guarda todas sus versiones, quién las autorizó y por qué. Nada se borra: una reclasificación crea una versión nueva.' },
-  { pintura: 'rio', titulo: 'Las coordenadas viajan cifradas',
+  { titulo: 'Las coordenadas viajan cifradas',
     texto: 'La ubicación exacta de una especie en peligro se guarda cifrada. El portal público solo muestra el departamento y el mapa exacto es del personal de alto rango.' },
-  { pintura: 'colibri', titulo: 'Cada especie, su propia ficha',
+  { titulo: 'Cada especie, su propia ficha',
     texto: 'Los investigadores definen qué se mide de cada especie, como el canto de un ave o la temperatura del agua de una rana, sin tocar código.' },
-  { pintura: 'tequendama', titulo: 'Un país que cabe en un inventario',
+  { titulo: 'Un país que cabe en un inventario',
     texto: 'Colombia es uno de los países más biodiversos del planeta. Cada hallazgo que registras suma al inventario que ayuda a protegerla.' },
-  { pintura: 'chita', titulo: 'Dos siglos de expedicionarios',
+  { titulo: 'Dos siglos de expedicionarios',
     texto: 'De la Expedición Botánica de Mutis a la Comisión Corográfica, el país lleva más de doscientos años documentando su naturaleza. BioHub continúa ese trabajo.' },
-  { pintura: 'chimborazo', titulo: 'Del páramo al bosque de niebla',
+  { titulo: 'Del páramo al bosque de niebla',
     texto: 'En pocos kilómetros de cordillera cambian el clima, las plantas y los animales. Por eso cada hallazgo guarda su departamento y, cifrado, su punto exacto.' },
-  { pintura: 'guacamaya', titulo: 'Dibujado en el camino',
-    texto: 'Church dibujó esta guacamaya en Bogotá en 1853, con notas al margen. Hoy la misma curiosidad se registra con fotos, audios y una ficha por especie.' },
+  { titulo: 'Dibujado en el camino',
+    texto: 'Los viajeros del siglo XIX dibujaban lo que veían, con notas al margen. Hoy la misma curiosidad se registra con fotos, audios y una ficha por especie.' },
 ];
 const INTERVALO_MS = 18000;
 
 function LienzoRotativo() {
+  // Orden al azar en cada visita, y nunca la misma diapositiva de arranque que la vez anterior.
+  const [diapositivas] = useState(() => ordenAleatorio(FONDOS_GRANDES, 'biohub.lienzo.primera', (p) => p)
+    .map((pintura, i) => ({ pintura, ...MENSAJES[i % MENSAJES.length] })));
   const [actual, setActual] = useState(0);
   const [cambiando, setCambiando] = useState(false);
   const [pausa, setPausa] = useState(false);
@@ -63,12 +70,12 @@ function LienzoRotativo() {
   useEffect(() => {
     const reducir = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     if (pausa || reducir) return undefined;
-    const t = window.setInterval(() => ir((actual + 1) % DIAPOSITIVAS.length), INTERVALO_MS);
+    const t = window.setInterval(() => ir((actual + 1) % diapositivas.length), INTERVALO_MS);
     return () => window.clearInterval(t);
   });
   useEffect(() => () => window.clearTimeout(temporizador.current), []);
 
-  const total = DIAPOSITIVAS.length;
+  const total = diapositivas.length;
   const anterior = () => ir((actual - 1 + total) % total);
   const siguiente = () => ir((actual + 1) % total);
   const alTeclear = (e) => {
@@ -76,13 +83,14 @@ function LienzoRotativo() {
     if (e.key === 'ArrowRight') { e.preventDefault(); siguiente(); }
   };
 
-  const diapositiva = DIAPOSITIVAS[actual];
+  const diapositiva = diapositivas[actual];
   const cuadro = PINTURAS[diapositiva.pintura];
   return (
     <section className="lienzo" aria-label="Sobre BioHub" aria-roledescription="carrusel"
       onMouseEnter={() => setPausa(true)} onMouseLeave={() => setPausa(false)}
       onFocus={() => setPausa(true)} onBlur={() => setPausa(false)} onKeyDown={alTeclear}>
-      {DIAPOSITIVAS.map((d, i) => (
+      {/* Solo la actual y sus vecinas: con 19 obras, montarlas todas bajaría varios MB al abrir el inicio */}
+      {diapositivas.map((d, i) => ({ d, i })).filter(({ i }) => [actual, (actual + 1) % total, (actual - 1 + total) % total].includes(i)).map(({ d, i }) => (
         <img key={d.pintura} className="lienzo__imagen" data-activa={i === actual}
           src={PINTURAS[d.pintura].src} srcSet={`${PINTURAS[d.pintura].chica} 800w, ${PINTURAS[d.pintura].src} 2000w`}
           sizes="100vw" alt="" loading="lazy" style={{ objectPosition: PINTURAS[d.pintura].encuadre }} />
@@ -99,14 +107,10 @@ function LienzoRotativo() {
           <p>{diapositiva.texto}</p>
         </div>
         <div className="lienzo__pie">
-          <span>{String(actual + 1).padStart(2, '0')} / {String(DIAPOSITIVAS.length).padStart(2, '0')}</span>
-          <span className="lienzo__puntos">
-            {DIAPOSITIVAS.map((d, i) => (
-              <button key={d.pintura} type="button" className="lienzo__punto" aria-current={i === actual}
-                aria-label={`Ver: ${d.titulo}`} onClick={() => ir(i)}>
-                <Hex relleno={i === actual} />
-              </button>
-            ))}
+          <span>{String(actual + 1).padStart(2, '0')} / {String(diapositivas.length).padStart(2, '0')}</span>
+          {/* Con 19 obras no caben puntos: una línea de avance (para moverse están las flechas y las teclas ← →) */}
+          <span className="lienzo__progreso" aria-hidden="true">
+            <span style={{ width: `${((actual + 1) / total) * 100}%` }} />
           </span>
         </div>
       </div>

@@ -28,4 +28,22 @@ Acuarelas de la Comisión Corográfica y de Edward Walhouse Mark, una lámina de
 |---|---|---|---|---|---|
 | `chita-grande.webp`, `chita-1600.webp`, `chita-800.webp` | Vista del nevado de Chita y del gran nevero que tiene hacia Güicán (Tundama) | Carmelo Fernández, Comisión Corográfica, 1851 | Biblioteca Nacional de Colombia | Dominio público | https://commons.wikimedia.org/wiki/File:Vista_del_nevado_de_Chita_i_del_gran_nevero_que_tiene_hacia_Guicán.jpg |
 
+## Las mismas 19 obras en los tres fondos (2026-11-23)
+
+El carrusel del inicio interno, el cielo del portal y el fondo del login muestran las mismas 19 obras. Estos archivos son versiones de obras cuyo crédito completo (autor, museo o colección, licencia y fuente) está en `web-interna/public/pinturas/CREDITOS.md`; se generaron desde los mismos originales.
+
+| Archivo | Obra |
+|---|---|
+| `colibri-grande.webp`, `colibri-1600.webp`, `colibri-800.webp` | Orquídeas y colibrí (M. J. Heade) |
+| `tequendama-grande.webp`, `tequendama-1600.webp`, `tequendama-800.webp` | El Salto del Tequendama (F. E. Church, 1854) |
+| `lluvia-grande.webp`, `lluvia-1600.webp`, `lluvia-800.webp` | Temporada de lluvias en el trópico (F. E. Church, 1866) |
+| `pasiflora-grande.webp`, `pasiflora-1600.webp`, `pasiflora-800.webp` | Pasifloras y colibríes (M. J. Heade) |
+| `tequendama-cima-grande.webp`, `tequendama-cima-1600.webp`, `tequendama-cima-800.webp` | Cima del Salto del Tequendama (F. E. Church, 1853) |
+| `pitahaya-grande.webp`, `pitahaya-1600.webp`, `pitahaya-800.webp` | Pitahayas, Colombia (F. E. Church, 1853) |
+| `guacamaya-grande.webp`, `guacamaya-1600.webp`, `guacamaya-800.webp` | Guacamaya, Bogotá (F. E. Church, 1853) |
+| `cachiri-grande.webp`, `cachiri-1600.webp`, `cachiri-800.webp` | Casa principal de Cachirí (C. Fernández, Comisión Corográfica, 1850) |
+| `mariquita-grande.webp`, `mariquita-1600.webp`, `mariquita-800.webp` | Minas de plata de Santa Ana (H. Price, Comisión Corográfica, 1852) |
+| `bongo-grande.webp`, `bongo-1600.webp`, `bongo-800.webp` | Bongo del Magdalena (E. W. Mark, 1845) |
+| `choachi-grande.webp`, `choachi-1600.webp`, `choachi-800.webp` | Rancho campesino (E. W. Mark, 1846) |
+
 Las ilustraciones (monograma, follaje, mariposa morpho) son SVG propios del proyecto, en `src/components/Ilustraciones.jsx`.

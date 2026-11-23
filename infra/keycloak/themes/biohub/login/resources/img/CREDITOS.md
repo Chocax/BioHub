@@ -35,3 +35,14 @@ Acuarelas de la Comisión Corográfica y de Edward Walhouse Mark, una lámina de
 | `chita.webp` | Vista del nevado de Chita y del gran nevero que tiene hacia Güicán (Tundama) | Carmelo Fernández, Comisión Corográfica, 1851 | Biblioteca Nacional de Colombia | Dominio público | https://commons.wikimedia.org/wiki/File:Vista_del_nevado_de_Chita_i_del_gran_nevero_que_tiene_hacia_Guicán.jpg |
 | `cachiri.webp` | Casa principal de Cachirí (Soto) | Carmelo Fernández, Comisión Corográfica, 1850 | Biblioteca Nacional de Colombia | Dominio público | https://commons.wikimedia.org/wiki/File:Soto_-_Casa_principal_de_Cachirí_(1850).jpg |
 | `mariquita.webp` | Minas de plata de Santa Ana (provincia de Mariquita) | Henry Price, Comisión Corográfica, 1852 | Biblioteca Nacional de Colombia | Dominio público | https://commons.wikimedia.org/wiki/File:Wdl_09138-fc_corografica_140-V02.jpg |
+
+## Las mismas 19 obras en los tres fondos (2026-11-23)
+
+El carrusel del inicio interno, el cielo del portal y el fondo del login muestran las mismas 19 obras. Estos archivos son versiones de obras cuyo crédito completo (autor, museo o colección, licencia y fuente) está en `web-interna/public/pinturas/CREDITOS.md`; se generaron desde los mismos originales.
+
+| Archivo | Obra |
+|---|---|
+| `pitahaya.webp` | Pitahayas, Colombia (F. E. Church, 1853) |
+| `guacamaya.webp` | Guacamaya, Bogotá (F. E. Church, 1853) |
+| `bongo.webp` | Bongo del Magdalena (E. W. Mark, 1845) |
+| `choachi.webp` | Rancho campesino (E. W. Mark, 1846) |

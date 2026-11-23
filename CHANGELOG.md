@@ -4,6 +4,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
 ## [Unreleased]
 
+### Changed (pinturas, 2026-11-23)
+- El carrusel del inicio interno, el cielo del portal y el fondo del login muestran las mismas 19 obras de pantalla completa, en orden aleatorio, y nunca arrancan con la misma de la visita anterior. Las tres verticales y pequeñas (Mutisia, Icononzo, catedral de Santa Marta) quedan en las salas. Una prueba vigila que las tres listas coincidan.
+- El carrusel interno monta solo la pintura actual y sus vecinas, y cambia los puntos por una línea de avance.
+
 ### Added (obras, 2026-11-22)
 - Seis obras nuevas de dominio público (CC0, Cooper Hewitt): Frederic E. Church en Colombia y los Andes. Entran a las pinturas al azar de las salas, a las tarjetas y al carrusel del inicio interno (dos diapositivas nuevas), al fondo del inicio de sesión (12 obras) y al cielo del portal (7 obras).
 - El carrusel del inicio interno respeta el encuadre de cada obra.
