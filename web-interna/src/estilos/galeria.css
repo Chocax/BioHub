@@ -532,15 +532,17 @@ table.tabla { width: 100%; border-collapse: collapse; font-size: 14px; }
 .marco__cuerpo > :not(.sala-lateral) { position: relative; z-index: 1; }
 .sala-lateral { position: absolute; inset: 0; z-index: 0; pointer-events: none; --margen: calc((100vw - var(--base)) / 2); }
 .sala-lateral__nombre {
-  --tam: clamp(0px, calc(var(--margen) * 1.15), 210px);
-  position: absolute; left: calc(var(--tam) * -0.16); top: 64px; margin: 0;
+  /* Centrado en el margen y sin pasar de 130 px. El alto de línea (1.3) es el ancho de la caja en texto vertical:
+     tiene que cubrir la letra entera, porque la pintura solo se ve dentro de la caja (background-clip: text). */
+  --tam: clamp(0px, calc(var(--margen) * .58), 130px);
+  position: absolute; left: calc((var(--margen) - var(--tam) * 1.3) / 2); top: 96px; margin: 0;
   writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap;
-  font: 500 var(--tam)/.8 var(--serif); letter-spacing: -.03em; font-variation-settings: 'opsz' 144, 'SOFT' 50;
+  font: 500 var(--tam)/1.3 var(--serif); letter-spacing: -.02em; font-variation-settings: 'opsz' 144, 'SOFT' 50;
   /* La palabra se rellena con la misma obra de la cabecera, recortada a la forma de las letras */
   background: var(--ink) var(--pintura-sala) 50% 50% / cover;
   -webkit-background-clip: text; background-clip: text; color: transparent;
-  -webkit-text-stroke: 1px rgb(13 13 12 / .12);
-  filter: saturate(.9) contrast(1.05); opacity: .78;
+  /* Sin contorno (marcaba las curvas internas de letras como la g); una sombra mínima las separa de obras claras */
+  filter: saturate(.95) contrast(1.08) drop-shadow(0 0 .6px rgb(13 13 12 / .35)); opacity: .85;
   animation: subir-lateral 1.1s cubic-bezier(.2, .7, .1, 1) both .1s;
 }
 .sala-lateral__columna {
@@ -558,9 +560,6 @@ table.tabla { width: 100%; border-collapse: collapse; font-size: 14px; }
 .cartela__regla { display: block; width: 28px; height: 2px; background: var(--ink); margin: 10px 0 8px; }
 .cartela__obra { margin: 0; font: 400 14px/1.3 var(--serif); color: var(--ink); }
 .cartela__autor { margin: 0; font-size: 12px; color: var(--graphite); }
-.sala-lateral__linea { width: 1px; height: 120px; background: linear-gradient(to bottom, var(--vellum), var(--ink), var(--vellum)); }
-.sala-lateral__hex { width: 12px; height: 12px; color: var(--ink); }
-.sala-lateral__lema { writing-mode: vertical-rl; transform: rotate(180deg); margin: 0; }
 @keyframes subir-lateral { from { opacity: 0; transform: rotate(180deg) translateY(-40px); } to { opacity: 1; transform: rotate(180deg); } }
 @media (max-width: 1400px) { .sala-lateral { display: none; } }
 @media (max-width: 1680px) { .sala-lateral__columna { display: none; } }

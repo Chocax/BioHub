@@ -2,7 +2,7 @@ import { createContext, useContext, useMemo, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router';
 import { BookOpen, Binoculars, ChartColumn, CirclePlus, House, KeyRound, LogOut, Map as IconoMapa, Menu, Search, Users } from 'lucide-react';
 import { menuPara, nombreRol } from '../auth/permisos.js';
-import { Hex, Monograma } from './Ilustraciones.jsx';
+import { Monograma } from './Ilustraciones.jsx';
 import { PINTURAS, pinturaAlAzar } from './pinturas.js';
 
 /** Usuario y roles de la sesión: { usuario, roles, cerrarSesion }. */
@@ -54,9 +54,6 @@ function SalaLateral({ ruta, pintura }) {
           <p className="cartela__obra">{obra.titulo}</p>
           <p className="cartela__autor">{obra.autor}</p>
         </div>
-        <span className="sala-lateral__linea" />
-        <Hex className="sala-lateral__hex" relleno />
-        <p className="eyebrow sala-lateral__lema">BioHub · Galería interna</p>
       </div>
     </div>
   );
