@@ -14,3 +14,14 @@ Obras de dominio público tomadas de Wikimedia Commons, reducidas y pasadas a We
 | `nubes.webp` | Estudio de cúmulos | Círculo de John Constable, siglo XIX (Touchstones Rochdale) | https://commons.wikimedia.org/wiki/File:John_Constable_(1776-1837)_(circle_of)_-_Study_of_Cumulus_Clouds_-_743_-_Touchstones_Rochdale.jpg |
 
 Fuentes Fraunces e Inter (`../fonts`): licencia SIL Open Font License 1.1. El monograma (`favicon.svg`, `favicon.ico`) es propio del proyecto.
+
+## Bocetos al óleo de Frederic Edwin Church (Cooper Hewitt)
+
+Church viajó por Colombia en 1853 (río Magdalena, Bogotá, el Tequendama, el paso del Quindío) y por Ecuador. Estos bocetos están en Cooper Hewitt, Smithsonian Design Museum, con licencia **CC0** (Smithsonian Open Access). Se pueden verificar con la API abierta (`https://api.si.edu/openaccess/api/v1.0/content/<registro>`) o ver la imagen con `https://ids.si.edu/ids/deliveryService?id=<imagen>`. Se redujeron y se pasaron a WebP; no se alteró su contenido salvo el recorte indicado.
+
+| Archivo | Obra | Autor y año | Registro | Imagen |
+|---|---|---|---|---|
+| `tequendama-cima.webp` | Cima del Salto del Tequendama, cerca de Bogotá (*Top of Tequendama Falls, near Bogotá, Colombia*) | Frederic Edwin Church, 1853 | `ld1-1643399887910-1643399894682-0` | `CHSDM-23493_01-000001` |
+| `sudamerica.webp` | Paisaje sudamericano (*South American Landscape*) | Frederic Edwin Church, década de 1850 | `ld1-1643399887910-1643399894685-0` | `CHSDM-23497_02-000001` |
+| `chimborazo.webp` | Chimborazo y Carihuairazo desde Riobamba, Ecuador (*Chimborazo and Carihuairazo from Riobamba, Ecuador*) | Frederic Edwin Church, década de 1850 | `ld1-1643399887910-1643399894681-0` | `CHSDM-23492_01` |
+| `sangay.webp` | El Sangay en erupción, Ecuador (*Sangay Erupting, Ecuador*) | Frederic Edwin Church, década de 1850 | `ld1-1643399887910-1643399894350-0` | `CHSDM-23043_01-000001` |

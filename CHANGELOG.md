@@ -4,6 +4,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
 ## [Unreleased]
 
+### Added (obras, 2026-11-22)
+- Seis obras nuevas de dominio público (CC0, Cooper Hewitt): Frederic E. Church en Colombia y los Andes. Entran a las pinturas al azar de las salas, a las tarjetas y al carrusel del inicio interno (dos diapositivas nuevas), al fondo del inicio de sesión (12 obras) y al cielo del portal (7 obras).
+- El carrusel del inicio interno respeta el encuadre de cada obra.
+
 ### Security (revisión del equipo, 2026-11-21)
 - Evidencias sin ubicación también en audios y en JPEG con datos pegados: el JPEG se recorre completo y se corta en el fin de imagen; WAV, MP3, FLAC y OGG se reconstruyen solo con el sonido.
 - MySQL local con los mismos permisos que Aiven: usuario `*_app` y usuario `*_migr` por base, sin `ALL PRIVILEGES`, e historial de registro append-only también en local.
