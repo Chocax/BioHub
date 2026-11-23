@@ -6,6 +6,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -48,6 +49,10 @@ public class EquipoTrabajo {
     @Column(name = "actualizado_en", nullable = false, updatable = false, insertable = false)
     private Instant actualizadoEn;
 
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     protected EquipoTrabajo() {
     }
 
@@ -60,7 +65,26 @@ public class EquipoTrabajo {
         this.estado = EstadoEquipo.DISPONIBLE;
     }
 
+    public EquipoTrabajo(UUID id, String codigoInventario, String nombre, String categoria, String descripcion,
+                         String custodioId, String custodioUsuario, Instant asignadoEn) {
+        this.id = id;
+        this.codigoInventario = codigoInventario;
+        this.nombre = nombre;
+        this.categoria = categoria;
+        this.descripcion = descripcion;
+        this.estado = EstadoEquipo.ASIGNADO;
+        this.custodioId = custodioId;
+        this.custodioUsuario = custodioUsuario;
+        this.asignadoEn = asignadoEn;
+    }
+
     public void asignarACustodio(String custodioId, String custodioUsuario, Instant fecha) {
+        if (this.estado == EstadoEquipo.BAJA) {
+            throw new IllegalStateException("El equipo está dado de BAJA; es un estado final y no admite cambios.");
+        }
+        if (this.estado != EstadoEquipo.DISPONIBLE) {
+            throw new IllegalStateException("El equipo no está DISPONIBLE para asignación (estado actual: " + this.estado + ").");
+        }
         this.estado = EstadoEquipo.ASIGNADO;
         this.custodioId = custodioId;
         this.custodioUsuario = custodioUsuario;
@@ -68,6 +92,9 @@ public class EquipoTrabajo {
     }
 
     public void liberar(EstadoEquipo nuevoEstado) {
+        if (this.estado == EstadoEquipo.BAJA) {
+            throw new IllegalStateException("El equipo está dado de BAJA; es un estado final y no admite cambios.");
+        }
         if (nuevoEstado == EstadoEquipo.ASIGNADO) {
             throw new IllegalArgumentException("Use asignarACustodio para el estado ASIGNADO");
         }
@@ -88,4 +115,5 @@ public class EquipoTrabajo {
     public Instant getAsignadoEn() { return asignadoEn; }
     public Instant getCreadoEn() { return creadoEn; }
     public Instant getActualizadoEn() { return actualizadoEn; }
+    public Long getVersion() { return version; }
 }

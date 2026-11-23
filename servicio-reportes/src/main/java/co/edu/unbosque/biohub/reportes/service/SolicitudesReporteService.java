@@ -6,7 +6,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -31,17 +30,6 @@ import co.edu.unbosque.biohub.reportes.domain.ReporteArchivoRepository;
 import co.edu.unbosque.biohub.reportes.domain.SolicitudReporte;
 import co.edu.unbosque.biohub.reportes.domain.SolicitudReporteRepository;
 
-/**
- * Reporte mensual de presión sobre los ecosistemas en segundo plano (HU-09, SD-08, ASR3).
- *
- * <ol>
- *   <li>{@link #solicitar}: guarda la solicitud como PENDIENTE y responde de inmediato (202). Después del commit se
- *       manda a la cola {@code reportes.solicitudes} de RabbitMQ.</li>
- *   <li>{@link #procesar}: lo ejecuta el consumidor de esa cola. Calcula los índices en la base analítica (nunca en
- *       la transaccional del Servicio Científico) y deja listos el CSV y el PDF.</li>
- *   <li>El analista consulta el estado y, cuando está LISTO, descarga los archivos (HU-09 c.3).</li>
- * </ol>
- */
 @Service
 public class SolicitudesReporteService {
 
@@ -79,7 +67,7 @@ public class SolicitudesReporteService {
         }
         return tx.execute(estado -> {
             SolicitudReporte nueva = solicitudes.save(
-                    new SolicitudReporte(periodo.toString(), origen, usuario, Instant.now(reloj)));
+                new SolicitudReporte(periodo.toString(), origen, usuario, Instant.now(reloj)));
             eventos.publishEvent(new SolicitudReporteCreada(nueva.getId()));
             return nueva;
         });
@@ -96,13 +84,13 @@ public class SolicitudesReporteService {
     }
 
     /**
-     * Genera el reporte. Si el mensaje llega dos veces o la solicitud ya no está pendiente, no hace nada. Cualquier
-     * error deja la solicitud en FALLIDO con un motivo legible, en lugar de reintentar sin fin.
+     * Genera el reporte. Si el mensaje llega dos veces o la solicitud ya no está pendiente, no hace nada.
+     * Cualquier fallo (incluyendo errores fatales) deja la solicitud en FALLIDO para evitar bloqueos.
      */
     public void procesar(UUID id) {
         Boolean empezo = tx.execute(estado -> solicitudes.findById(id)
-                .map(s -> s.iniciar(Instant.now(reloj)))
-                .orElse(false));
+            .map(s -> s.iniciar(Instant.now(reloj)))
+            .orElse(false));
         if (!Boolean.TRUE.equals(empezo)) {
             return;
         }
@@ -110,9 +98,9 @@ public class SolicitudesReporteService {
             SolicitudReporte solicitud = solicitudes.findById(id).orElseThrow(SolicitudNoEncontradaException::new);
             YearMonth periodo = YearMonth.parse(solicitud.getPeriodo());
             List<IndicePresion> indices = CalculadorIndicePresion.calcular(
-                    hallazgos.contarPorDepartamento(periodo.atDay(1), periodo.atEndOfMonth()),
-                    hallazgos.contarPorDepartamento(periodo.minusMonths(3).atDay(1),
-                            periodo.minusMonths(1).atEndOfMonth()));
+                consolidarDepartamentos(hallazgos.contarPorDepartamento(periodo.atDay(1), periodo.atEndOfMonth())),
+                consolidarDepartamentos(hallazgos.contarPorDepartamento(periodo.minusMonths(3).atDay(1),
+                    periodo.minusMonths(1).atEndOfMonth())));
             Map<String, Object> resumen = resumen(periodo, indices);
             String resumenJson = json.writeValueAsString(resumen);
             byte[] csv = csv(indices);
@@ -122,12 +110,35 @@ public class SolicitudesReporteService {
                 solicitudes.findById(id).ifPresent(s -> s.terminar(resumenJson, Instant.now(reloj)));
             });
             log.info("Reporte {} del periodo {} listo: {} departamentos", id, periodo, indices.size());
-        } catch (RuntimeException | JsonProcessingException e) {
-            log.warn("El reporte {} falló: {}", id, e.getClass().getSimpleName());
-            tx.executeWithoutResult(estado -> solicitudes.findById(id)
-                    .ifPresent(s -> s.fallar("No se pudo generar el reporte (" + e.getClass().getSimpleName() + ").",
-                            Instant.now(reloj))));
+        } catch (Throwable t) {
+            log.warn("El reporte {} falló: {}", id, t.getClass().getSimpleName());
+            marcarFallido(id, "No se pudo generar el reporte (" + t.getClass().getSimpleName() + ").");
+            if (t instanceof Error err) {
+                throw err;
+            }
         }
+    }
+
+    public void marcarFallido(UUID id, String motivo) {
+        tx.executeWithoutResult(estado -> solicitudes.findById(id)
+            .ifPresent(s -> {
+                if (s.getEstado() == EstadoSolicitud.PENDIENTE || s.getEstado() == EstadoSolicitud.EN_PROCESO) {
+                    s.fallar(motivo, Instant.now(reloj));
+                }
+            }));
+    }
+
+    public int liberarSolicitudesColgadas(Instant limite) {
+        Integer cantidad = tx.execute(estado -> {
+            List<SolicitudReporte> colgadas = solicitudes.findByEstadoInAndSolicitadoEnBefore(
+                List.of(EstadoSolicitud.PENDIENTE, EstadoSolicitud.EN_PROCESO), limite);
+            Instant ahora = Instant.now(reloj);
+            for (SolicitudReporte s : colgadas) {
+                s.fallar("La solicitud excedió el tiempo máximo de procesamiento.", ahora);
+            }
+            return colgadas.size();
+        });
+        return cantidad != null ? cantidad : 0;
     }
 
     public SolicitudReporte obtener(UUID id) {
@@ -147,6 +158,20 @@ public class SolicitudesReporteService {
         return archivos.findById(id).orElseThrow(() -> new ReporteNoListoException(s.getEstado().name()));
     }
 
+    private static List<ConteoDepartamento> consolidarDepartamentos(List<ConteoDepartamento> crudos) {
+        Map<String, long[]> acum = new LinkedHashMap<>();
+        for (ConteoDepartamento c : crudos) {
+            String depto = NormalizadorDepartamento.normalizar(c.departamento());
+            long[] v = acum.computeIfAbsent(depto, k -> new long[3]);
+            v[0] += c.hallazgos();
+            v[1] += c.enPeligro();
+            v[2] += c.especies();
+        }
+        return acum.entrySet().stream()
+            .map(e -> new ConteoDepartamento(e.getKey(), e.getValue()[0], e.getValue()[1], e.getValue()[2]))
+            .toList();
+    }
+
     private static Map<String, Object> resumen(YearMonth periodo, List<IndicePresion> indices) {
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("periodo", periodo.toString());
@@ -158,49 +183,40 @@ public class SolicitudesReporteService {
         return r;
     }
 
-    /**
-     * CSV para abrir con doble clic en Excel en español: separador «;» y coma decimal (con «,» Excel lo deja todo en
-     * una columna). Lleva BOM para que las tildes salgan bien y encabezados legibles.
-     */
     static byte[] csv(List<IndicePresion> indices) {
-        StringBuilder sb = new StringBuilder("﻿");
+        StringBuilder sb = new StringBuilder("\uFEFF");
         sb.append("Departamento;Hallazgos;En peligro;Especies;Proporción en peligro;Promedio en peligro (3 meses previos);")
-                .append("Crecimiento;Índice de presión;Nivel;Zona en alerta\r\n");
+            .append("Crecimiento;Índice de presión;Nivel;Zona en alerta\r\n");
         for (IndicePresion i : indices) {
-            sb.append(celda(i.departamento())).append(';')
-                    .append(i.hallazgos()).append(';')
-                    .append(i.enPeligro()).append(';')
-                    .append(i.especies()).append(';')
-                    .append(numero(i.proporcionEnPeligro())).append(';')
-                    .append(numero(i.promedioEnPeligroPrevio())).append(';')
-                    .append(numero(i.crecimiento())).append(';')
-                    .append(numero(i.indice())).append(';')
-                    .append(i.nivel()).append(';')
-                    .append(i.alerta() ? "Sí" : "No").append("\r\n");
+            sb.append(celda(NormalizadorDepartamento.normalizar(i.departamento()))).append(';')
+                .append(i.hallazgos()).append(';')
+                .append(i.enPeligro()).append(';')
+                .append(i.especies()).append(';')
+                .append(numero(i.proporcionEnPeligro())).append(';')
+                .append(numero(i.promedioEnPeligroPrevio())).append(';')
+                .append(numero(i.crecimiento())).append(';')
+                .append(numero(i.indice())).append(';')
+                .append(i.nivel()).append(';')
+                .append(i.alerta() ? "Sí" : "No").append("\r\n");
         }
         return sb.toString().getBytes(StandardCharsets.UTF_8);
     }
 
-    /** Comillas si el texto trae «;», comillas o saltos; y un apóstrofo si empieza como fórmula (=, +, -, @). */
     private static String celda(String valor) {
         String v = valor == null ? "" : valor;
-        if (!v.isEmpty() && "=+-@".indexOf(v.charAt(0)) >= 0) {
+        if (!v.isEmpty() && "=+-@\t\r".indexOf(v.charAt(0)) >= 0) {
             v = "'" + v;
         }
         return v.contains(";") || v.contains("\"") || v.contains("\n") || v.contains("\r")
-                ? "\"" + v.replace("\"", "\"\"") + "\"" : v;
+            ? "\"" + v.replace("\"", "\"\"") + "\"" : v;
     }
 
-    /**
-     * PDF y CSV de un reporte LISTO, armados de nuevo desde su resumen: así también los reportes generados con una
-     * versión anterior se descargan con el formato actual. Si el resumen no se puede leer, se entregan los guardados.
-     */
     public byte[] pdfDe(UUID id) {
         ReporteArchivo guardado = archivos(id);
         SolicitudReporte s = obtener(id);
         return indicesDe(s).map(indices -> pdf(YearMonth.parse(s.getPeriodo()), indices, Map.of(),
-                        s.getTerminadoEn() == null ? LocalDate.now(ZONA) : LocalDate.ofInstant(s.getTerminadoEn(), ZONA)))
-                .orElseGet(guardado::getPdf);
+                s.getTerminadoEn() == null ? LocalDate.now(ZONA) : LocalDate.ofInstant(s.getTerminadoEn(), ZONA)))
+            .orElseGet(guardado::getPdf);
     }
 
     public byte[] csvDe(UUID id) {
@@ -232,7 +248,6 @@ public class SolicitudesReporteService {
         return PdfPresion.generar(periodo, indices, generado);
     }
 
-    /** Coma decimal, como la lee Excel en español. */
     private static String numero(double valor) {
         return String.format(Locale.ROOT, "%.2f", valor).replace('.', ',');
     }

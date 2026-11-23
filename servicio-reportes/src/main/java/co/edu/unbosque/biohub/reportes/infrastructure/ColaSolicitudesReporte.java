@@ -1,5 +1,7 @@
 package co.edu.unbosque.biohub.reportes.infrastructure;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.UUID;
 
 import org.slf4j.Logger;
@@ -17,15 +19,6 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import co.edu.unbosque.biohub.reportes.service.SolicitudReporteCreada;
 import co.edu.unbosque.biohub.reportes.service.SolicitudesReporteService;
 
-/**
- * Adaptador de RabbitMQ para las solicitudes de reporte (SD-08):
- * <ul>
- *   <li>publica cada solicitud nueva <b>después</b> del commit, para no anunciar una que no se guardó;</li>
- *   <li>la consume en segundo plano y llama al servicio que genera el reporte;</li>
- *   <li>cada mes crea sola la solicitud del mes anterior (HU-09 "programar").</li>
- * </ul>
- * El mensaje solo lleva el id de la solicitud: los datos se leen de la base analítica al procesarla.
- */
 @Component
 public class ColaSolicitudesReporte {
 
@@ -50,8 +43,8 @@ public class ColaSolicitudesReporte {
         try {
             rabbit.convertAndSend(exchange, cola, creada.solicitudId().toString());
         } catch (AmqpException e) {
-            // La solicitud queda PENDIENTE y visible; se puede volver a pedir. No se pierde el registro.
             log.error("No se pudo encolar la solicitud de reporte {}", creada.solicitudId());
+            servicio.marcarFallido(creada.solicitudId(), "No fue posible encolar la solicitud en RabbitMQ.");
         }
     }
 
@@ -71,6 +64,15 @@ public class ColaSolicitudesReporte {
     public void reporteMensualProgramado() {
         if (servicio.solicitarMesAnteriorSiFalta()) {
             log.info("Reporte mensual programado solicitado");
+        }
+    }
+
+    /** Libera solicitudes que hayan quedado colgadas en PENDIENTE o EN_PROCESO por más de 5 minutos. */
+    @Scheduled(fixedDelayString = "${biohub.reportes.watchdog-ms:60000}")
+    public void limpiarSolicitudesColgadas() {
+        int liberadas = servicio.liberarSolicitudesColgadas(Instant.now().minus(Duration.ofMinutes(5)));
+        if (liberadas > 0) {
+            log.warn("Watchdog de reportes marcó {} solicitudes colgadas como FALLIDO", liberadas);
         }
     }
 }

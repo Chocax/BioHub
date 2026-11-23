@@ -7,10 +7,12 @@ import co.edu.unbosque.biohub.equipos.service.EquipoTrabajoService.EquipoNoEncon
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
 import java.util.List;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -45,8 +47,13 @@ public class EquiposExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_PROBLEM_JSON).body(pd);
     }
 
-    @ExceptionHandler(ConflictoEquipoException.class)
-    public ResponseEntity<ProblemDetail> conflicto(ConflictoEquipoException ex, HttpServletRequest req) {
+    @ExceptionHandler({
+        ConflictoEquipoException.class,
+        IllegalStateException.class,
+        ObjectOptimisticLockingFailureException.class,
+        PessimisticLockingFailureException.class
+    })
+    public ResponseEntity<ProblemDetail> conflicto(RuntimeException ex, HttpServletRequest req) {
         ProblemDetail pd = problema(HttpStatus.CONFLICT, "Conflicto",
             ex.getMessage(), req.getRequestURI(), "CONFLICTO");
         return ResponseEntity.status(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_PROBLEM_JSON).body(pd);

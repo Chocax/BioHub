@@ -1,5 +1,7 @@
 package co.edu.unbosque.biohub.reportes.domain;
 
+import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -10,4 +12,6 @@ public interface SolicitudReporteRepository extends JpaRepository<SolicitudRepor
     List<SolicitudReporte> findTop20ByOrderBySolicitadoEnDesc();
 
     boolean existsByPeriodoAndOrigen(String periodo, OrigenSolicitud origen);
+
+    List<SolicitudReporte> findByEstadoInAndSolicitadoEnBefore(Collection<EstadoSolicitud> estados, Instant limite);
 }
