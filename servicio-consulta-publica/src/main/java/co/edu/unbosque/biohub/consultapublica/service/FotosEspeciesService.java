@@ -1,64 +1,41 @@
 package co.edu.unbosque.biohub.consultapublica.service;
 
-import java.time.Clock;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.LinkedHashMap;
-import java.util.Locale;
-import java.util.Map;
 import java.util.Optional;
-import org.springframework.beans.factory.annotation.Autowired;
+import java.util.UUID;
+
 import org.springframework.stereotype.Service;
-import co.edu.unbosque.biohub.consultapublica.infrastructure.FotosCientificoHttp;
+
+import co.edu.unbosque.biohub.consultapublica.domain.FotoServida;
+import co.edu.unbosque.biohub.consultapublica.infrastructure.FotosPublicasJdbc;
 
 /**
- * Fotos públicas de las especies (D65) con una caché en memoria acotada: en un pico de tráfico el portal no le
- * pide la misma foto al Servicio Científico una y otra vez. Guarda también los "no tiene foto" (menos tiempo),
- * para que una especie sin foto no genere una petición interna por visita.
+ * Fotos públicas de las especies (D66). Salen de {@code foto_publica} en la base de lectura: este servicio ya no le
+ * pide nada al Servicio Científico. La URL por {@code fotoId} es inmutable (el navegador la guarda un año) y lleva el
+ * sha256 como ETag; por eso aquí no hay una caché propia de bytes: una caché por réplica podría seguir sirviendo una
+ * foto ya retirada (el evento de retirada lo procesa una sola réplica) y el navegador ya evita la mayoría de las
+ * lecturas. Si la medición de la portada fría lo pide, la caché de bytes debe ir en Redis.
  */
 @Service
 public class FotosEspeciesService {
 
-    static final int MAXIMO_ENTRADAS = 120;
-    static final Duration VIGENCIA_FOTO = Duration.ofMinutes(10);
-    static final Duration VIGENCIA_SIN_FOTO = Duration.ofMinutes(2);
+    private final FotosPublicasJdbc repositorio;
 
-    private final FotosCientificoHttp cientifico;
-    private final Clock reloj;
-    private final Map<String, Entrada> cache = new LinkedHashMap<>(16, 0.75f, true) {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<String, Entrada> mayor) {
-            return size() > MAXIMO_ENTRADAS;
-        }
-    };
-
-    @Autowired
-    public FotosEspeciesService(FotosCientificoHttp cientifico) {
-        this(cientifico, Clock.systemUTC());
+    public FotosEspeciesService(FotosPublicasJdbc repositorio) {
+        this.repositorio = repositorio;
     }
 
-    FotosEspeciesService(FotosCientificoHttp cientifico, Clock reloj) {
-        this.cientifico = cientifico;
-        this.reloj = reloj;
+    /** El sha256 (ETag) de la foto pública, sin leer los bytes (permite responder 304). */
+    public Optional<String> sha256(UUID fotoId) {
+        return repositorio.shaPublica(fotoId);
     }
 
-    public Optional<byte[]> foto(String nombreCientifico) {
-        String clave = nombreCientifico.trim().toLowerCase(Locale.ROOT);
-        Instant ahora = reloj.instant();
-        synchronized (cache) {
-            Entrada e = cache.get(clave);
-            if (e != null && e.vence().isAfter(ahora)) {
-                return Optional.ofNullable(e.bytes());
-            }
-        }
-        Optional<byte[]> foto = cientifico.fotoPublica(nombreCientifico.trim());
-        synchronized (cache) {
-            cache.put(clave, new Entrada(foto.orElse(null),
-                    ahora.plus(foto.isPresent() ? VIGENCIA_FOTO : VIGENCIA_SIN_FOTO)));
-        }
-        return foto;
+    /** La foto pública por su id; vacío si no existe o ya no es pública. */
+    public Optional<FotoServida> porId(UUID fotoId) {
+        return repositorio.publicaPorId(fotoId);
     }
 
-    private record Entrada(byte[] bytes, Instant vence) {
+    /** La foto pública más reciente de una especie (ruta de compatibilidad {@code ?nombre=}). */
+    public Optional<FotoServida> porNombre(String nombreCientifico) {
+        return repositorio.masRecientePorEspecie(nombreCientifico.trim());
     }
 }

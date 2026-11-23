@@ -23,6 +23,9 @@ public class PublicadorEventos {
 
     static final String ORIGEN = "servicio-cientifico";
     private static final String PREFIJO_HALLAZGO = "hallazgo.";
+    private static final String PREFIJO_EVIDENCIA = "evidencia.";
+    /** Único campo que no es texto: bytes de una miniatura en Base64 (04 §7.6). No se escanea como texto. */
+    private static final String CAMPO_BINARIO = "jpegBase64";
     private static final Logger log = LoggerFactory.getLogger(PublicadorEventos.class);
 
     private final RabbitTemplate rabbitTemplate;
@@ -57,19 +60,36 @@ public class PublicadorEventos {
         return usuario;
     }
 
+    /** Copia de {@code datos} sin {@code jpegBase64}: el resto del evento se revisa como cualquier otro. */
+    private static Map<String, Object> sinCampoBinario(Map<String, Object> datos) {
+        if (datos == null || !datos.containsKey(CAMPO_BINARIO)) {
+            return datos;
+        }
+        Map<String, Object> copia = new java.util.LinkedHashMap<>(datos);
+        copia.remove(CAMPO_BINARIO);
+        return copia;
+    }
+
     /**
      * Publica un evento con routing key = tipo.
      *
      * <p>Los {@code hallazgo.*} nunca llevan coordenadas (D14, RNF9, SEC-J-13, D54): se revisan claves y textos, en
      * cualquier profundidad, ANTES de armar el sobre. Esta es la última barrera que impide que el mensaje exista.
      *
-     * @throws IllegalArgumentException   si {@code tipo} es {@code hallazgo.*} y {@code datos} contiene coordenadas
+     * <p>Los {@code evidencia.*} (D66) pasan por la misma guarda, salvo el campo {@code jpegBase64} (bytes en Base64, no
+     * texto), que no se escanea.
+     *
+     * @throws IllegalArgumentException   si {@code tipo} es {@code hallazgo.*} o {@code evidencia.*} y {@code datos}
+     *                                    contiene coordenadas
      * @throws EventoNoPublicadoException si el broker no responde o no confirma
      */
     public EventoSobre publicar(String tipo, String usuario, Map<String, Object> datos) {
         if (tipo != null && tipo.startsWith(PREFIJO_HALLAZGO) && DetectorCoordenadas.contiene(datos)) {
             // Sin datos en el mensaje: ni el valor ni la clave que coincidió deben llegar al log
             throw new IllegalArgumentException("hallazgo.* no puede llevar coordenadas (D14)");
+        }
+        if (tipo != null && tipo.startsWith(PREFIJO_EVIDENCIA) && DetectorCoordenadas.contiene(sinCampoBinario(datos))) {
+            throw new IllegalArgumentException("evidencia.* no puede llevar coordenadas (D14)");
         }
         EventoSobre evento = new EventoSobre(UUID.randomUUID(), tipo, ORIGEN, Instant.now(reloj), usuario, datos);
         try {

@@ -118,7 +118,7 @@ class ConsumidorHallazgosIntegracionTest extends BaseIntegracion {
     }
 
     @Test
-    void reclasificacionActualizaLaFichaEInvalidaLaCachePublica() throws Exception {
+    void reclasificacionActualizaLaFichaEInvalidaSoloEsaFichaDeLaCache() throws Exception {
         UUID id = id("reclasifica");
         publicar("hallazgo.registrado", Eventos.sobre("hallazgo.registrado",
                 Eventos.datos(id, 1, "Atelopus ebenoides", "NO_AMENAZADA")));
@@ -138,14 +138,13 @@ class ConsumidorHallazgosIntegracionTest extends BaseIntegracion {
                 Eventos.datos(id, 2, "Atelopus ebenoides", "EN_PELIGRO")));
         esperarVersion(id, 2);
 
-        // Tras el evento, ambas cachés reflejan el cambio (sin esperar al TTL)
-        await().atMost(ESPERA).untilAsserted(() -> {
-            mvc.perform(get).andExpect(ok.value("EN_PELIGRO"));
-            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/publica/fichas")
-                            .param("q", "ebenoides"))
-                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
-                            .jsonPath("$.content[0].estadoConservacion").value("EN_PELIGRO"));
-        });
+        // Tras el evento la ficha refleja el cambio de inmediato: solo se invalida esa ficha
+        await().atMost(ESPERA).untilAsserted(() -> mvc.perform(get).andExpect(ok.value("EN_PELIGRO")));
+        // Las búsquedas no se vacían por evento (ARQ-R-5): conservan su entrada hasta que expire el TTL de 60 s
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/publica/fichas")
+                        .param("q", "ebenoides"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .jsonPath("$.content[0].estadoConservacion").value("NO_AMENAZADA"));
     }
 
     @Test

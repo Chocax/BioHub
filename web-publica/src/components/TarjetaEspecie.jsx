@@ -11,8 +11,8 @@ export default function TarjetaEspecie({ especie, volver = '' }) {
   const lugar = [departamentos || null, especie.regiones.length ? `Región ${especie.regiones.join(', ')}` : null].filter(Boolean).join(' · ');
   return (
     <li className="tarjeta tarjeta-especie">
-      <Link to={`/especies/${encodeURIComponent(especie.fichaId)}`} state={{ volver }} className="tarjeta-enlace">
-        <FotoEspecie nombreCientifico={especie.nombreCientifico} className="tarjeta-foto" />
+      <Link to={`/especies/${encodeURIComponent(especie.fichaId)}`} state={{ volver, fotoId: especie.fotoId }} className="tarjeta-enlace">
+        <FotoEspecie nombreCientifico={especie.nombreCientifico} fotoId={especie.fotoId} className="tarjeta-foto" />
         <span className="tarjeta-cuerpo">
           <span className="tarjeta-titulo"><i lang="la">{especie.nombreCientifico}</i></span>
           {especie.nombreComun ? <span className="tarjeta-comun">{especie.nombreComun}</span> : null}

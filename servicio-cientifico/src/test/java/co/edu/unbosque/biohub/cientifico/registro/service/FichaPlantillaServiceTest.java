@@ -133,4 +133,52 @@ class FichaPlantillaServiceTest {
         assertThatThrownBy(() -> servicio.validarValores(ESPECIE, Map.of("x", 1)))
                 .isInstanceOf(DatosHallazgoInvalidosException.class);
     }
+
+    @Test
+    @DisplayName("SEC-I27-2: una plantilla no puede definir atributos con nombre de coordenada")
+    void rechazaClavesDeCoordenadasEnLaPlantilla() {
+        when(repositorio.findFirstByNombreCientificoOrderByVersionDesc(ESPECIE)).thenReturn(Optional.empty());
+        for (String clave : List.of("latitud_gps", "lat", "lon", "lng", "gps", "utm_este", "coordenadas",
+                "georef", "ubicacion_exacta")) {
+            assertThatThrownBy(() -> servicio.guardarVersion(ESPECIE,
+                    List.of(new AtributoPlantilla(clave, "Etiqueta", TipoAtributo.NUMERO, false, true, null)), "cientifico1"))
+                    .as(clave).isInstanceOf(DatosHallazgoInvalidosException.class);
+        }
+        // "longitud", "x" e "y" solo si el atributo es numérico
+        for (String clave : List.of("longitud", "x", "y")) {
+            assertThatThrownBy(() -> servicio.guardarVersion(ESPECIE,
+                    List.of(new AtributoPlantilla(clave, "Etiqueta", TipoAtributo.ENTERO, false, true, null)), "cientifico1"))
+                    .as(clave).isInstanceOf(DatosHallazgoInvalidosException.class);
+            assertThatCode(() -> servicio.guardarVersion(ESPECIE,
+                    List.of(new AtributoPlantilla(clave, "Etiqueta", TipoAtributo.TEXTO, false, true, null)), "cientifico1"))
+                    .as(clave + " como texto").doesNotThrowAnyException();
+        }
+        for (String clave : List.of("longitud_cm", "longitud_total", "longitud_hocico_cloaca")) {
+            assertThatCode(() -> servicio.guardarVersion(ESPECIE,
+                    List.of(new AtributoPlantilla(clave, "Longitud", TipoAtributo.NUMERO, false, true, "cm")), "cientifico1"))
+                    .as(clave).doesNotThrowAnyException();
+        }
+    }
+
+    @Test
+    @DisplayName("SEC-I27g-2: norte/este/northing/easting no pueden ser atributos numéricos de una plantilla")
+    void rechazaClavesPlanasNumericasEnLaPlantilla() {
+        when(repositorio.findFirstByNombreCientificoOrderByVersionDesc(ESPECIE)).thenReturn(Optional.empty());
+        for (String clave : List.of("norte", "este", "northing", "easting", "norte_m", "este1")) {
+            for (TipoAtributo tipo : List.of(TipoAtributo.NUMERO, TipoAtributo.ENTERO)) {
+                assertThatThrownBy(() -> servicio.guardarVersion(ESPECIE,
+                        List.of(new AtributoPlantilla(clave, "Etiqueta", tipo, false, true, null)), "cientifico1"))
+                        .as(clave + " " + tipo).isInstanceOf(DatosHallazgoInvalidosException.class);
+            }
+            assertThatCode(() -> servicio.guardarVersion(ESPECIE,
+                    List.of(new AtributoPlantilla(clave, "Etiqueta", TipoAtributo.TEXTO, false, true, null)), "cientifico1"))
+                    .as(clave + " como texto").doesNotThrowAnyException();
+        }
+        // palabras parecidas que no son coordenadas siguen permitidas
+        for (String clave : List.of("nortenio", "estero", "estado", "estadio")) {
+            assertThatCode(() -> servicio.guardarVersion(ESPECIE,
+                    List.of(new AtributoPlantilla(clave, "Etiqueta", TipoAtributo.NUMERO, false, true, null)), "cientifico1"))
+                    .as(clave).doesNotThrowAnyException();
+        }
+    }
 }

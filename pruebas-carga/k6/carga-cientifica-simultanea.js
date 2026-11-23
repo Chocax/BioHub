@@ -152,7 +152,10 @@ export function handleSummary(data) {
   const v = (n, s) => (m[n] && m[n].values && m[n].values[s] !== undefined ? m[n].values[s] : null);
   const k = 'http_req_duration{escenario:publica}';
   const resumen = {
-    parametros: { R, EV: CIENTIFICA ? EV : 0, DUR, CIENTIFICA },
+    // Metadatos D42: REPLICAS y CPUS (los exporta quien corre), COMMIT y RED_K6 (correr-k6.sh), la fecha y ENTORNO/CACHE (opcionales).
+    parametros: { R, EV: CIENTIFICA ? EV : 0, DUR, CIENTIFICA, replicas: __ENV.REPLICAS || null, cpus_por_replica: __ENV.CPUS || null,
+      commit: __ENV.COMMIT || null, red_k6: __ENV.RED_K6 || null, fecha: new Date().toISOString(), entorno: __ENV.ENTORNO || null,
+      cache: __ENV.CACHE || null },
     publica: {
       peticiones: v('http_reqs{escenario:publica}', 'count'),
       p50: v(k, 'med'), p90: v(k, 'p(90)'), p95: v(k, 'p(95)'), p99: v(k, 'p(99)'), max: v(k, 'max'),

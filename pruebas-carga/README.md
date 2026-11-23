@@ -18,6 +18,7 @@ un despliegue). Miden la consulta pública (ASR1/RNF1, pico x60) y su comportami
 | `k6/carga-cientifica-simultanea.js` | **ASR4/RNF5 (CG-04).** Mide la lectura pública con y sin carga científica (`CIENTIFICA=0|1`). La carga son eventos `hallazgo.registrado`/`hallazgo.reclasificado` publicados a RabbitMQ y consumidos por consulta-publica (SELECT ... FOR UPDATE + INSERT/UPDATE e invalidación de caché). Al final comprueba que la **DLQ de carga esté vacía** (umbral `dlq_mensajes`) y reporta eventos publicados, procesados (ack) y pendientes. |
 | `k6/gateway-limite-api-externa.js` | **ASR8/RNF11, HU-08 c.2, HU-12 c.2.** Va contra el **api-gateway**, no contra NGINX. Un consumidor abusivo (A) recibe 429 con `Retry-After` y como máximo 60 respuestas 200 por minuto. Mientras tanto, otros dos consumidores (uno con límite configurado) y el portal siguen en 200 sin perder latencia. Además, una key revocada a mitad de la prueba recibe 401 desde la petición siguiente. Ver la sección siguiente. |
 | `k6/busqueda-publica-fria.js` + `correr-hu06-frio.sh` + `resumir-hu06.sh` + `datos/vaciar-cache.sh` | **HU-06 c.3 / CG-02 (RNF5).** Búsqueda del portal con 10.000 fichas y la caché vacía: fase A (100 búsquedas distintas, 1 VU) y fase B (100 distintas, 10 VUs); el script vacía `biohub:publica:*` antes de cada fase y `resumir-hu06.sh` calcula la mediana de las corridas. Ver la sección "HU-06 c.3 / CG-02". |
+| `k6/consulta-publica-portada.js`, `datos/sembrar-fotos.sh`, `nginx-carga-cache-fotos.conf` | **ASR1 sobre la portada con fotos (D66)** y su contrafactual. Ver la sección "Iteración 27". |
 | `k6/registro-hallazgo.js` | **Pendiente** (depende de HU-01, módulo registro). Esqueleto para RNF2/RNF4. |
 | `k6/lib/comun.js` | Utilidades compartidas (mezcla de peticiones, ids de la semilla, ventanas). |
 | `resultados/` | JSON de cada corrida. Los que empiezan por `descartado-` documentan fallos del banco de pruebas y **no cuentan como evidencia** (D42). |
@@ -153,6 +154,49 @@ para la carga**. Por eso:
 - Las réplicas de carga consumen una cola propia (`consulta-publica.carga.eventos`, DLQ `...carga.eventos.dlq`), no la de
   desarrollo. Si la DLQ de carga termina con mensajes, la prueba falla; la causa suele ser un `user_id` distinto, una
   versión fuera de rango o un campo inválido (consulta-publica registra el motivo en su log).
+
+### Iteración 27: portada con fotos (D66), contrafactual y ASR4 con metadatos D42
+
+Lo que cambió con D66 (las fotos públicas se sirven desde `foto_publica` en `mysql-lectura`, sin tocar al científico) y cómo se mide.
+
+| Archivo | Para qué sirve |
+|---|---|
+| `k6/consulta-publica-portada.js` | **ASR1 sobre la portada de web-publica.** Una iteración es una visita: listado de especies + familias en paralelo y hasta 12 fotos (`/api/publica/especies/fotos/{fotoId}`, de a 6 como un navegador), 14 peticiones. Perfil de visitas por segundo (`N` de base, pico `N x MULT`). Cuenta las visitas "degradadas" (sin `fotoId`), el éxito D42 y los MB/s. `REPETIDA=<0..100>` simula visitantes que ya tienen las fotos (`If-None-Match`, 304). Variables: `BASE_URL`, `N`, `MULT`, `T_BASE`, `T_RAMP`, `T_PICO`, `T_BAJA`, `T_POST`, `MAX_VUS`, `REPETIDA`, `ENTORNO`, `CACHE`, `SALIDA`. |
+| `datos/sembrar-fotos.sh` + `datos/foto-semilla.jpg` | Siembra `FOTOS` (12 por defecto, 1 a 200) fotos sintéticas en `foto_publica`, una por especie, con el JPEG de la semilla (1200x900, ~330 KB). `evidencia_id` con prefijo `c0a9a000-0000-4000-9000-`; `limpiar.sh` las borra. Requiere `./datos/sembrar.sh` antes. |
+| `nginx-carga-cache-fotos.conf` | **Contrafactual, no es la configuración oficial.** `NGINX_CONF=./nginx-carga-cache-fotos.conf` en el `docker compose up` hace que NGINX guarde en caché las fotos inmutables. Sirve solo para medir cuánto mejora la portada si los bytes se cachean fuera de MySQL. |
+
+**Portada: caché fría y caliente.** "Fría" = `./datos/vaciar-cache.sh` (solo `biohub:publica:*`) y réplicas recién levantadas, sin calentamiento. "Caliente" = tras una corrida corta previa. Los bytes de las fotos no se guardan en el servidor, así que la caché solo afecta al listado y a las familias; no esperes que "caliente" sea mejor (en la it. 27 fue peor: ruido del equipo).
+
+```bash
+# Portada, 2 réplicas, pico de 120 visitas/s (N=2). k6 va DENTRO de biohub_default, así que la URL es la de NGINX en la red del compose
+FOTOS=12 ./datos/sembrar-fotos.sh && ./datos/vaciar-cache.sh
+REPLICAS=2 CPUS=2 RED_K6=biohub_default ./correr-k6.sh k6/consulta-publica-portada.js -e N=2 -e T_BASE=30s -e T_RAMP=30s -e T_PICO=90s -e T_BAJA=10s -e T_POST=150s \
+  -e BASE_URL=http://nginx:8080 -e CACHE=fria -e "ENTORNO=<carga del equipo y otros procesos>" -e SALIDA=/resultados/asr1-portada-2r-n2-fria-it27.json
+```
+
+**Trampa de `RED_K6=biohub_default`:** dentro de esa red `127.0.0.1:18080` y `127.0.0.1:15672` no existen. Hay que pasar `-e BASE_URL=http://nginx:8080` y, para ASR4 con carga científica, `-e RMQ_URL=http://rabbitmq:15672`; si no, k6 reporta 100 % de fallos (la primera corrida de ASR4 de la it. 27 salió así y quedó como `descartado-asr4-sin-url-inaccesible-it27.json`).
+
+**ASR4 con metadatos D42.** `carga-cientifica-simultanea.js` ahora guarda en `parametros` las réplicas, la CPU, el commit, la red de k6, la fecha, el entorno y la caché (`REPLICAS`, `CPUS`, `-e ENTORNO`, `-e CACHE`). El par de la it. 27:
+
+```bash
+./datos/vaciar-cache.sh
+REPLICAS=2 CPUS=2 RED_K6=biohub_default ./correr-k6.sh k6/carga-cientifica-simultanea.js -e CIENTIFICA=0 -e BASE_URL=http://nginx:8080 -e CACHE=fria -e SALIDA=/resultados/asr4-sin-it27.json
+./datos/vaciar-cache.sh
+REPLICAS=2 CPUS=2 RED_K6=biohub_default ./correr-k6.sh k6/carga-cientifica-simultanea.js -e CIENTIFICA=1 -e BASE_URL=http://nginx:8080 -e RMQ_URL=http://rabbitmq:15672 -e CACHE=fria -e SALIDA=/resultados/asr4-con-it27.json
+```
+
+**Resultados de la iteración 27** (detalle, tablas por corrida y limitaciones en `docs/equipo/07-reporte-qa.md`; todos con 2 CPU y 1 GiB por réplica, caché fría salvo que se diga lo contrario, equipo compartido con una VM de 4 CPU):
+
+| Prueba | Archivo(s) `-it27` | p95 (ms) | 5xx | Veredicto |
+|---|---|---:|---:|---|
+| ASR1 fichas, pico 3.600 req/s, 1 y 2 réplicas | `asr1-fichas-1r-n60`, `asr1-fichas-2r-n60` | 7,0 / 5,6 | 0 % | CUMPLE |
+| ASR1 portada, pico 60 visitas/s (~840 req/s, 90 MB/s) | `asr1-portada-1r-n1-fria`, `asr1-portada-2r-n1-fria` | 8,7 / 8,3 | 0 % | CUMPLE |
+| ASR1 portada, pico 120 visitas/s, 2 réplicas (3 corridas) | `asr1-portada-2r-n2-fria`, `-caliente`, `-fria-it27-repeticion2` | 355 / 251 / 516 | 0,61 / 1,83 / 0 % | CUMPLE CON RESERVAS: visita completa hasta 10 s y éxito D42 de 87,5 a 98,6 % |
+| ASR1 portada, 120 visitas/s, 1 réplica (degradación) | `asr1-portada-1r-n2-fria` | 199 | 0 % | El 90 % de las visitas se sirve sin fotos |
+| Contrafactual con caché de fotos en NGINX | `contrafactual-portada-2r-n2-nginx-cache-fotos` | 2,7 | 0 % | Informativo (no es la configuración oficial) |
+| ASR4 sin / con 30 eventos/s | `asr4-sin`, `asr4-con` | 6,9 / 7,2 | 0 % | CUMPLE (3.601 de 3.601 eventos, DLQ 0) |
+
+Los `ensayo-portada-*` (95 s, máquina cargada) son exploratorios y los `descartado-*` no cuentan (D42). Veredicto global: **ASR4 CUMPLE; ASR1 CUMPLE con reservas en la portada a 120 visitas/s**, donde el límite es el ancho de banda de las fotos leídas de MySQL.
 
 ## Secretos
 

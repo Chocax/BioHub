@@ -1,18 +1,15 @@
 package co.edu.unbosque.biohub.cientifico.registro;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -37,13 +34,12 @@ import co.edu.unbosque.biohub.cientifico.registro.service.HallazgoService;
 import co.edu.unbosque.biohub.cientifico.registro.service.RegistrarHallazgoComando;
 
 /**
- * D65: galería de especies, listas para autocompletar y foto pública, con MySQL real y la cadena de seguridad
+ * D65: galería de especies y listas para autocompletar (la ruta de foto pública se eliminó en D66; ver
+ * FotosPublicasEventosMySqlTest), con MySQL real y la cadena de seguridad
  * real. Requiere Docker.
  */
 @AutoConfigureMockMvc
 class EspeciesYFotoPublicaMySqlTest extends BaseRegistroMySqlTest {
-
-    private static final String FOTO_PUBLICA = "/api/cientifico/publico/especies/foto";
 
     @Autowired
     private MockMvc mvc;
@@ -149,40 +145,12 @@ class EspeciesYFotoPublicaMySqlTest extends BaseRegistroMySqlTest {
     }
 
     @Test
-    void soloUnaFotoMarcadaComoPublicaSaleSinTokenReducidaYEnJpeg() throws Exception {
-        String evidencia = subirFoto(ranaBoyaca);
-
-        // Sin marcar: no sale, aunque exista
-        mvc.perform(get(FOTO_PUBLICA).param("nombre", "Atelopus ebenoides")).andExpect(status().isNotFound());
-
-        mvc.perform(put(rutaPublica(ranaBoyaca, evidencia)).with(como("investigador_campo"))
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"publica\":true}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.publica").value(true));
-
-        byte[] foto = mvc.perform(get(FOTO_PUBLICA).param("nombre", "Atelopus ebenoides"))
-                .andExpect(status().isOk())
-                .andExpect(header().string("Content-Type", "image/jpeg"))
-                .andExpect(header().string("X-Content-Type-Options", "nosniff"))
-                .andReturn().getResponse().getContentAsByteArray();
-        BufferedImage leida = ImageIO.read(new ByteArrayInputStream(foto));
-        assertThat(Math.max(leida.getWidth(), leida.getHeight())).isEqualTo(1200);
-
-        mvc.perform(put(rutaPublica(ranaBoyaca, evidencia)).with(como("cientifico_alto_rango"))
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"publica\":false}"))
-                .andExpect(status().isOk());
-        mvc.perform(get(FOTO_PUBLICA).param("nombre", "Atelopus ebenoides")).andExpect(status().isNotFound());
-    }
-
-    @Test
-    void soloQuienRegistraDecideYElNombreSeValida() throws Exception {
+    void soloQuienRegistraDecideSiLaFotoEsPublica() throws Exception {
         String evidencia = subirFoto(ranaBoyaca);
         for (String rol : new String[] {"auditor_cientifico", "analista_ambiental", "administrador"}) {
             mvc.perform(put(rutaPublica(ranaBoyaca, evidencia)).with(como(rol))
                             .contentType(MediaType.APPLICATION_JSON).content("{\"publica\":true}"))
                     .andExpect(status().isForbidden());
         }
-        mvc.perform(get(FOTO_PUBLICA).param("nombre", "<script>")).andExpect(status().isBadRequest());
-        mvc.perform(get(FOTO_PUBLICA)).andExpect(status().isBadRequest());
     }
 }

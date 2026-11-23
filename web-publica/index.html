@@ -7,7 +7,7 @@
     <!-- SEC-J-07: frame-ancestors no funciona en <meta>; va como cabecera HTTP (ver README). -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: %CONNECT_SRC%; font-src 'self'; connect-src 'self' %CONNECT_SRC%; object-src 'none'; base-uri 'self'; form-action 'self'"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: %CONNECT_SRC%; font-src 'self'; connect-src 'self' %CONNECT_SRC%; object-src 'none'; base-uri 'self'; form-action 'self'"
     />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />

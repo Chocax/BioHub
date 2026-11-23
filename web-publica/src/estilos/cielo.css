@@ -148,6 +148,10 @@ main:has(> .ficha), main:has(> .pagina-404), main:has(> div.contenedor:only-chil
   display: grid; place-items: center;
   background: linear-gradient(160deg, #d9ecf8 0%, #f3f8fb 55%, #e9f3d2 100%);
 }
+.foto-especie--vacia { align-content: center; justify-items: center; gap: 6px; }
+.foto-especie__aviso { font-size: 12.5px; color: var(--c-texto-suave); text-align: center; padding: 0 8px; }
+.foto-especie__reintento { font: inherit; font-size: 13px; background: none; border: 0; padding: 4px 8px; color: var(--cielo-profundo); text-decoration: underline; cursor: pointer; border-radius: 4px; }
+.foto-especie--cargando { background: var(--lino); }
 .foto-especie__ilustracion { width: 26%; max-width: 90px; height: auto; opacity: .85; }
 
 /* ---------- ficha: foto al lado del nombre y otros registros */

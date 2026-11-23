@@ -735,3 +735,103 @@ Se cumple lo declarado: Vitest 92/92, `dist/` sin ningún rastro del arnés, E2E
 
 **Seguridad:** no aplica revisión de ciberseguridad. Solo hay código de prueba y scripts de carga locales: sin dependencias nuevas, sin cambios de autenticación y sin datos reales (fichas y hallazgos sintéticos).
 
+
+## Iteración 27 – verificación 27a-c/27g y mediciones ASR1/ASR4 (27d, 27e)
+
+**Veredicto: APROBADO con observaciones (0 Críticos, 0 Altos, 0 Medios; 3 Bajos).** Rama `feature/ubicacion-consulta-publica` sobre `14f140c`, con cambios sin confirmar (27a-c y la corrección 27g copiada de `biohub-fix27`). Fecha: 2026-11-22. Entorno: Ubuntu 26.04, 16 CPU compartidas con una VM `qemu` (`biohub-backend`, unos 4 CPU) y `ollama`; Docker con MySQL, Redis, RabbitMQ y Keycloak del Compose raíz.
+
+### Suites ejecutadas (todas aquí, sin tocar el código de producción)
+| Módulo | Comando | Pruebas | Fallos | Errores | Omitidas |
+|---|---|---:|---:|---:|---:|
+| servicio-cientifico | `mvn -B -ntp -pl servicio-cientifico,servicio-consulta-publica verify` | **654** | 0 | 0 | 3 |
+| servicio-consulta-publica | (el mismo comando) | **408** | 0 | 0 | 0 |
+| web-publica, unitarias | `npm test` (Vitest, 6 archivos) | **55** | 0 | 0 | 0 |
+| web-publica, build | `npm run build` | OK; `dist` sin `arnes`, `simulado` ni `token-simulado` | – | – | – |
+| web-publica, E2E | `E2E_SIN_WEBKIT=1 npm run test:e2e`, 3 veces | **38/38 las 3 veces** (19 casos x Chromium y Firefox; 21-23 s) | 0 | – | – |
+
+- Las 3 omitidas del científico son por falta de entorno externo, no por defecto: `PublicadorHallazgoE2ETest` (`QA_HALLAZGO_ID`, necesita un hallazgo real en las VMs), `PublicadorBrokerDesplegadoTest` (`QA_RMQ_PORT`, broker desplegado) y `BusquedaInterna10kRendimientoTest` (se activa con `-Drendimiento=true`). Coinciden con la referencia (654 y 408).
+- **WebKit no se ejecutó** (`E2E_SIN_WEBKIT=1`, el equipo no tiene las librerías; el criterio de aceptación de 27c pedía 38/38, que son Chromium y Firefox). El E2E no fue intermitente en 3 corridas (QA-R-3 se mantiene cerrado en este equipo).
+- Bruno, colección completa contra los servicios vivos: **77 de 78 peticiones y 132 de 133 pruebas**. Las nuevas `consulta-publica/19` a `23`, 5 de 5 en verde. El único fallo (`ubicacion/12-mapa-alto-rango-200`, `omitidos` = 3 en vez de 0) es del entorno: la base transaccional local tiene hallazgos de corridas anteriores cifrados con otra `UBICACION_CLAVES` aleatoria (el servicio los cuenta como omitidos y lo registra como "Integridad de ubicación fallida"). Para llegar a ese punto hubo que borrar y volver a sembrar con `infra/ci/SembrarHallazgos.java` las 3 filas de ubicación de los hallazgos semilla (A, B y C); antes fallaban 5 pruebas por la misma causa.
+- Los servicios se levantaron con el perfil `local`, cwd fuera del repo y `UBICACION_CLAVE_ACTIVA=v1` además de `UBICACION_CLAVES` (sin la primera el científico no arranca). Al terminar se detuvieron los 3 procesos y el Compose de carga.
+
+### Verificación de los criterios (en vivo: gateway :8080 + científico :8081 + consulta-publica :8083)
+| Criterio | Resultado | Evidencia |
+|---|---|---|
+| **Miniatura al publicar (D66)** | Cumple | Foto de 3000x2000 px y 3,7 MB con EXIF y GPS: la miniatura sale de 1200x800 y 480 KB, sin EXIF ni GPS (solo marcador APP0), y su sha256 es el `ETag` de la respuesta. Un audio marcado como público da 400 `DATOS_INVALIDOS` |
+| **Eventos `evidencia.*` y cola `consulta-publica.fotos`** | Cumple | Cola con 1 consumidor, DLX `biohub.eventos.dlx`; cada `publicada`/`retirada` se publica y se confirma (5 de 5 tras la prueba) y la DLQ queda en 0. `reportes.eventos` no recibe eventos de fotos. Retirar la foto da 404 en `/especies/fotos/{id}` y `fotoId: null` en el catálogo de inmediato |
+| **Rutas de foto por `fotoId`** | Cumple | Válida: 200 `image/jpeg`, `Cache-Control: public, max-age=31536000, immutable`, `ETag`, `nosniff`, y `If-None-Match` da 304. UUID en mayúsculas: 200. `no-es-un-uuid` y `%20`: 400 `PARAMETRO_INVALIDO` campo `fotoId`, `no-store`. UUID inexistente o retirado: 404 `NO_ENCONTRADO`. Ruta de compatibilidad `?nombre=`: 200 con `max-age=300`, 404 sin foto, 400 con `<script>`, vacío o con dígitos |
+| **Ninguna ruta de foto sin rol en científico** | Cumple | `/api/cientifico/**` queda `authenticated()` y el único `permitAll` es `actuator/health`; `FotoPublicaController` y `FotosCientificoHttp` están eliminados. `GET /api/cientifico/publico/especies/foto` da 401 sin token y 404 con token |
+| **`familia=` vacío** | Cumple | `/fichas?familia=` y `?familia=%20%20` dan 200 con el mismo total (34) y `filtrosIgnorados` vacío; `/especies?familia=` también |
+| **Republicación (SEC-I27-7, 409)** | Cumple | Sin token 401; investigador, alto rango y auditor 403; `GET` 405; administrador 202 `{"fotos":2}`. Con 8 peticiones en paralelo: 1 con 202 y 7 con **409** `CONFLICTO` en problem+json (el log dice quién la pidió) |
+| **Pendiente 27c: `fotoId` real** | Cumple | El catálogo devuelve el `evidenciaId` real como `fotoId`; la web-publica construida contra el gateway pinta las fotos de la portada (2 de 2 con `naturalWidth` 1200) y la ficha, en Chromium y Firefox |
+| **Pendiente 27c: CORS de la foto** | Cumple | `GET` por el gateway con `Origin: http://localhost:5174`: `Access-Control-Allow-Origin` solo para ese origen y `Vary: Origin`; origen ajeno 403; `OPTIONS` 200. El portal usa `fetch` con `credentials: 'omit'` |
+| **Pendiente 27c: `blob:` en la CSP** | Cumple | `img-src 'self' data: blob: http://localhost:8080` en el build. **Control negativo:** la misma página sin `blob:` queda con `naturalWidth` 0 y Chromium registra "Loading the image 'blob:...' violates the following Content Security Policy directive". Coincide con el README de web-publica (líneas 22, 28 y 36) |
+| **27g: detector endurecido** | Cumple | Corpus `detector-corpus.txt` idéntico en las dos copias (`cmp`), `DetectorCoordenadasParidadTest` y `DetectorCoordenadasTest` en verde. En vivo se rechazan con 400: `5.532, 73.367`, `5°31N 73°22W`, formato Garmin, `lat/lon`, coma decimal, UTM, coordenadas en `nombreComun` y en `atributos` (clave `latitud`, `lat`/`lon`, par en texto, claves `x`/`y` con números). Se aceptan: `altitud 2.500 m, longitud 12 cm`, `25.5 g y 12.75 cm`, `temperatura 12.5 C, pH 7.2`, `temperatura_agua: 12.5` |
+
+Casos nuevos de esta iteración: `06-plan-pruebas.md` P15 (FP-01 a FP-12, DT-01 a DT-05, CG-ASR4, CG-ASR1P).
+
+### Mediciones de carga (27d): ASR1/RNF1 y ASR4/RNF5 con metadatos D42
+**Qué se hizo.** Las corridas de ASR1 (fichas y portada) y el contrafactual son las de la noche anterior y **no se repitieron**, salvo dos que esta verificación detectó como inconsistentes (ver "Descartados"). **ASR4 no existía** (no había `asr4-*.json`): se corrió aquí, con el jar de 27g (imagen `biohub/servicio-consulta-publica:carga` reconstruida), 2 réplicas de 2 CPU y 1 GiB tras NGINX, 2.000 fichas, k6 `grafana/k6:2.3.0` dentro de `biohub_default`, y la caché de `biohub:publica:*` vaciada antes de cada corrida. Todas las corridas válidas declaran N, multiplicador, réplicas (verificadas con Docker), CPU, commit (`14f140c`, árbol sin confirmar), red de k6, fecha, caché y estado de carga del equipo (`parametros`). Umbrales (01, RNF1/RNF5): al menos 95 % de respuestas sin 5xx, estabilización < 5 min, p95 <= 2 s.
+
+**ASR1, fichas y búsquedas virales** (`consulta-publica-pico.js`, N=60, pico x60 = 3.600 req/s, 2 CPU por réplica, caché fría):
+| Corrida | Peticiones | p50 | p95 | p99 | máx | no-200 | 5xx | Éxito D42 | Estabilización | Umbral |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `asr1-fichas-1r-n60-it27` (1 réplica) | 519.273 | 0,8 | 7,0 | 14,6 | 1.094,9 | 0 % | 0 % | 99,94 % (326 iteraciones descartadas) | 0 s | p95 <= 2.000 ms |
+| `asr1-fichas-2r-n60-it27` (2 réplicas) | 519.599 | 1,0 | 5,6 | 10,6 | 1.265,0 | 0 % | 0 % | 100 % | 0 s | p95 <= 2.000 ms |
+
+**ASR1, portada** (`consulta-publica-portada.js`: 1 visita = listado + familias + hasta 12 fotos de ~330 KB, 14 peticiones; N visitas/s de base, pico x60; todas "primera visita", el peor caso). Latencias de petición en ms; las fotos nunca se cachean en el servidor (D66), cada una es una lectura de `foto_publica`:
+| Corrida | Réplicas | Pico | p50 | p95 | p99 | máx | 5xx / timeouts | Éxito D42 | Visitas degradadas | Estabilización | MB/s |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `asr1-portada-1r-n1-fria-it27` | 1 | 60 visitas/s (~840 req/s) | 5,2 | 8,7 | 25,5 | 126,3 | 0 % | 100 % | 0 % | 0 s | 89,6 |
+| `asr1-portada-2r-n1-fria-it27` | 2 | 60 visitas/s (~840 req/s) | 5,2 | 8,3 | 12,4 | 592,1 | 0 % | 100 % | 0 % | 0 s | 89,6 |
+| `asr1-portada-1r-n2-fria-it27` | 1 | 120 visitas/s | 1,7 | 199,1 | 443,6 | 1.020,9 | 0 % | 99,75 % | **90,2 %** (sin `fotoId`) | 0 s | 17,6 |
+| `asr1-portada-2r-n2-fria-it27` | 2 | 120 visitas/s (~1.435 req/s) | 259,1 | 355,4 | 683,5 | 10.003,6 | 0,61 % | **95,34 %** (97,87 % solo por peticiones) | 14,2 % | 0 s | 146,1 |
+| `asr1-portada-2r-n2-caliente-it27` | 2 | 120 visitas/s (~1.544 req/s) | 169,3 | 250,9 | 8.956,7 | 10.011,4 | 1,83 % | **87,49 %** (96,25 % solo por peticiones) | 0,6 % | **195 s** (ventana peor: p95 10 s) | 158,1 |
+| `asr1-portada-2r-n2-fria-it27-repeticion2` (repetición de QA) | 2 | 120 visitas/s (~1.096 req/s) | 85,7 | 515,9 | 773,1 | 8.357,4 | 0 % | 98,62 % | 40,6 % | 0 s | 104,9 |
+| `contrafactual-portada-2r-n2-nginx-cache-fotos-it27` (no es la configuración oficial) | 2 | 120 visitas/s (~1.680 req/s) | 1,4 | 2,7 | 27,4 | 619,6 | 0 % | 99,96 % | 0 % | 0 s | 178,9 |
+
+La latencia de la visita completa (listado + fotos) en el pico de 120 visitas/s: p95 de 125 ms (1 réplica, pero 90 % sin fotos), 1,44 s (2 réplicas, fría), 10 s (caliente) y 1,73 s (repetición).
+
+**ASR4, lectura pública con y sin carga científica** (`carga-cientifica-simultanea.js`, 300 req/s públicas durante 120 s, 2 réplicas, caché fría; la carga científica son 30 eventos/s `hallazgo.registrado`/`reclasificado` por RabbitMQ):
+| Corrida | Peticiones | p50 | p95 | p99 | máx | no-200 | 5xx | Eventos publicados / procesados | Cola al final | DLQ | Umbral |
+|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---|
+| `asr4-sin-it27` (`CIENTIFICA=0`) | 36.001 | 1,3 | 6,9 | 11,7 | 17,1 | 0 % | 0 % | – | – | – | p95 <= 2.000 ms |
+| `asr4-con-it27` (`CIENTIFICA=1`) | 36.001 | 1,3 | 7,2 | 12,6 | 138,5 | 0 % | 0 % | 3.601 / 3.601 (100 % publicados bien) | 0 | 0 | p95 <= 2.000 ms, DLQ = 0 |
+
+**Descartados o fuera de la evidencia** (no cuentan, D42):
+- `descartado-asr4-sin-url-inaccesible-it27.json` (corrida mía): se lanzó con `RED_K6=biohub_default` y la URL por defecto `127.0.0.1:18080`, inalcanzable desde esa red; 100 % de fallos. Se repitió con `BASE_URL=http://nginx:8080` y `RMQ_URL=http://rabbitmq:15672`. Es un error de uso del banco, no del sistema.
+- `descartado-asr1-portada-2r-n2-fria-it27-repeticion-incompleta.json` (renombrado por QA, venía de la noche anterior): se interrumpió a los 60 s de 310 (1.675 visitas, fases pico y post en 0; sin `loadavg_despues` ni `replicas_verificadas_docker`). Su lugar lo ocupa `...-repeticion2` (completa, hecha por QA).
+- `ensayo-portada-2r-n1/n3/n4/n8.json`: exploratorios de 95 s con la máquina cargada; sirvieron para elegir N, no son evidencia.
+
+### Veredicto por ASR
+| ASR | Veredicto | Por qué |
+|---|---|---|
+| **ASR1 / RNF1** (pico x60 en la consulta pública) | **CUMPLE** para fichas, búsquedas y portada hasta 60 visitas/s; **CUMPLE CON RESERVAS** para la portada a 120 visitas/s | Fichas: 0 % de 5xx y p95 de 5,6 a 7,0 ms con 1 y 2 réplicas. Portada con N=1: 0 % de 5xx y p95 de 8 ms. Portada con N=2 y 2 réplicas, 3 corridas: sin 5xx el 99,4 %, 98,2 % y 100 % (>= 95 %), estabilización de 0, 195 y 0 s (< 300 s), p95 por petición de 251 a 516 ms (< 2 s). Pero no es estable: la visita completa llega a 10 s y, contando las iteraciones descartadas como fallo (D42), una de las tres corridas queda en 87,5 % (< 95 %). La degradación se activa y se mide (`modoDegradado`): con 1 réplica, el 90 % de las visitas de la portada pierde las fotos y el resto se sirve con p95 de 199 ms. |
+| **ASR4 / RNF5** (<= 2 s con carga científica) | **CUMPLE** | p95 de 7,2 ms con carga contra 6,9 ms sin ella; 0 % de 5xx; 3.601 de 3.601 eventos procesados; cola y DLQ en 0. La diferencia (0,3 ms) está dentro del ruido. El jar es el de 27g: el detector endurecido no hizo caer ningún evento de carga a la DLQ. |
+
+### Limitaciones de las mediciones
+1. **Equipo compartido y ruidoso.** k6, NGINX, las réplicas, MySQL, Redis y RabbitMQ comparten 16 CPU con una VM de 4 CPU y `ollama`; la carga previa varió de 4,5 a 16,5. La corrida "caliente" (peor que las "frías") es el síntoma: no se puede atribuir esa diferencia a la caché, porque los bytes de las fotos no se cachean en el servidor. Hay una sola corrida por configuración, salvo la portada 2r N=2 (3 corridas con resultados muy dispersos: p95 de 251 a 516 ms, estabilización de 0 a 195 s).
+2. **El cuello de la portada son los bytes de las fotos**, no el CPU de las réplicas: a 120 visitas/s se mueven de 105 a 158 MB/s de miniaturas leídas de `foto_publica`. La fotos de la semilla son de ~330 KB (el tope real es 600 KB; las reales suelen ser menores) y todas iguales; el volumen y el patrón de acceso reales no están medidos. El contrafactual con caché de las fotos en NGINX (p95 de 2,7 ms y 99,96 %) indica que una caché de bytes elimina el problema, pero no es la configuración oficial ni se despliega. Es una decisión de diseño pendiente para el arquitecto (D66 acepta leerlas de MySQL).
+3. **N es un supuesto.** Se probaron 1 y 2 visitas/s de base para la portada y 60 para fichas; no hay tráfico real que fije N.
+4. **ASR4 no mide el lado científico real**: son eventos sintéticos por RabbitMQ (sin cifrado AES-GCM, historial, adjuntos ni el HTTP del científico) y no incluye eventos `evidencia.*` (mensajes de hasta 1 MB, cola `consulta-publica.fotos`). Una corrida por condición, de 120 s.
+5. **Sin gateway ni red real**: va directo a NGINX (D42; el gateway limita a 120 por minuto por IP y mediría el limitador). MySQL y Redis son los del Compose raíz, sin límites de CPU ni de memoria; solo las réplicas y NGINX tienen límites (2 CPU).
+6. **Metadatos:** el commit sale `14f140c` con cambios sin confirmar (en las corridas de ASR1, "sucio, iteración 27"; en las de ASR4, `-sin-commit`). El JSON de ASR4 no trae `exito_d42_pct` ni estabilización; con 0 descartadas y 0 % de fallos equivale a 100 %.
+
+### Bugs y observaciones
+| ID | Severidad | Responsable | Descripción |
+|---|---|---|---|
+| OBS-I27-1 | Bajo | backend (registro) | `POST /api/cientifico/hallazgos/{id}/evidencias` devuelve 201 con `"creadoEn": null`; el contrato (04 §13.9) lo lista en el cuerpo y el `GET` de la lista sí lo trae (`2026-11-22T11:31:32.019Z`). Reproducir: subir cualquier JPEG nuevo a un hallazgo y mirar el cuerpo del 201. |
+| OBS-I27-2 | Bajo | arquitecto / backend (documentación) | 04 §13.10 no documenta el **409** `CONFLICTO` de `POST /admin/fotos-publicas/republicar` (SEC-I27-7), que sí está implementado y probado. Tampoco que el 202 cuenta las fotos pedidas aunque alguna falle luego en segundo plano: con un archivo de evidencia faltante respondió `{"fotos":2}` y el log registró 1 de 2 con un ERROR por la que falló; el administrador no tiene forma de saberlo por la API. |
+| OBS-I27-3 | Bajo | backend | Una ruta ya eliminada bajo `/api/cientifico/**` (`GET /api/cientifico/publico/especies/foto`, con token) responde 404 con el JSON por defecto de Spring (`timestamp/status/error/path`) en lugar de `application/problem+json`; es el hallazgo recurrente de formatos de error inconsistentes. No afecta a D66: la ruta ya no sirve nada. |
+| Confirmación | – | Hernando / grupo | El detector rechaza `long. 12 cm`, `lat 3` y `{"largo": 1.234, "ancho": 2.345}` con 400 (previsto en el plan 00, decisiones del grupo). Reproducido en vivo. |
+| Entorno | – | QA | La colección Bruno de `ubicacion/` depende de que las filas de la base local estén cifradas con la clave de la sesión; con filas de corridas anteriores `12-mapa-alto-rango-200` falla por `omitidos` 3 (ver arriba). No es un defecto del servicio. |
+
+### No ejecutado o fuera de alcance
+- WebKit del E2E de web-publica (equipo sin librerías).
+- Un E2E del navegador contra el backend real **no está automatizado**: se hizo a mano con Playwright en el scratchpad (fotos, CORS y CSP) y no queda en el repo; el E2E del proyecto simula la API con `page.route` y no habría detectado un `fotoId` falso, un CORS ausente ni una CSP sin `blob:`.
+- Prueba de integración contra las VMs (broker desplegado y `PublicadorHallazgoE2ETest`, 2 de las 3 omitidas): fuera del alcance de la iteración.
+- No se repitieron las corridas de la noche anterior; no se probó la matriz de navegadores ni el comportamiento de la caché `immutable` de una foto retirada (decisión pendiente 2 del plan 00: sigue en el navegador hasta un año).
+- Quedan en la base local los hallazgos y fichas de prueba `Qaspecies ...` (el historial es inmutable, ASR7); las fotos de prueba quedaron retiradas.
+
+### Veredicto Iteración 27 (27e y 27d): APROBADO con observaciones
+27a, 27b, 27c y 27g compilan y pasan aquí (654 + 408 + 55 pruebas, E2E 38/38 tres veces, 0 fallos), y los flujos de D66 y los tres pendientes de frontend se comprobaron contra servicios reales con un control negativo para la CSP. ASR4 cumple con holgura; ASR1 cumple en fichas y portada a 60 visitas/s y queda con reservas en la portada a 120 visitas/s, donde el límite es el ancho de banda de las fotos leídas de MySQL (decisión de diseño pendiente, no un defecto de D66). No hay bugs Críticos, Altos ni Medios.

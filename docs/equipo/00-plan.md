@@ -417,23 +417,97 @@ Despliegue de bases, Redis y RabbitMQ en VMs locales con una VPN de malla, y su 
 - Quien tenga Keycloak ya importado no necesita reimportar: `levantar.ps1` activa el tema del login por la API de administración.
 - Al subir, avisar al equipo: cambian `docker-compose.yml` (monta el tema) e `infra/` (`.gitattributes` de MySQL y espera en `crear-usuarios.sh`).
 
-# Iteración 26: lo que le tocó a Santiago en la revisión del equipo
+---
+# Iteración 26: revisión general del 2026-11-19 (solo lectura)
 
-**Fecha:** 2026-11-21 · **Rama:** `feature/correcciones-revision` (sale de `develop` ya reescrito).
+**Rama:** `develop` (`8d23981` → `14f140c`, mismo árbol). **Modo:** equilibrado, sin tope. Informe: `docs/revision/2026-11-19/INFORME.md`.
+
+| # | Tarea | Responsable | Modelo | Estado |
+|---|---|---|---|---|
+| 26a | Quitar coautoría de Claude de 19 commits (develop + 5 feature) y restaurar protección | Tech Lead | opus | Hecho |
+| 26b | Arquitectura, RNF y ASR | arquitecto-software | opus / high | Hecho (7,0) |
+| 26c | RF y HU | product-owner | sonnet / medium | Hecho (8,0) |
+| 26d | Backend | backend-senior | sonnet / high | Hecho (7,0) |
+| 26e | Bases de datos | dba | sonnet / high | Hecho (7,5) |
+| 26f | Frontend | frontend-senior | sonnet / medium | Hecho (7,5) |
+| 26g | Seguridad | ciberseguridad | opus / high | Hecho (7,0, Rechazado por SEC-R-1) |
+| 26h | DevOps | devops | sonnet / medium | Hecho (6,5) |
+| 26i | QA: build, tests y app viva | qa-tester | sonnet / high | Hecho (8,5, Aprobado) |
+
+**Modelos y consumo (iteración 26):**
+| Fase | USD | Agente que más consumió | Cambios de modelo (motivo) |
+|---|---:|---|---|
+| R1 + R2 (8 informes y consolidado) | 15,06 (opus 10,30; sonnet 4,77) | arquitecto-software (4,22) | qa-tester sonnet/**high** (matriz: medium): levanta y prueba todo el sistema |
+
+---
+# Iteración 27: pendientes de Juanita de la revisión 2026-11-19
+
+**Rama:** `feature/ubicacion-consulta-publica` (al día con `develop` `14f140c`). **Modo:** equilibrado, sin tope. **Fuente:** `docs/revision/2026-11-19/pendientes-por-persona.md` (sección Juanita). **Decisión nueva:** D66 (fotos públicas por evento), contrato 04 §4.4, §7.6 y §13.10.
+
+| # | Tarea | Responsable | Modelo | Estado |
+|---|---|---|---|---|
+| 27a | D66 lado científico (miniatura al publicar, eventos `evidencia.*`, republicación, quitar ruta sin rol), BE-R-1/SEC-R-2 (un solo detector, listener sin 500), DB-J22-1 (`ANALYZE TABLE`) | backend-senior | sonnet / high | Hecho: `verify` 605 tests, 0 fallos (3 omitidos: broker/BD externos). Migraciones `V20261121_1000` y `_1010`. Falsos positivos nuevos: "long. 12 cm", "lat 3" |
+| 27b | D66 lado consulta-publica (cola `consulta-publica.fotos`, `foto_publica`, rutas de foto, `fotoId`), ARQ-R-5 (monitor en `/api/publica/**` y catálogo degradado), invalidación de caché acotada, QA-R-5 (`familia=` vacío) | backend-senior | sonnet / high | Hecho: `verify` 406 tests, 0 fallos. Migración `foto_publica`. QA-R-5 ya ignoraba el vacío (solo se agregaron pruebas). Búsquedas por TTL |
+| 27c | web-publica: FE-R-1 (foto por `fotoId`, sin 404 falsos), FE-R-5 (fondos de la portada), QA-R-3 (E2E intermitente) | frontend-senior | sonnet / medium | Hecho: 55 unitarios, build OK, E2E 38/38 ×3. Pendiente al integrar: `fotoId` real, CORS de la foto, `blob:` en CSP |
+| 27d | Mediciones k6 con metadatos D42: ASR1 (incluida la portada) y ASR4 | qa-tester | sonnet / high | Hecho: ASR4 CUMPLE (p95 7,2 ms con 30 eventos/s). ASR1 CUMPLE en fichas y en la portada a 60 visitas/s; CUMPLE CON RESERVAS en la portada a 120 visitas/s con 2 réplicas (visita completa hasta 10 s; el cuello son las fotos leídas de MySQL; una caché de fotos en NGINX lo elimina: decisión pendiente del arquitecto). Detalle en 07 |
+| 27e | Verificación QA de 27a-c y 27g | qa-tester | sonnet / **high** | Aprobado: científico 654, consulta-publica 408, web-publica 55 unitarios y E2E 38/38 ×3; Bruno 132/133 (el fallo es de datos locales). Verificación en vivo de D66, CORS y CSP OK. Bajos: OBS-I27-1 (`creadoEn` null en el 201 de evidencias), OBS-I27-2 (409 y fallos en segundo plano de `republicar` sin documentar), OBS-I27-3 (404 sin problem+json) |
+| 27f | Auditoría de seguridad de D66 y del detector | ciberseguridad | opus / high | Aprobado con observaciones: 0 Crít/Alt. Medios SEC-I27-1 (regresiones del detector unificado: "5.532, 73.367", "5°31N", Garmin) y SEC-I27-2 (claves/números en atributos); Bajo SEC-I27-8 (CSP del README) |
+
+**Coordinación:** D65 lo diseñó Santiago; avisarle de D66 antes del PR. BE-R-1 toca `registro` (Hernando): avisarle también.
+
+**Modelos y consumo (iteración 27):**
+| Fase | USD acumulado | Agente que más consumió | Cambios de modelo (motivo) |
+|---|---:|---|---|
+| Construcción (27a-c) | 5,61 (sonnet 3,89; opus 1,72) | backend-senior consulta-publica (1,97) | Ninguno: todo según la matriz equilibrada |
+
+**Decisiones a llevar al grupo:** (1) el detector unificado rechaza "long. 12 cm" y "lat 3" (Hernando); (2) una foto retirada puede seguir hasta un año en navegadores por `immutable` (D66); (3) búsquedas y catálogo tardan hasta ~90 s en reflejar un cambio (TTL).
+
+**Ciclo de corrección 1 (seguridad):**
+| # | Tarea | Responsable | Modelo | Estado |
+|---|---|---|---|---|
+| 27g | SEC-I27-1 (detector endurecido en las 2 copias + paridad), SEC-I27-2 (claves y pares numéricos en atributos y plantillas), SEC-I27-7 (log del administrador y 409), SEC-I27-8 (`blob:` en la CSP del README) | backend-senior | sonnet / high | Hecho en la copia `/home/toji/biohub-fix27`: científico 654 tests y consulta-publica 408, 0 fallos. Corpus 41/41 detectados, 37/37 legítimos. **Pasado a la rama el 2026-11-22** (solo código, tests y README de web-publica; `pruebas-carga/` de la rama es más nuevo y se conservó) |
+| 27h | Re-verificación de seguridad del ciclo 27g | ciberseguridad | opus / high | Aprobado con observaciones: SEC-I27-1/2/7/8 cerrados. Nuevos: Medios SEC-I27g-1 (formatos no detectados: espacios múltiples, hemisferio en minúscula, GMS sin °, UTM/MGRS, Plus Codes) y SEC-I27g-2 (claves `norte`/`este`, camelCase, tope de 64); Bajos SEC-I27g-3 (Unicode) y SEC-I27g-4 (paridad de corpus entre módulos). Pasan a la siguiente iteración |
+| 27i | Partes rápidas de SEC-I27g-1 (espacios, hemisferio en minúscula, GMS sin °, longitud primero) y SEC-I27g-2 (camelCase/punto en claves, `norte`/`este`), pedidas por Juanita antes del PR | backend-senior | sonnet / high | Hecho en `biohub-fix27`: científico 677 tests y consulta-publica 408, 0 fallos (3 omitidos de siempre). Corpus 65 detectados / 57 legítimos / 9 dudosos. Nuevos falsos positivos: `talla 5 12 n`, `n 12 3.5`, `70.250, 3.100 g`. Pasado a la rama; el Tech Lead corrió `verify`: científico 680 (3 omitidos) y consulta-publica 408, 0 fallos |
+
+Pendiente para el grupo: la regla de pares numéricos rechaza `{"largo": 1.234, "ancho": 2.345}` (≥ 3 decimales y en rango). Si molesta, exigir ≥ 4 decimales fuera del rango de Colombia.
+
+Cambio de modelo: 27e pasa a sonnet/**high** (matriz: medium) porque levanta y prueba todo el sistema y además consolida k6.
+
+**Pasan a la siguiente iteración:** SEC-I27g-1 (UTM/MGRS, Plus Codes, enlaces de mapas), SEC-I27g-2 (tope de 64, `x`/`y` con grado, objetos hermanos, `geo_latitud`), SEC-I27g-3, SEC-I27g-4, OBS-I27-1..3, el tercer detector `DetectorCoordenadasEnTexto` y la decisión sobre la caché de fotos para ASR1.
+
+**Falsos positivos nuevos para el grupo:** `talla 5 12 n`, `n 12 3.5`, `70.250, 3.100 g`.
+
+| Fase | USD (sesión 2026-11-22) | Agente que más consumió | Cambios de modelo (motivo) |
+|---|---:|---|---|
+| Calidad y cierre (27d, 27e, 27h, 27i) | 5,14 (opus 2,95; sonnet 2,19) | qa-tester (1,75) | qa-tester sonnet/**high** (matriz: medium): sistema completo más k6 |
+
+**Estado de Juanita (2026-11-22):** su parte de la revisión 2026-11-19 está **completa** (PR #18 hacia `develop`, lo mezcla ella). Las decisiones de grupo y los hallazgos de seguimiento (SEC-I27g-1..4, OBS-I27-1..3, caché de fotos para ASR1) quedan como seguimiento del grupo, sin asignar a Juanita.
+
+**Ciclo de corrección 2 (CI del PR #18):** `QaEventosInvalidosDlqTest` fallaba al azar en GitHub. Causa raíz: el patrón `PLANAS` del detector unificado (nuevo en esta iteración) aceptaba una letra suelta pegada a 7 cifras, así que un UUID que empieza por `e` y 7 dígitos (unos 2 de cada 1.000) se tomaba por coordenada plana y el evento se descartaba en silencio (en producción, la ficha no se habría publicado). Severidad Alta. Corrección del Tech Lead: la letra sola `n`/`e` exige espacio, `:` o `=` antes del número; corpus con UUID legítimos y resumen del bloque actualizados en los dos servicios; 0 de 200.000 UUID marcados. `verify`: científico 677 (+3 omitidos) y consulta-publica 408, 0 fallos. Se revirtió el aumento del tiempo de espera de la prueba (no era la causa). Efecto en seguridad: ya no se detecta una plana escrita sin separador (`e1045678`); se acepta.
+
+**Cierre de la iteración 27 (2026-11-22):** PR #18 mezclado en `develop` por Juanita (`800b198`), CI en verde (22/22). La parte de Juanita de la revisión 2026-11-19 queda **cerrada**. El seguimiento (SEC-I27g-1..4, OBS-I27-1..3, tercer detector y caché de fotos para ASR1) y las decisiones de grupo quedan sin asignar.
+
+| Fase | USD (sesión 2026-11-22) | Agente que más consumió | Cambios de modelo (motivo) |
+|---|---:|---|---|
+| Corrección de CI y cierre | ver medición final | Tech Lead (depuración de causa raíz hecha directamente, sin subagente) | Ninguno |
+
+---
+# Iteración 28: pendientes de Santiago de la revisión 2026-11-19
+
+**Fecha:** 2026-11-21 · **Rama:** `feature/correcciones-revision` (sale de `develop` ya reescrito; al integrar se trajo la iteración 27).
 
 | # | Tarea | Estado |
 |---|---|---|
-| 26a | GPS en las evidencias (seguridad lo tenía en "Rechazado"): JPEG recorrido escaneo por escaneo y cortado en el fin de imagen (se va el video de las fotos en movimiento y las imágenes MPF con su EXIF); audios reconstruidos solo con el sonido (WAV, MP3, FLAC; OGG Vorbis u Opus con comentarios vacíos y páginas refirmadas) | Hecho: `LimpiadorAudio`, 25 pruebas (`LimpiadorMetadatosTest`, `LimpiadorAudioTest`) |
-| 26b | Fotos públicas D65: ADR completo con la alternativa de copiar una miniatura al lado de lectura y cuándo revisarla | Hecho: `adr/D65-fotos-publicas.md`. Se mantiene el diseño (decisión del equipo) |
-| 26c | Historial protegido también en local: las 4 bases con `*_app` (sin permisos de esquema) y `*_migr` (Flyway), como en Aiven; sin `ALL PRIVILEGES` | Hecho: `infra/mysql/initdb/01-usuarios.sh` (repetible), probado con volúmenes viejos y con uno nuevo |
-| 26d | `levantar` ajusta los usuarios en cada arranque, genera las contraseñas de migración que falten y bloquea el historial con el mismo archivo de Aiven; lo comprueba con error 1142 | Hecho y probado de punta a punta |
-| 26e | `levantar.sh` para Linux y macOS, con los mismos pasos y opciones | Hecho. Probado en Git Bash el modo `--estado`; **falta** una corrida completa en Linux |
-| 26f | README al día (ya no dice "esqueleto"), `.env.example` completo y `.gitattributes` con LF para los `.sh` | Hecho |
-| 26g | Plan de despliegue de la Entrega 3 | Hecho: `12-plan-despliegue-entrega-3.md`, con los puntos por decidir marcados |
-| 26h | Web interna: CSP (como la del portal) y pruebas de las 8 salas (registro, detalle, historial, fichas, equipos, reportes, usuarios, API Keys) | Hecho: 42 pruebas nuevas (140 en total). CSP comprobada en el build recorriendo las 9 salas sin ninguna violación |
+| 28a | GPS en las evidencias (seguridad lo tenía en "Rechazado"): JPEG recorrido escaneo por escaneo y cortado en el fin de imagen (se va el video de las fotos en movimiento y las imágenes MPF con su EXIF); audios reconstruidos solo con el sonido (WAV, MP3, FLAC; OGG Vorbis u Opus con comentarios vacíos y páginas refirmadas) | Hecho: `LimpiadorAudio`, 25 pruebas (`LimpiadorMetadatosTest`, `LimpiadorAudioTest`) |
+| 28b | Fotos públicas D65: ADR completo | Hecho: `adr/D65-fotos-publicas.md`. Queda como historia de la decisión: la parte de fotos la reemplazó D66 (iteración 27), que es lo vigente |
+| 28c | Historial protegido también en local: las 4 bases con `*_app` (sin permisos de esquema) y `*_migr` (Flyway), como en Aiven; sin `ALL PRIVILEGES` | Hecho: `infra/mysql/initdb/01-usuarios.sh` (repetible), probado con volúmenes viejos y con uno nuevo |
+| 28d | `levantar` ajusta los usuarios en cada arranque, genera las contraseñas de migración que falten y bloquea el historial con el mismo archivo de Aiven; lo comprueba con error 1142 | Hecho y probado de punta a punta |
+| 28e | `levantar.sh` para Linux y macOS, con los mismos pasos y opciones | Hecho. Probado en Git Bash el modo `--estado`; **falta** una corrida completa en Linux |
+| 28f | README al día (ya no dice "esqueleto"), `.env.example` completo y `.gitattributes` con LF para los `.sh` | Hecho |
+| 28g | Plan de despliegue de la Entrega 3 | Hecho: `12-plan-despliegue-entrega-3.md`, con los puntos por decidir marcados |
+| 28h | Web interna: CSP (como la del portal) y pruebas de las 8 salas (registro, detalle, historial, fichas, equipos, reportes, usuarios, API Keys) | Hecho: 42 pruebas nuevas (140 en total). CSP comprobada en el build recorriendo las 9 salas sin ninguna violación |
 
-**Pendientes tras la iteración 26:**
+**Pendientes tras la iteración 28:**
 - Al subir, avisar al equipo: cambian `docker-compose.yml` e `infra/mysql`. Quien use `levantar` no hace nada más. Quien levante a mano necesita las `*_MIGR_*` en su `.env` (ver `.env.example`) y correr una vez `docker exec biohub-mysql-<base> bash /docker-entrypoint-initdb.d/01-usuarios.sh` en cada base (no borra datos).
 - Las evidencias que ya estén guardadas se subieron con el limpiador anterior: los audios y las fotos con datos pegados al final pueden conservar ubicación. Por decidir: volver a limpiarlas con una tarea única o borrarlas si son de prueba.
 - Probar `levantar.sh` completo en una máquina Linux.
-

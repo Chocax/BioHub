@@ -62,6 +62,14 @@ public class EvidenciaHallazgo {
     @Column(name = "publica", nullable = false)
     private boolean publica;
 
+    /** Miniatura JPEG para el portal (D66): se genera una sola vez al hacerla pública. {@code null} si aún no existe. */
+    @Column(name = "ruta_miniatura", length = 500)
+    private String rutaMiniatura;
+
+    /** Instante del último cambio de visibilidad (D66): ordena los eventos {@code evidencia.*}. */
+    @Column(name = "publica_cambio_en")
+    private Instant publicaCambioEn;
+
     @Column(name = "creado_en", insertable = false, updatable = false)
     private Instant creadoEn;
 
@@ -133,12 +141,31 @@ public class EvidenciaHallazgo {
         return publica;
     }
 
+    public String getRutaMiniatura() {
+        return rutaMiniatura;
+    }
+
+    public Instant getPublicaCambioEn() {
+        return publicaCambioEn;
+    }
+
     /** Solo una fotografía puede ser pública: un audio no se muestra en el portal. */
-    public void marcarPublica(boolean valor) {
+    public void marcarPublica(boolean valor, Instant cambioEn) {
         if (valor && tipo != TipoEvidencia.FOTOGRAFIA) {
             throw new IllegalStateException("Solo una fotografía puede ser pública");
         }
         this.publica = valor;
+        this.publicaCambioEn = cambioEn;
+    }
+
+    /** Fija la ruta de la miniatura ya guardada en disco (D66). */
+    public void registrarMiniatura(String ruta) {
+        this.rutaMiniatura = ruta;
+    }
+
+    /** Fija el instante de cambio de una foto que ya era pública antes de D66 (migración). */
+    public void fijarCambioEn(Instant cambioEn) {
+        this.publicaCambioEn = cambioEn;
     }
 
     /** Tipo de evidencia admitida por HU-01. */

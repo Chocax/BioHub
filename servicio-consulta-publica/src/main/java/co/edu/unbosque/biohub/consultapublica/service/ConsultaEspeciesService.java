@@ -10,8 +10,8 @@ import co.edu.unbosque.biohub.consultapublica.service.vista.FamiliasResponse;
 import co.edu.unbosque.biohub.consultapublica.service.vista.PaginaEspeciesResponse;
 
 /**
- * Catálogo público por especie y lista de familias (D65), con la misma caché tolerante que las fichas: un evento
- * de hallazgo la invalida ({@link InvalidadorCacheFichas}) y si Redis falla se lee de MySQL.
+ * Catálogo público por especie y lista de familias (D65), con la misma caché tolerante que las fichas: expira por TTL
+ * corto, un evento de foto vacía el catálogo ({@link InvalidadorCacheFichas}) y si Redis falla se lee de MySQL.
  */
 @Service
 public class ConsultaEspeciesService {
@@ -34,8 +34,13 @@ public class ConsultaEspeciesService {
                 criterio.modoDegradado(), criterio.filtrosIgnorados());
     }
 
-    @Cacheable(cacheNames = CacheConfig.FAMILIAS, key = "'todas'", sync = true)
-    public FamiliasResponse familias() {
-        return new FamiliasResponse(repositorio.familias(TOPE_FAMILIAS));
+    /**
+     * Las familias del desplegable. En modo degradado (ARQ-R-5) la lista va vacía y no toca la base: es una función
+     * secundaria que se apaga con la carga (04 §4.4). La clave de la caché incluye el modo, así una respuesta
+     * degradada no queda como la normal cuando la carga baja.
+     */
+    @Cacheable(cacheNames = CacheConfig.FAMILIAS, key = "#degradado", sync = true)
+    public FamiliasResponse familias(boolean degradado) {
+        return new FamiliasResponse(degradado ? List.of() : repositorio.familias(TOPE_FAMILIAS));
     }
 }

@@ -46,11 +46,17 @@ public abstract class BaseIntegracion {
 
     @BeforeEach
     void limpiarEstado() {
+        jdbc.sql("DELETE FROM foto_publica").update();
         jdbc.sql("DELETE FROM ficha_publica").update();
-        cacheManager.getCache("fichas").clear();
-        cacheManager.getCache("busquedas").clear();
+        // Los eventos ya no vacían las búsquedas (ARQ-R-5): cada prueba empieza con todas las cachés limpias
+        for (String nombre : cacheManager.getCacheNames()) {
+            cacheManager.getCache(nombre).clear();
+        }
         while (rabbit.receive("consulta-publica.eventos.dlq") != null) {
             // vacía la DLQ de pruebas anteriores
+        }
+        while (rabbit.receive("consulta-publica.fotos.dlq") != null) {
+            // y la de fotos
         }
     }
 
@@ -62,6 +68,23 @@ public abstract class BaseIntegracion {
         long limite = System.nanoTime() + espera.toNanos();
         while (System.nanoTime() < limite) {
             Message m = rabbit.receive("consulta-publica.eventos.dlq");
+            if (m != null) {
+                return m;
+            }
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return null;
+            }
+        }
+        return null;
+    }
+
+    protected Message siguienteDeLaDlqDeFotos(java.time.Duration espera) {
+        long limite = System.nanoTime() + espera.toNanos();
+        while (System.nanoTime() < limite) {
+            Message m = rabbit.receive("consulta-publica.fotos.dlq");
             if (m != null) {
                 return m;
             }

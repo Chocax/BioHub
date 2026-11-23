@@ -70,7 +70,7 @@ Lo que sigue **pendiente** al cierre de este documento está en la revisión del
 
 1. Portal público (sin login): catálogo por especie con foto, ficha sin coordenadas, búsqueda por familia y departamento.
 2. `investigador1`: registrar un hallazgo con foto y audio, marcar la foto como pública, reclasificar con justificación.
-3. Portal público: la foto aparece en la especie en un par de minutos (la caché recuerda "sin foto" durante 2 minutos, ADR D65).
+3. Portal público: la foto aparece en la especie. Llega por evento a la base de lectura (D66); el catálogo puede tardar hasta un minuto y medio en mostrarla por su caché.
 4. `cientifico1`: mapa con coordenadas exactas del hallazgo nuevo.
 5. `auditor1`: historial con las dos versiones, comparación y auditoría campo a campo, sin botones de edición.
 6. `analista1`: pedir el reporte de un mes, seguir trabajando mientras se genera y descargar PDF y CSV.

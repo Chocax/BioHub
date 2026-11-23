@@ -1,13 +1,25 @@
-# ADR D65 · Fotos públicas por especie: el portal se las pide al Servicio Científico
+# ADR D65 · Fotos públicas por especie
 
 | | |
 |---|---|
-| **Estado** | Aceptada (2026-11-19). Revisada el 2026-11-21 tras la observación de la revisión del equipo |
+| **Estado** | Aceptada el 2026-11-19. **La parte de cómo llega la foto al portal la reemplazó [D66](../03-arquitectura.md) el 2026-11-21** (iteración 27). Siguen vigentes el catálogo por especie y que ninguna foto es pública sin que la marque quien registra |
 | **Responsable** | Santiago (diseño), con Juanita (consulta pública) |
 | **Resumen en la tabla** | [`03-arquitectura.md`, decisión D65](../03-arquitectura.md) |
 | **Contrato** | [`04-contrato-api.md` §4.4 y §13.10](../04-contrato-api.md) |
 
-## Contexto
+## Lo vigente desde D66 (resumen)
+
+La revisión del equipo del 2026-11-19 señaló (ARQ-R-1) que la llamada del portal al científico rompía el aislamiento de ASR1 y ASR2: el tráfico público llegaba hasta la base de escritura. D66 lo corrigió con la alternativa que este ADR había descartado:
+
+- Al marcar una foto como pública, el científico genera **una sola vez** la miniatura (JPEG de 1200 px como máximo, sin metadatos) y publica `evidencia.publicada`. Al desmarcarla publica `evidencia.retirada`.
+- consulta-publica guarda la miniatura en `foto_publica` de su propia base y la sirve desde ahí (`/api/publica/especies/fotos/{fotoId}`).
+- Desaparecen la ruta sin rol del científico (`GET /api/cientifico/publico/especies/foto`) y `FotosCientificoHttp`.
+
+D66 revisó el motivo de este ADR para descartar el evento: con la miniatura ya reducida, el mensaje pesa cientos de KB, no MB, y va por una cola aparte (`consulta-publica.fotos`).
+
+Las secciones siguientes se conservan **como historia de la decisión**: explican por qué se eligió primero la llamada síncrona. Lo que describen sobre la ruta, la caché en memoria y `FotosCientificoHttp` ya no existe en el código. Los detalles vigentes están en D66 y en el contrato (04 §4.4, §7.6 y §13.10).
+
+## Contexto (2026-11-19)
 
 El portal público mostraba una tarjeta por registro con una ilustración genérica. En la revisión del front se pidió un catálogo por especie con su foto, para que la página no se viera vacía y para que el visitante reconozca la especie sin saberse el nombre científico.
 
@@ -18,7 +30,7 @@ Hay dos riesgos que pesan más que la estética:
 1. **La ubicación.** Una foto puede mostrar el lugar (un letrero, un río reconocible) o traerlo en sus metadatos. Una foto interna no debe llegar al portal sin que alguien lo decida.
 2. **El acoplamiento.** El portal es el componente con más tráfico (ASR1, ASR4) y no debe caerse si el lado de escritura está lento o abajo.
 
-## Decisión
+## Decisión original (2026-11-19; los puntos 2 a 5 los reemplazó D66)
 
 1. **Ninguna foto es pública por defecto.** El investigador marca «Mostrar en el portal» en el detalle del hallazgo (`PUT /api/cientifico/hallazgos/{id}/evidencias/{evidenciaId}/publica`, columna `hallazgo_evidencia.publica`). Solo se puede marcar una fotografía; un audio nunca es público. Queda en el log quién lo hizo.
 2. **El Servicio Científico entrega una versión reducida.** `GET /api/cientifico/publico/especies/foto?nombre=` devuelve la foto pública más reciente de la especie, reducida a 1200 px y recodificada en JPEG. Al recodificarla no sobrevive ningún metadato, aunque el original ya estaba limpio desde la subida (RNF9).
@@ -52,7 +64,9 @@ Hay dos riesgos que pesan más que la estética:
 - Quien publica una foto debe revisar que no muestre el lugar. Esto se le recuerda en la casilla del detalle.
 - Al desplegar en contenedores, `SERVICIO_CIENTIFICO_URL` de consulta-publica debe apuntar al científico por la red interna. El puerto del científico no se publica afuera.
 
-## Cuándo revisarla
+## Cuándo revisarla (lo que se escribió, y lo que pasó)
+
+Lo que pasó: se revisó antes de medir. La revisión de arquitectura del equipo consideró que el aislamiento del lado público (ASR1, ASR2) vale más que ahorrarse la cola, y D66 la reemplazó el 2026-11-21. Lo que se había escrito:
 
 Pasamos a la copia por evento (la alternativa de la revisión) si se cumple alguna de estas condiciones:
 
@@ -62,9 +76,8 @@ Pasamos a la copia por evento (la alternativa de la revisión) si se cumple algu
 
 La medición con k6 de la portada nueva de especies ya está en el plan de Juanita.
 
-## Pruebas que la sostienen
+## Pruebas que la sostienen hoy
 
-- `EspeciesYFotoPublicaMySqlTest` (científico): solo sale sin token una foto marcada como pública, reducida a 1200 px y en JPEG; solo quien registra puede marcarla y el nombre se valida.
-- `EspeciesPublicasIntegracionTest` (consulta-publica): la foto se sirve como JPEG con caché, y una especie sin foto responde 404. Es el mismo camino que cuando el científico no responde, porque `FotosCientificoHttp` convierte cualquier error en "sin foto".
-- `TodosLosEndpointsExigenRolTest` y `ArquitecturaSeguridadTest`: la única ruta sin rol del científico es la de la foto.
-- `LimpiadorMetadatosTest` y `LimpiadorAudioTest`: lo que se guarda no trae ubicación en los metadatos.
+- `FotosPublicasEventosMySqlTest` (científico): miniatura al marcar, eventos `evidencia.*`, y la ruta sin rol ya no existe.
+- `ConsumidorFotosIntegracionTest` y `EspeciesPublicasIntegracionTest` (consulta-publica): la foto llega por la cola y se sirve desde la base de lectura.
+- `LimpiadorMetadatosTest` y `LimpiadorAudioTest` (científico): lo que se guarda, y por lo tanto la miniatura, no trae ubicación en los metadatos.

@@ -3,6 +3,9 @@ package co.edu.unbosque.biohub.consultapublica.config;
 import java.util.Map;
 
 import org.springframework.amqp.core.Binding;
+import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
+import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.boot.autoconfigure.amqp.SimpleRabbitListenerContainerFactoryConfigurer;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.Declarables;
 import org.springframework.amqp.core.Queue;
@@ -21,8 +24,8 @@ import org.springframework.retry.policy.SimpleRetryPolicy;
 
 /**
  * Topología broker del CONSUMIDOR. Este servicio declara (y solo esto):
- * exchange {@code biohub.eventos}, DLX {@code biohub.eventos.dlx}, su cola, su DLQ ({@code <cola>.dlq})
- * y los bindings. No registra MessageConverter: el cuerpo JSON se interpreta a mano en ConsumidorEventos
+ * exchange {@code biohub.eventos}, DLX {@code biohub.eventos.dlx}, sus colas ({@code consulta-publica.eventos} y
+ * {@code consulta-publica.fotos}, D66), sus DLQ ({@code <cola>.dlq}) y los bindings. No registra MessageConverter: el cuerpo JSON se interpreta a mano en ConsumidorEventos
  * (ignora la cabecera __TypeId__ de otros servicios, que no existe como clase aquí). Los argumentos de la cola ({@code x-dead-letter-*}) deben coincidir en cualquier
  * declaración repetida. Los mensajes rechazados sin reencolar llegan a la DLQ vía el DLX.
  */
@@ -33,6 +36,8 @@ public class RabbitConfig {
 
     /** Patrones de routing key a los que se suscribe la cola. */
     static final String[] PATRONES = {"prueba.#", "hallazgo.#"};
+    /** Patrón de la cola de fotos (D66): {@code evidencia.publicada} y {@code evidencia.retirada}. */
+    static final String PATRON_FOTOS = "evidencia.#";
 
     @Bean
     TopicExchange eventosExchange(@Value("${biohub.eventos.exchange}") String nombre) {
@@ -56,6 +61,43 @@ public class RabbitConfig {
     @Bean
     Queue colaEventosDlq(@Value("${biohub.eventos.cola}") String cola) {
         return QueueBuilder.durable(cola + ".dlq").build();
+    }
+
+    /** Cola de las fotos públicas (D66): mensajes de hasta 1 MB; la reciben solo este servicio y nadie más. */
+    @Bean
+    Queue colaFotos(@Value("${biohub.eventos.cola-fotos}") String cola,
+                    @Value("${biohub.eventos.dlx}") String dlx) {
+        return QueueBuilder.durable(cola)
+                .deadLetterExchange(dlx)
+                .deadLetterRoutingKey(cola + ".dlq")
+                .build();
+    }
+
+    @Bean
+    Queue colaFotosDlq(@Value("${biohub.eventos.cola-fotos}") String cola) {
+        return QueueBuilder.durable(cola + ".dlq").build();
+    }
+
+    @Bean
+    Declarables bindingsFotos(Queue colaFotos, Queue colaFotosDlq, TopicExchange eventosExchange,
+                              TopicExchange eventosDlx) {
+        return new Declarables(
+                BindingBuilder.bind(colaFotos).to(eventosExchange).with(PATRON_FOTOS),
+                BindingBuilder.bind(colaFotosDlq).to(eventosDlx).with(colaFotosDlq.getName()));
+    }
+
+    /**
+     * Listener de las fotos: mismos reintentos y DLQ que el resto (los configura Spring Boot), pero con un
+     * prefetch pequeño. Con el valor por defecto (250) un lote de mensajes de 1 MB podría ocupar cientos de MB.
+     */
+    @Bean
+    SimpleRabbitListenerContainerFactory fotosListenerContainerFactory(
+            SimpleRabbitListenerContainerFactoryConfigurer configurer, ConnectionFactory conexion,
+            @Value("${biohub.eventos.fotos-prefetch:4}") int prefetch) {
+        SimpleRabbitListenerContainerFactory fabrica = new SimpleRabbitListenerContainerFactory();
+        configurer.configure(fabrica, conexion);
+        fabrica.setPrefetchCount(prefetch);
+        return fabrica;
     }
 
     @Bean
