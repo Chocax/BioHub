@@ -204,7 +204,7 @@ export default function NuevoHallazgo() {
         <div className="tarjeta">
           <p className="tarjeta__titulo titulo-icono"><Camera className="icono" aria-hidden="true" />Evidencias</p>
           <p className="texto-suave" style={{ margin: '0 0 16px' }}>
-            Fotos JPEG o PNG y audios WAV, MP3, OGG o FLAC, hasta 9 MB cada uno. A las fotos se les quita la ubicación GPS que guarda el celular.
+            Fotos JPEG o PNG y audios WAV, MP3, OGG o FLAC, hasta 9 MB cada uno. A las fotos y a los audios se les quitan los metadatos, donde el celular guarda la ubicación GPS.
           </p>
           <label className="boton boton--fantasma" style={{ cursor: 'pointer' }}>
             <Camera className="icono" aria-hidden="true" />Elegir archivos

@@ -411,7 +411,7 @@ Despliegue de bases, Redis y RabbitMQ en VMs locales con una VPN de malla, y su 
 | 25g | Iconos, favicon, login de Keycloak, pie del portal, pinturas que rotan, salas con pintura | Hecho |
 | 25h | Pruebas: catálogo y foto pública (científico y consulta), PDF, front unitario y E2E | Hecho |
 | 25i | Tercera ronda: reportes viejos con el formato nuevo y CSV para Excel, flechas del carrusel, pinturas al azar por sala, Usuarios y roles rediseñada, nombre y cartela de cada sala en los bordes, login con fondos que rotan, fondos sin pixelado | Hecho |
-| 25j | Más obras de historia de Colombia (E. W. Mark, Comisión Corográfica, Humboldt, Mutis) | Pendiente: Wikimedia bloqueó las descargas por exceso de peticiones |
+| 25j | Más obras de historia de Colombia (E. W. Mark, Comisión Corográfica, Humboldt, Mutis) | Parcial (2026-11-22): Wikimedia sigue bloqueando las descargas automáticas. Se sumaron 6 bocetos al óleo de F. E. Church de Colombia y los Andes desde Cooper Hewitt (Smithsonian, CC0): cima del Tequendama, pitahayas, guacamaya de Bogotá, paisaje sudamericano, Chimborazo y Sangay. Completado el mismo día: Santiago bajó desde su navegador 8 obras de Commons (Comisión Corográfica: Chita, Cachirí, minas de Santa Ana; E. W. Mark: bongo del Magdalena, rancho campesino, catedral de Santa Marta; Mutisia de la Expedición Botánica; Icononzo de Humboldt) |
 
 **Pendientes tras la iteración 25:**
 - Quien tenga Keycloak ya importado no necesita reimportar: `levantar.ps1` activa el tema del login por la API de administración.
@@ -490,3 +490,24 @@ Cambio de modelo: 27e pasa a sonnet/**high** (matriz: medium) porque levanta y p
 | Fase | USD (sesión 2026-11-22) | Agente que más consumió | Cambios de modelo (motivo) |
 |---|---:|---|---|
 | Corrección de CI y cierre | ver medición final | Tech Lead (depuración de causa raíz hecha directamente, sin subagente) | Ninguno |
+
+---
+# Iteración 28: pendientes de Santiago de la revisión 2026-11-19
+
+**Fecha:** 2026-11-21 · **Rama:** `feature/correcciones-revision` (sale de `develop` ya reescrito; al integrar se trajo la iteración 27).
+
+| # | Tarea | Estado |
+|---|---|---|
+| 28a | GPS en las evidencias (seguridad lo tenía en "Rechazado"): JPEG recorrido escaneo por escaneo y cortado en el fin de imagen (se va el video de las fotos en movimiento y las imágenes MPF con su EXIF); audios reconstruidos solo con el sonido (WAV, MP3, FLAC; OGG Vorbis u Opus con comentarios vacíos y páginas refirmadas) | Hecho: `LimpiadorAudio`, 25 pruebas (`LimpiadorMetadatosTest`, `LimpiadorAudioTest`) |
+| 28b | Fotos públicas D65: ADR completo | Hecho: `adr/D65-fotos-publicas.md`. Queda como historia de la decisión: la parte de fotos la reemplazó D66 (iteración 27), que es lo vigente |
+| 28c | Historial protegido también en local: las 4 bases con `*_app` (sin permisos de esquema) y `*_migr` (Flyway), como en Aiven; sin `ALL PRIVILEGES` | Hecho: `infra/mysql/initdb/01-usuarios.sh` (repetible), probado con volúmenes viejos y con uno nuevo |
+| 28d | `levantar` ajusta los usuarios en cada arranque, genera las contraseñas de migración que falten y bloquea el historial con el mismo archivo de Aiven; lo comprueba con error 1142 | Hecho y probado de punta a punta |
+| 28e | `levantar.sh` para Linux y macOS, con los mismos pasos y opciones | Hecho. Probado en Git Bash el modo `--estado`; **falta** una corrida completa en Linux |
+| 28f | README al día (ya no dice "esqueleto"), `.env.example` completo y `.gitattributes` con LF para los `.sh` | Hecho |
+| 28g | Plan de despliegue de la Entrega 3 | Hecho: `12-plan-despliegue-entrega-3.md`, con los puntos por decidir marcados |
+| 28h | Web interna: CSP (como la del portal) y pruebas de las 8 salas (registro, detalle, historial, fichas, equipos, reportes, usuarios, API Keys) | Hecho: 42 pruebas nuevas (140 en total). CSP comprobada en el build recorriendo las 9 salas sin ninguna violación |
+
+**Pendientes tras la iteración 28:**
+- Al subir, avisar al equipo: cambian `docker-compose.yml` e `infra/mysql`. Quien use `levantar` no hace nada más. Quien levante a mano necesita las `*_MIGR_*` en su `.env` (ver `.env.example`) y correr una vez `docker exec biohub-mysql-<base> bash /docker-entrypoint-initdb.d/01-usuarios.sh` en cada base (no borra datos).
+- Las evidencias que ya estén guardadas se subieron con el limpiador anterior: los audios y las fotos con datos pegados al final pueden conservar ubicación. Por decidir: volver a limpiarlas con una tarea única o borrarlas si son de prueba.
+- Probar `levantar.sh` completo en una máquina Linux.

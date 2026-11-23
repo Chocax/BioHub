@@ -23,9 +23,9 @@ function leerPagina(valor) {
 }
 
 /**
- * Fondo del héroe: cuatro pinturas que se alternan con un fundido lento (cada 25 s, 3 s de transición). Solo se
+ * Fondo del héroe: ocho pinturas que se alternan con un fundido lento (cada 25 s, 3 s de transición). Solo se
  * renderizan la actual y la siguiente (que se precarga en silencio) y, durante el fundido, la anterior: nunca las
- * cuatro a la vez (FE-R-5). `ancho` es el ancho real del archivo grande: si se declara de menos, el navegador estira
+ * ocho a la vez (FE-R-5). `ancho` es el ancho real del archivo grande: si se declara de menos, el navegador estira
  * la versión pequeña y la pintura se ve pixelada. Con movimiento reducido solo hay una pintura, quieta.
  */
 export const FONDOS = [
@@ -33,6 +33,10 @@ export const FONDOS = [
   { src: '/pinturas/tropico.webp', media: '/pinturas/tropico-1600.webp', chica: '/pinturas/tropico-800.webp', ancho: 1798 },
   { src: '/pinturas/andes-grande.webp', media: '/pinturas/andes-1600.webp', chica: '/pinturas/andes-800.webp', ancho: 2400 },
   { src: '/pinturas/rio-grande.webp', media: '/pinturas/rio-1600.webp', chica: '/pinturas/rio-800.webp', ancho: 2400 },
+  { src: '/pinturas/chita-grande.webp', media: '/pinturas/chita-1600.webp', chica: '/pinturas/chita-800.webp', ancho: 1615 },
+  { src: '/pinturas/sudamerica-grande.webp', media: '/pinturas/sudamerica-1600.webp', chica: '/pinturas/sudamerica-800.webp', ancho: 2400 },
+  { src: '/pinturas/chimborazo-grande.webp', media: '/pinturas/chimborazo-1600.webp', chica: '/pinturas/chimborazo-800.webp', ancho: 2400 },
+  { src: '/pinturas/sangay-grande.webp', media: '/pinturas/sangay-1600.webp', chica: '/pinturas/sangay-800.webp', ancho: 2400 },
 ];
 const CADA_MS = 25000;
 const FUNDIDO_MS = 3000;

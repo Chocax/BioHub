@@ -27,8 +27,8 @@ import co.edu.unbosque.biohub.cientifico.registro.domain.HallazgoRepository;
  * <ul>
  *   <li>El hallazgo debe existir. Las evidencias se agregan, nunca se reemplazan ni se borran (como el historial).</li>
  *   <li>El formato se reconoce por el contenido ({@link TipoArchivoEvidencia}), no por la extensión.</li>
- *   <li>A las fotos se les quitan los metadatos antes de guardarlas: el EXIF trae las coordenadas GPS
- *       ({@link LimpiadorMetadatos}, RNF9).</li>
+ *   <li>A las fotos y a los audios se les quitan los metadatos antes de guardarlos: pueden traer las coordenadas
+ *       GPS ({@link LimpiadorMetadatos}, RNF9).</li>
  *   <li>Subir dos veces el mismo archivo al mismo hallazgo devuelve la evidencia que ya existe (UNIQUE por SHA-256).</li>
  *   <li>El archivo se guarda en disco con un nombre propio ({@code <hallazgo>/<evidencia>}): el nombre que trae el
  *       usuario solo se guarda como texto para mostrarlo, nunca se usa como ruta.</li>

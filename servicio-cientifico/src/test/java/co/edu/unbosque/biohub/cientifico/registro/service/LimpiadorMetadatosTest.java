@@ -105,6 +105,73 @@ public class LimpiadorMetadatosTest {
     }
 
     @Test
+    void loQueVienePegadoDespuesDelFinDeImagenNoSeGuarda() throws IOException {
+        // Así son las "fotos en movimiento" (video MP4 detrás de la foto) y las imágenes secundarias de MPF:
+        // cada una con su propia ubicación.
+        byte[] jpeg = jpegConGps();
+        ByteArrayOutputStream s = new ByteArrayOutputStream();
+        s.writeBytes(jpeg);
+        s.writeBytes(("\0\0\0\u0018ftypmp42" + "©xyz+05.5321-073.3671/" + GPS).getBytes(StandardCharsets.ISO_8859_1));
+        s.writeBytes(jpegConGps()); // segunda imagen completa, con su EXIF
+
+        byte[] limpio = LimpiadorMetadatos.limpiar(TipoArchivoEvidencia.JPEG, s.toByteArray());
+
+        assertThat(contiene(limpio, "GPSLatitude")).isFalse();
+        assertThat(contiene(limpio, "ftyp")).isFalse();
+        assertThat(limpio[limpio.length - 2] & 0xFF).isEqualTo(0xFF);
+        assertThat(limpio[limpio.length - 1] & 0xFF).isEqualTo(0xD9);
+        assertThat(ImageIO.read(new ByteArrayInputStream(limpio)).getRGB(3, 3))
+                .isEqualTo(ImageIO.read(new ByteArrayInputStream(jpeg)).getRGB(3, 3));
+    }
+
+    @Test
+    void losMetadatosDespuesDelEscaneoTambienSeQuitan() throws IOException {
+        byte[] jpeg = codificar("jpg");
+        ByteArrayOutputStream s = new ByteArrayOutputStream();
+        s.write(jpeg, 0, jpeg.length - 2); // todo menos el fin de imagen
+        segmento(s, 0xE1, ("Exif\0\0" + GPS).getBytes(StandardCharsets.ISO_8859_1));
+        segmento(s, 0xE0, ("JFXX\0" + GPS).getBytes(StandardCharsets.ISO_8859_1));
+        s.write(0xFF);
+        s.write(0xD9);
+
+        byte[] limpio = LimpiadorMetadatos.limpiar(TipoArchivoEvidencia.JPEG, s.toByteArray());
+
+        assertThat(contiene(limpio, "GPSLatitude")).isFalse();
+        assertThat(limpio).isEqualTo(jpeg);
+    }
+
+    @Test
+    void unJpegProgresivoSeRecorreCompletoYQuedaIgual() throws IOException {
+        ByteArrayOutputStream progresivo = new ByteArrayOutputStream();
+        javax.imageio.ImageWriter escritor = ImageIO.getImageWritersByFormatName("jpg").next();
+        javax.imageio.ImageWriteParam parametros = escritor.getDefaultWriteParam();
+        parametros.setProgressiveMode(javax.imageio.ImageWriteParam.MODE_DEFAULT);
+        try (var salida = ImageIO.createImageOutputStream(progresivo)) {
+            escritor.setOutput(salida);
+            escritor.write(null, new javax.imageio.IIOImage(imagen(), null, null), parametros);
+        }
+        escritor.dispose();
+        byte[] jpeg = progresivo.toByteArray();
+        ByteArrayOutputStream conGps = new ByteArrayOutputStream();
+        conGps.write(jpeg, 0, 2);
+        segmento(conGps, 0xE1, ("Exif\0\0" + GPS).getBytes(StandardCharsets.ISO_8859_1));
+        conGps.write(jpeg, 2, jpeg.length - 2);
+
+        byte[] limpio = LimpiadorMetadatos.limpiar(TipoArchivoEvidencia.JPEG, conGps.toByteArray());
+
+        assertThat(contiene(limpio, "GPSLatitude")).isFalse();
+        assertThat(limpio).isEqualTo(jpeg);
+    }
+
+    @Test
+    void unJpegSinFinDeImagenSeCierraYSeGuarda() throws IOException {
+        byte[] jpeg = codificar("jpg");
+        byte[] sinFin = Arrays.copyOf(jpeg, jpeg.length - 2);
+
+        assertThat(LimpiadorMetadatos.limpiar(TipoArchivoEvidencia.JPEG, sinFin)).isEqualTo(jpeg);
+    }
+
+    @Test
     void elPngPierdeEXIfYTextoPeroLaImagenQuedaIgual() throws IOException {
         byte[] original = pngConGps();
         assertThat(contiene(original, "GPSLatitude")).isTrue();

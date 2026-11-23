@@ -12,12 +12,12 @@ import { PINTURAS } from '../componentes/pinturas.js';
 const MODULOS = [
   { capacidad: 'registrarHallazgo', ruta: '/hallazgos/nuevo', titulo: 'Registrar hallazgo', texto: 'Carga un espécimen con su ficha, fotos y audios.', imagen: 'colibri', encuadre: '62% 40%' },
   { capacidad: 'buscarHallazgos', ruta: '/buscar', titulo: 'Explorar hallazgos', texto: 'Filtra por especie, fecha, investigador o departamento.', imagen: 'rio', encuadre: '40% 60%' },
-  { capacidad: 'verMapa', ruta: '/mapa', titulo: 'Mapa de coordenadas', texto: 'Ubicaciones exactas, solo para alto rango.', imagen: 'andes', encuadre: '18% 30%' },
-  { capacidad: 'verPlantillas', ruta: '/plantillas', titulo: 'Fichas taxonómicas', texto: 'Atributos flexibles por especie.', imagen: 'andes', encuadre: '88% 70%' },
-  { capacidad: 'equipos', ruta: '/equipos', titulo: 'Equipos de campo', texto: 'Drones, cámaras trampa y sensores con su custodio.', imagen: 'andes', encuadre: '62% 85%' },
-  { capacidad: 'reportes', ruta: '/reportes', titulo: 'Presión sobre ecosistemas', texto: 'Reporte mensual con zonas de alerta.', imagen: 'rio', encuadre: '85% 30%' },
-  { capacidad: 'usuarios', ruta: '/usuarios', titulo: 'Usuarios y roles', texto: 'Altas, cambios de rol y accesos.', imagen: 'andes', encuadre: '50% 50%' },
-  { capacidad: 'apiKeys', ruta: '/api-keys', titulo: 'API para externos', texto: 'Llaves y límites para universidades y ONG.', imagen: 'rio', encuadre: '20% 20%' },
+  { capacidad: 'verMapa', ruta: '/mapa', titulo: 'Mapa de coordenadas', texto: 'Ubicaciones exactas, solo para alto rango.', imagen: 'chimborazo', encuadre: '50% 35%' },
+  { capacidad: 'verPlantillas', ruta: '/plantillas', titulo: 'Fichas taxonómicas', texto: 'Atributos flexibles por especie.', imagen: 'pitahaya', encuadre: '35% 68%' },
+  { capacidad: 'equipos', ruta: '/equipos', titulo: 'Equipos de campo', texto: 'Drones, cámaras trampa y sensores con su custodio.', imagen: 'sangay', encuadre: '58% 40%' },
+  { capacidad: 'reportes', ruta: '/reportes', titulo: 'Presión sobre ecosistemas', texto: 'Reporte mensual con zonas de alerta.', imagen: 'mariquita', encuadre: '45% 60%' },
+  { capacidad: 'usuarios', ruta: '/usuarios', titulo: 'Usuarios y roles', texto: 'Altas, cambios de rol y accesos.', imagen: 'sudamerica', encuadre: '45% 55%' },
+  { capacidad: 'apiKeys', ruta: '/api-keys', titulo: 'API para externos', texto: 'Llaves y límites para universidades y ONG.', imagen: 'tequendama-cima', encuadre: '42% 50%' },
 ];
 
 const ACCION_PRINCIPAL = [
@@ -28,7 +28,7 @@ const ACCION_PRINCIPAL = [
   ['buscarHallazgos', '/buscar', 'Explorar hallazgos'],
 ];
 
-/** Tres pinturas que se alternan despacio, cada una con su mensaje (la tarjeta negra flotante de la galería). */
+/** Pinturas que se alternan despacio, cada una con su mensaje (la tarjeta negra flotante de la galería). */
 const DIAPOSITIVAS = [
   { pintura: 'andes', titulo: 'La ciencia se corrige, el historial se conserva',
     texto: 'Cada hallazgo guarda todas sus versiones, quién las autorizó y por qué. Nada se borra: una reclasificación crea una versión nueva.' },
@@ -38,8 +38,12 @@ const DIAPOSITIVAS = [
     texto: 'Los investigadores definen qué se mide de cada especie, como el canto de un ave o la temperatura del agua de una rana, sin tocar código.' },
   { pintura: 'tequendama', titulo: 'Un país que cabe en un inventario',
     texto: 'Colombia es uno de los países más biodiversos del planeta. Cada hallazgo que registras suma al inventario que ayuda a protegerla.' },
-  { pintura: 'lluvia', titulo: 'Dos siglos de expedicionarios',
+  { pintura: 'chita', titulo: 'Dos siglos de expedicionarios',
     texto: 'De la Expedición Botánica de Mutis a la Comisión Corográfica, el país lleva más de doscientos años documentando su naturaleza. BioHub continúa ese trabajo.' },
+  { pintura: 'chimborazo', titulo: 'Del páramo al bosque de niebla',
+    texto: 'En pocos kilómetros de cordillera cambian el clima, las plantas y los animales. Por eso cada hallazgo guarda su departamento y, cifrado, su punto exacto.' },
+  { pintura: 'guacamaya', titulo: 'Dibujado en el camino',
+    texto: 'Church dibujó esta guacamaya en Bogotá en 1853, con notas al margen. Hoy la misma curiosidad se registra con fotos, audios y una ficha por especie.' },
 ];
 const INTERVALO_MS = 18000;
 
@@ -81,7 +85,7 @@ function LienzoRotativo() {
       {DIAPOSITIVAS.map((d, i) => (
         <img key={d.pintura} className="lienzo__imagen" data-activa={i === actual}
           src={PINTURAS[d.pintura].src} srcSet={`${PINTURAS[d.pintura].chica} 800w, ${PINTURAS[d.pintura].src} 2000w`}
-          sizes="100vw" alt="" loading="lazy" />
+          sizes="100vw" alt="" loading="lazy" style={{ objectPosition: PINTURAS[d.pintura].encuadre }} />
       ))}
       <button type="button" className="lienzo__flecha lienzo__flecha--izq" onClick={anterior} aria-label="Pintura anterior">
         <ChevronLeft aria-hidden="true" />

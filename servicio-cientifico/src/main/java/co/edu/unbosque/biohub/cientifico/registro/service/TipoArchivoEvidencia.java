@@ -12,7 +12,8 @@ import co.edu.unbosque.biohub.cientifico.registro.domain.EvidenciaHallazgo.TipoE
  * {@code Content-Type} que envía el navegador: ambos los controla quien sube el archivo (SEC-03).
  *
  * <p>No se admiten WEBP, HEIC, MP4 ni M4A: pueden llevar la ubicación del teléfono en sus metadatos y aquí no se
- * limpian. JPEG y PNG sí se limpian ({@link LimpiadorMetadatos}).
+ * limpian. Todos los formatos admitidos se limpian antes de guardarse ({@link LimpiadorMetadatos},
+ * {@link LimpiadorAudio}).
  */
 public enum TipoArchivoEvidencia {
 

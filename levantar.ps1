@@ -51,6 +51,8 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
+# Lanzado desde otra consola (Git Bash, un IDE) a veces no trae ComSpec, y con eso se corren los comandos.
+if (-not $env:ComSpec) { $env:ComSpec = Join-Path $env:SystemRoot 'System32\cmd.exe' }
 $ProgressPreference = 'SilentlyContinue'
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 
@@ -189,6 +191,16 @@ function Preparar-Override {
   }
   $script:Override = Join-Path $Carpeta "compose-$script:Proyecto.yml"
   [IO.File]::WriteAllLines($script:Override, $lineas)
+}
+
+# Corre infra/mysql/initdb/01-usuarios.sh dentro del contenedor (es repetible): usuarios *_app y *_migr con sus
+# permisos y, en la transaccional, el bloqueo del historial si las tablas ya existen.
+function Permisos-MySQL($servicio) {
+  $log = Join-Path $Logs "mysql-usuarios-$servicio.log"
+  $codigo = Correr "docker exec $(Nombre-Contenedor $servicio) bash /docker-entrypoint-initdb.d/01-usuarios.sh" $log
+  $lineas = @(Get-Content $log -ErrorAction SilentlyContinue | Where-Object { $_ -match '\[biohub\]|ERROR' } |
+    ForEach-Object { $_ -replace '^\[biohub\]\s*', '' })
+  [pscustomobject]@{ Ok = ($codigo -eq 0); Lineas = $lineas; Historial = ($lineas | Where-Object { $_ -like 'historial*' } | Select-Object -First 1) }
 }
 
 function Docker-Arriba {
@@ -354,7 +366,7 @@ if (-not (Test-Path $script:RutaEnv)) {
   Salir "No existe $script:RutaEnv. Cópialo del ejemplo:  Copy-Item .env.example .env  y cambia las contraseñas."
 }
 $obligatorias = @('REDIS_PASSWORD', 'RABBITMQ_USER', 'RABBITMQ_PASSWORD', 'KEYCLOAK_ADMIN_USER', 'KEYCLOAK_ADMIN_PASSWORD',
-  'KEYCLOAK_TEST_USERS_PASSWORD', 'KEYCLOAK_GATEWAY_CLIENT_SECRET')
+  'KEYCLOAK_TEST_USERS_PASSWORD')
 if ($Perfil -eq 'local') {
   $obligatorias += @('MYSQL_TRANSACCIONAL_ROOT_PASSWORD', 'MYSQL_CIENTIFICO_USER', 'MYSQL_CIENTIFICO_PASSWORD', 'MYSQL_EQUIPOS_USER',
     'MYSQL_EQUIPOS_PASSWORD', 'MYSQL_LECTURA_ROOT_PASSWORD', 'MYSQL_LECTURA_USER', 'MYSQL_LECTURA_PASSWORD',
@@ -389,6 +401,43 @@ if (-not (Valor 'UBICACION_CLAVES' '') -and -not $enCientifico.Contains('UBICACI
 } else {
   Bien 'llave de cifrado de coordenadas presente'
 }
+# Secreto del cliente biohub-gateway de Keycloak (el gateway administra usuarios con él, HU-10). Keycloak siempre corre
+# en Docker, así que si falta se genera (solo letras y números) y más abajo se le pone el mismo al cliente.
+if (-not (Valor 'KEYCLOAK_GATEWAY_CLIENT_SECRET' '')) {
+  $bytes = New-Object byte[] 24
+  (New-Object Security.Cryptography.RNGCryptoServiceProvider).GetBytes($bytes)
+  $texto = [IO.File]::ReadAllText($script:RutaEnv)
+  $nuevo = ''
+  if ($texto.Length -gt 0 -and -not $texto.EndsWith("`n")) { $nuevo = "`r`n" }
+  $nuevo += "`r`n# Secreto del cliente biohub-gateway de Keycloak: lo generó levantar.ps1.`r`n"
+  $nuevo += "KEYCLOAK_GATEWAY_CLIENT_SECRET=$(($bytes | ForEach-Object { $_.ToString('x2') }) -join '')`r`n"
+  [IO.File]::AppendAllText($script:RutaEnv, $nuevo)
+  $script:Vars = Leer-Env $script:RutaEnv
+  Aviso 'no había KEYCLOAK_GATEWAY_CLIENT_SECRET: generé uno y lo agregué al final del .env'
+}
+# Usuarios de migración de las bases locales: uno por servicio, distinto del de la app (como en Aiven). Si faltan
+# en el .env se generan contraseñas al azar y se agregan al final, igual que la llave de coordenadas.
+$Migracion = [ordered]@{ CIENTIFICO = 'cientifico_migr'; EQUIPOS = 'equipos_migr'; CONSULTA = 'consulta_migr'; REPORTES = 'reportes_migr'; GATEWAY = 'gateway_migr' }
+if ($Perfil -eq 'local') {
+  $sinClave = @($Migracion.Keys | Where-Object { -not (Valor "${_}_MIGR_PASSWORD" '') })
+  if ($sinClave.Count -gt 0) {
+    $texto = [IO.File]::ReadAllText($script:RutaEnv)
+    $nuevo = ''
+    if ($texto.Length -gt 0 -and -not $texto.EndsWith("`n")) { $nuevo = "`r`n" }
+    $nuevo += "`r`n# Usuarios de migraciones (Flyway) de las bases locales: los generó levantar.ps1.`r`n"
+    foreach ($k in $sinClave) {
+      $bytes = New-Object byte[] 18
+      (New-Object Security.Cryptography.RNGCryptoServiceProvider).GetBytes($bytes)
+      if (-not (Valor "${k}_MIGR_USER" '')) { $nuevo += "${k}_MIGR_USER=$($Migracion[$k])`r`n" }
+      $nuevo += "${k}_MIGR_PASSWORD=$(($bytes | ForEach-Object { $_.ToString('x2') }) -join '')`r`n"
+    }
+    [IO.File]::AppendAllText($script:RutaEnv, $nuevo)
+    $script:Vars = Leer-Env $script:RutaEnv
+    Aviso "no había contraseña de migraciones para $($sinClave -join ', '): las generé y las agregué al final del .env"
+  } else {
+    Bien 'usuarios de migraciones de las bases locales presentes'
+  }
+}
 if ((Valor 'BIOHUB_EVENTOS_PUBLICADOR_CIENTIFICO' (Valor 'RABBITMQ_USER' '')) -ne (Valor 'RABBITMQ_USER' '')) {
   Aviso 'BIOHUB_EVENTOS_PUBLICADOR_CIENTIFICO no es igual a RABBITMQ_USER: el portal público rechazará los eventos'
 }
@@ -410,17 +459,12 @@ $derivadas = [ordered]@{
 foreach ($k in $derivadas.Keys) {
   if ($k -eq 'SPRING_PROFILES_ACTIVE' -or -not $script:Vars.Contains($k)) { Set-Item -Path "env:$k" -Value $derivadas[$k] }
 }
-# En local cada base de Docker tiene un solo usuario: las migraciones usan ese mismo. Sin esto, un
-# <SERVICIO>_MIGR_USER de Aiven puesto en el .env de un servicio (p. ej. api-gateway/.env) haría fallar Flyway.
+# En local las migraciones usan el usuario *_migr de cada base de Docker. Se fija aquí para que no gane un
+# <SERVICIO>_MIGR_USER de Aiven puesto en el .env de un servicio (p. ej. api-gateway/.env).
 if ($Perfil -eq 'local') {
-  $migracion = @{
-    GATEWAY = @('MYSQL_GATEWAY_USER', 'MYSQL_GATEWAY_PASSWORD'); CIENTIFICO = @('MYSQL_CIENTIFICO_USER', 'MYSQL_CIENTIFICO_PASSWORD')
-    EQUIPOS = @('MYSQL_EQUIPOS_USER', 'MYSQL_EQUIPOS_PASSWORD'); CONSULTA = @('MYSQL_LECTURA_USER', 'MYSQL_LECTURA_PASSWORD')
-    REPORTES = @('MYSQL_ANALITICA_USER', 'MYSQL_ANALITICA_PASSWORD')
-  }
-  foreach ($k in $migracion.Keys) {
-    Set-Item -Path "env:${k}_MIGR_USER" -Value (Valor $migracion[$k][0] '')
-    Set-Item -Path "env:${k}_MIGR_PASSWORD" -Value (Valor $migracion[$k][1] '')
+  foreach ($k in $Migracion.Keys) {
+    Set-Item -Path "env:${k}_MIGR_USER" -Value (Valor "${k}_MIGR_USER" $Migracion[$k])
+    Set-Item -Path "env:${k}_MIGR_PASSWORD" -Value (Valor "${k}_MIGR_PASSWORD" '')
   }
 }
 $env:VITE_API_URL = "http://localhost:$gw"
@@ -435,6 +479,14 @@ foreach ($s in $Servicios) { $p = [int](Valor $s.Clave $s.Defecto); if (Puerto-A
 foreach ($w in $Webs) { if (Puerto-Abierto $w.Puerto) { $ocupados += "$($w.Puerto) ($($w.Nombre))" } }
 if ($ocupados.Count -gt 0) {
   Mal "puertos ocupados por otro programa: $($ocupados -join ', ')"
+  if ($previos -gt 0) {
+    # Se intentó apagarlos y siguen ahí: casi siempre es una corrida anterior abierta como administrador, que una
+    # consola normal no puede cerrar (Windows no lo permite).
+    Nota 'Son de una corrida anterior que no pude cerrar. Si esa vez abriste la consola como administrador:'
+    Nota 'abre CMD como administrador, ve a la carpeta del proyecto y corre  levantar -Detener  (luego  levantar).'
+    Nota 'Si BioHub ya está funcionando, no hace falta reiniciar: revisa con  levantar -Estado'
+    Salir 'No arranqué nada para no duplicar los servicios.'
+  }
   Salir 'Ciérralo (o busca quién es con: Get-NetTCPConnection -LocalPort <puerto> -State Listen) y vuelve a correr.'
 }
 Bien 'puertos de servicios y webs libres'
@@ -459,6 +511,17 @@ foreach ($c in $contenedoresPerfil) {
   if ($s -ge 0) { Bien ("{0,-44} puerto {1,-6} ({2} s)" -f $c.Texto, (Valor $c.Clave $c.Defecto), $s) }
   else { Mal "$($c.Texto) no quedó sano. Mira: docker logs $contenedor"; Salir 'Sin la infraestructura los servicios no arrancan.' }
 }
+if ($Perfil -eq 'local') {
+  # Se repite en cada arranque: una base creada antes (con el usuario de ALL PRIVILEGES) queda corregida sin
+  # borrar datos, y si Flyway ya creó las tablas, el historial queda protegido desde antes de arrancar los servicios.
+  $todoBien = $true
+  foreach ($c in @($contenedoresPerfil | Where-Object { $_.Servicio -like 'mysql-*' })) {
+    $r = Permisos-MySQL $c.Servicio
+    if (-not $r.Ok) { $todoBien = $false; Mal "no se pudieron ajustar los usuarios de $($c.Servicio):"; $r.Lineas | ForEach-Object { Nota $_ } }
+  }
+  if ($todoBien) { Bien 'bases con usuario de datos y usuario de migraciones separados (sin ALL PRIVILEGES)' }
+  else { Salir 'Revisa el mensaje de arriba (suele ser una contraseña con caracteres no permitidos en el .env).' }
+}
 $s = Esperar 'usuarios de RabbitMQ' { $e = Estado-Contenedor (Nombre-Contenedor 'rabbitmq-usuarios'); $e.Estado -eq 'exited' } 90
 $e = Estado-Contenedor (Nombre-Contenedor 'rabbitmq-usuarios')
 if ($s -ge 0 -and $e.Codigo -eq '0') { Bien 'usuarios de RabbitMQ por servicio creados' } else { Aviso "rabbitmq-usuarios terminó con código $($e.Codigo): docker logs $(Nombre-Contenedor 'rabbitmq-usuarios')" }
@@ -473,19 +536,48 @@ try {
   Aviso 'los usuarios de prueba NO entran con la contraseña del .env (el realm se importó con otra).'
   Nota 'Arréglalo con:  .\levantar.ps1 -ReimportarRealm'
 }
-try {
-  $null = Invoke-RestMethod -Method Post -Uri $urlToken -Body @{ grant_type = 'client_credentials'; client_id = 'biohub-gateway'; client_secret = (Valor 'KEYCLOAK_GATEWAY_CLIENT_SECRET' '') }
-  Bien 'cliente del gateway listo (administración de usuarios)'
-} catch {
-  Aviso 'el cliente biohub-gateway no acepta el secreto del .env: la sala Usuarios fallará.'
-  Nota 'Arréglalo con:  .\levantar.ps1 -ReimportarRealm'
+function Gateway-Entra {
+  try {
+    $null = Invoke-RestMethod -Method Post -Uri $urlToken -Body @{ grant_type = 'client_credentials'; client_id = 'biohub-gateway'; client_secret = (Valor 'KEYCLOAK_GATEWAY_CLIENT_SECRET' '') }
+    return $true
+  } catch { return $false }
 }
-# Tema de inicio de sesión de BioHub (D64). Un realm importado antes de que existiera no lo tiene: se activa por la
-# API de administración, sin tener que reimportar (y sin perder usuarios creados a mano).
+# Token de administración de Keycloak (realm master): lo usan el secreto del gateway y el tema del login.
+$cabeceras = $null
 try {
   $tokenAdmin = Invoke-RestMethod -Method Post -Uri "http://localhost:$kc/realms/master/protocol/openid-connect/token" -Body @{
     grant_type = 'password'; client_id = 'admin-cli'; username = (Valor 'KEYCLOAK_ADMIN_USER' ''); password = (Valor 'KEYCLOAK_ADMIN_PASSWORD' '') }
   $cabeceras = @{ Authorization = "Bearer $($tokenAdmin.access_token)" }
+} catch { }
+if (Gateway-Entra) {
+  Bien 'cliente del gateway listo (administración de usuarios)'
+} else {
+  # El secreto solo se toma al importar el realm la primera vez. Si el .env tiene otro (o uno recién generado), se le
+  # pone al cliente por la API de administración: así no hay que reimportar ni se pierden los usuarios creados a mano.
+  $cliente = $null
+  if ($cabeceras) {
+    try { $cliente = @(Invoke-RestMethod -Uri "http://localhost:$kc/admin/realms/biohub/clients?clientId=biohub-gateway" -Headers $cabeceras)[0] } catch { }
+  }
+  if ($cliente -and $cliente.id) {
+    try {
+      $null = Invoke-RestMethod -Method Put -Uri "http://localhost:$kc/admin/realms/biohub/clients/$($cliente.id)" -Headers $cabeceras `
+        -ContentType 'application/json' -Body (@{ clientId = 'biohub-gateway'; secret = (Valor 'KEYCLOAK_GATEWAY_CLIENT_SECRET' '') } | ConvertTo-Json)
+    } catch { }
+  }
+  if (Gateway-Entra) {
+    Bien 'cliente del gateway listo: le puse en Keycloak el secreto del .env'
+  } elseif (-not $cliente) {
+    Aviso 'tu Keycloak no tiene el cliente biohub-gateway (se importó antes de que existiera): la sala Usuarios fallará.'
+    Nota 'Arréglalo con:  .\levantar.cmd -ReimportarRealm   (borra los usuarios que hayas creado a mano en Keycloak)'
+  } else {
+    Aviso 'el cliente biohub-gateway no acepta el secreto del .env: la sala Usuarios fallará.'
+    Nota 'Arréglalo con:  .\levantar.cmd -ReimportarRealm'
+  }
+}
+# Tema de inicio de sesión de BioHub (D64). Un realm importado antes de que existiera no lo tiene: se activa por la
+# API de administración, sin tener que reimportar (y sin perder usuarios creados a mano).
+try {
+  if (-not $cabeceras) { throw 'sin token de administración' }
   $realm = Invoke-RestMethod -Uri "http://localhost:$kc/admin/realms/biohub" -Headers $cabeceras
   if ($realm.loginTheme -ne 'biohub') {
     $null = Invoke-RestMethod -Method Put -Uri "http://localhost:$kc/admin/realms/biohub" -Headers $cabeceras `
@@ -572,6 +664,15 @@ foreach ($s in $Servicios) {
   if ($seg -ge 0) { Bien ("{0,-44} puerto {1,-6} ({2} s)" -f $s.Texto, $p, $seg) }
   elseif ($seg -eq -2) { Mal "$($s.Texto) se cayó al arrancar:"; Explicar-Caida $log; $fallidos += $s.Nombre }
   else { Mal "$($s.Texto) no respondió en el puerto $p en 4 minutos:"; Explicar-Caida $log; $fallidos += $s.Nombre }
+}
+
+# Historial de registro append-only (D60, ASR7): ahora que Flyway creó las tablas, el usuario de la app queda con
+# solo INSERT y SELECT sobre hallazgo_version y hallazgo_auditoria. Se comprueba intentando borrar con esa credencial.
+if ($Perfil -eq 'local' -and $fallidos -notcontains 'servicio-cientifico') {
+  $r = Permisos-MySQL 'mysql-transaccional'
+  if ($r.Ok -and $r.Historial -like 'historial protegido*') { Bien $r.Historial }
+  elseif ($r.Ok) { Aviso "$($r.Historial)" }
+  else { Mal 'el historial NO quedó protegido:'; $r.Lineas | ForEach-Object { Nota $_ } }
 }
 
 # ------------------------------------------------------------------------------------- 7. webs

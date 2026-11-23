@@ -1,10 +1,11 @@
 /*
- * Fondo del inicio de sesión de BioHub: ocho pinturas de dominio público que se alternan cada 6,5 s con un fundido
+ * Fondo del inicio de sesión de BioHub: quince pinturas de dominio público que se alternan cada 6,5 s con un fundido
  * de 1,8 s. Cada imagen se carga justo antes de mostrarse (la siguiente y la de después), así que no se bajan todas
  * de entrada. Con movimiento reducido se queda la primera.
  */
 (function () {
-  var FONDOS = ['andes', 'tequendama', 'colibri', 'rio', 'lluvia', 'pasiflora', 'tropico', 'nubes'];
+  var FONDOS = ['andes', 'tequendama-cima', 'colibri', 'chimborazo', 'rio', 'lluvia', 'sudamerica', 'pasiflora',
+    'tequendama', 'chita', 'sangay', 'cachiri', 'tropico', 'mariquita', 'nubes'];
   var CADA_MS = 6500;
   var base = (document.currentScript && document.currentScript.src.replace(/js\/fondos\.js.*$/, 'img/')) || '';
 
