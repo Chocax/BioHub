@@ -2,6 +2,7 @@ package co.edu.unbosque.biohub.equipos.controller;
 
 import co.edu.unbosque.biohub.equipos.domain.EquipoTrabajo;
 import co.edu.unbosque.biohub.equipos.domain.EstadoEquipo;
+import co.edu.unbosque.biohub.equipos.domain.HistorialCustodiaEquipo;
 import co.edu.unbosque.biohub.equipos.service.EquipoTrabajoService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -37,12 +38,16 @@ public class EquipoTrabajoController {
     }
 
     @PostMapping
-    public ResponseEntity<EquipoResponse> registrar(@Valid @RequestBody RegistrarEquipoRequest request) {
+    public ResponseEntity<EquipoResponse> registrar(
+        @Valid @RequestBody RegistrarEquipoRequest request,
+        @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization) {
         EquipoTrabajo creado = service.registrar(
             request.codigoInventario(),
             request.nombre(),
             request.categoria(),
-            request.descripcion()
+            request.descripcion(),
+            request.custodioId(),
+            authorization
         );
         return ResponseEntity
             .created(URI.create("/api/equipos/" + creado.getId()))
@@ -70,6 +75,13 @@ public class EquipoTrabajoController {
         return EquipoResponse.desde(service.obtenerPorId(id));
     }
 
+    @GetMapping("/{id}/historial")
+    public List<HistorialCustodiaResponse> historial(@PathVariable UUID id) {
+        return service.listarHistorial(id).stream()
+            .map(HistorialCustodiaResponse::desde)
+            .toList();
+    }
+
     @PutMapping("/{id}/asignacion")
     public EquipoResponse asignar(
         @PathVariable UUID id,
@@ -89,7 +101,8 @@ public class EquipoTrabajoController {
         @NotBlank @Size(max = 40) String codigoInventario,
         @NotBlank @Size(max = 120) String nombre,
         @NotBlank @Size(max = 50) String categoria,
-        @Size(max = 500) String descripcion) {}
+        @Size(max = 500) String descripcion,
+        @NotBlank @Size(max = 64) String custodioId) {}
 
     public record AsignarEquipoRequest(@NotBlank @Size(max = 64) String custodioId) {}
 
@@ -113,6 +126,25 @@ public class EquipoTrabajoController {
                 e.getId(), e.getCodigoInventario(), e.getNombre(), e.getCategoria(),
                 e.getDescripcion(), e.getEstado(), e.getCustodioId(), e.getCustodioUsuario(),
                 e.getAsignadoEn(), e.getCreadoEn(), e.getActualizadoEn());
+        }
+    }
+
+    public record HistorialCustodiaResponse(
+        UUID id,
+        UUID equipoId,
+        String accion,
+        EstadoEquipo estadoAnterior,
+        EstadoEquipo estadoNuevo,
+        String custodioId,
+        String custodioUsuario,
+        String observacion,
+        Instant registradoEn) {
+
+        static HistorialCustodiaResponse desde(HistorialCustodiaEquipo h) {
+            return new HistorialCustodiaResponse(
+                h.getId(), h.getEquipoId(), h.getAccion(), h.getEstadoAnterior(),
+                h.getEstadoNuevo(), h.getCustodioId(), h.getCustodioUsuario(),
+                h.getObservacion(), h.getRegistradoEn());
         }
     }
 

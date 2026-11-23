@@ -44,7 +44,8 @@ public class ProyectorHallazgosService {
         String tipoEspecimen = textoOpcional(datos.get("tipoEspecimen"), 60);
         LocalDate fechaRecoleccion = parseFechaObligatoria(datos.get("fechaRecoleccion"), "fechaRecoleccion");
         String estadoConservacion = textoObligatorio(datos.get("estadoConservacion"), "estadoConservacion", 30).toUpperCase();
-        String departamento = textoObligatorio(datos.get("departamento"), "departamento", 80);
+        String departamento = NormalizadorDepartamento.normalizar(
+            textoObligatorio(datos.get("departamento"), "departamento", 80));
         String region = textoOpcional(datos.get("region"), 80);
 
         // Defensa en profundidad (D14/D24): jamás deben viajar coordenadas de especies en peligro
