@@ -2,6 +2,7 @@ package co.edu.unbosque.biohub.cientifico.registro.domain;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -16,6 +17,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 /**
  * Estado ACTUAL de un hallazgo. El historial completo de cómo llegó hasta aquí vive en
@@ -39,6 +41,16 @@ public class Hallazgo {
 
     @Column(name = "version", nullable = false)
     private int version;
+
+    @Version
+    @Column(name = "revision", nullable = false)
+    private long revision;
+
+    @Column(name = "idempotency_key", length = 100, unique = true)
+    private String idempotencyKey;
+
+    @Column(name = "idempotency_hash", length = 64)
+    private String idempotencyHash;
 
     @Column(name = "nombre_cientifico", nullable = false, length = 150)
     private String nombreCientifico;
@@ -90,6 +102,16 @@ public class Hallazgo {
                     LocalDate fechaRecoleccion, String investigador, String departamento,
                     EstadoConservacion estadoConservacion, CategoriaUicn categoriaUicn, String descripcion,
                     Map<String, Object> atributos, Integer plantillaVersion) {
+        this(id, nombreCientifico, nombreComun, familia, tipoEspecimen, fechaRecoleccion, investigador,
+                departamento, estadoConservacion, categoriaUicn, descripcion, atributos, plantillaVersion, null, null);
+    }
+
+    @SuppressWarnings("java:S107")
+    public Hallazgo(UUID id, String nombreCientifico, String nombreComun, String familia, String tipoEspecimen,
+                    LocalDate fechaRecoleccion, String investigador, String departamento,
+                    EstadoConservacion estadoConservacion, CategoriaUicn categoriaUicn, String descripcion,
+                    Map<String, Object> atributos, Integer plantillaVersion, String idempotencyKey,
+                    String idempotencyHash) {
         this.id = id;
         this.version = 1;
         this.nombreCientifico = nombreCientifico;
@@ -104,6 +126,8 @@ public class Hallazgo {
         this.descripcion = descripcion;
         this.atributos = atributos == null ? null : new LinkedHashMap<>(atributos);
         this.plantillaVersion = plantillaVersion;
+        this.idempotencyKey = idempotencyKey;
+        this.idempotencyHash = idempotencyHash;
     }
 
     /**
@@ -115,7 +139,8 @@ public class Hallazgo {
     @SuppressWarnings("java:S107")
     public int reclasificar(String nombreCientifico, String nombreComun, String familia, String tipoEspecimen,
                             LocalDate fechaRecoleccion, String departamento, EstadoConservacion estadoConservacion,
-                            CategoriaUicn categoriaUicn, String descripcion, Map<String, Object> atributos) {
+                            CategoriaUicn categoriaUicn, String descripcion, Map<String, Object> atributos,
+                            Integer plantillaVersion) {
         if (nombreCientifico != null) {
             this.nombreCientifico = nombreCientifico;
         }
@@ -143,6 +168,9 @@ public class Hallazgo {
         }
         if (atributos != null) {
             this.atributos = new LinkedHashMap<>(atributos);
+        }
+        if (nombreCientifico != null || atributos != null) {
+            this.plantillaVersion = plantillaVersion;
         }
         this.version = this.version + 1;
         return this.version;
@@ -207,11 +235,19 @@ public class Hallazgo {
 
     /** Valores de los atributos personalizados; nunca {@code null} para quien lee. */
     public Map<String, Object> getAtributos() {
-        return atributos == null ? Map.of() : Map.copyOf(atributos);
+        return atributos == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(atributos));
     }
 
     public Integer getPlantillaVersion() {
         return plantillaVersion;
+    }
+
+    public String getIdempotencyKey() {
+        return idempotencyKey;
+    }
+
+    public String getIdempotencyHash() {
+        return idempotencyHash;
     }
 
     public Instant getAnuladoEn() {

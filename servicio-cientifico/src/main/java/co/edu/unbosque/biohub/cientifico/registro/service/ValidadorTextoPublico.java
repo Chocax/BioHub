@@ -35,6 +35,8 @@ public class ValidadorTextoPublico {
     private static final Pattern UNIDAD_NO_GEOGRAFICA = Pattern.compile(
             "(?i)\\b(msnm|m\\.?s\\.?n\\.?m|metros?|m|km|cm|mm|kg|g|ml|l|ha|°c|c|%)\\b");
 
+    private static final Pattern ETIQUETA_SCRIPT = Pattern.compile("(?i)<\\s*/?\\s*script\\b");
+
     /**
      * @return {@code true} si el texto parece contener una coordenada geográfica
      */
@@ -58,6 +60,9 @@ public class ValidadorTextoPublico {
      * @throws DatosHallazgoInvalidosException si el texto parece contener coordenadas
      */
     public void verificar(String campo, String texto) {
+        if (texto != null && ETIQUETA_SCRIPT.matcher(texto).find()) {
+            throw new DatosHallazgoInvalidosException(campo, "no puede contener etiquetas script");
+        }
         if (contieneCoordenadas(texto)) {
             throw new DatosHallazgoInvalidosException(campo, "no puede contener coordenadas");
         }

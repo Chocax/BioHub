@@ -71,4 +71,13 @@ class ValidadorTextoPublicoTest {
                 .hasMessageNotContaining("5.53214")
                 .hasMessageNotContaining("73.36712");
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"<script>alert(1)</script>", "<SCRIPT src=x>", "texto < script >"})
+    @DisplayName("rechaza etiquetas script en campos que se muestran en la ficha")
+    void rechazaEtiquetasScript(String texto) {
+        assertThatThrownBy(() -> validador.verificar("nombreCientifico", texto))
+                .isInstanceOf(DatosHallazgoInvalidosException.class)
+                .hasMessage("no puede contener etiquetas script");
+    }
 }

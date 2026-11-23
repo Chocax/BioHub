@@ -9,8 +9,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.MySQLContainer;
+
+import co.edu.unbosque.biohub.cientifico.eventos.service.PublicadorEventos;
 
 /**
  * Base de las pruebas de registro contra un MySQL 8.4 real en Testcontainers, nunca contra las bases del
@@ -49,6 +52,8 @@ public abstract class BaseRegistroMySqlTest {
     protected JdbcTemplate jdbc;
     @Autowired
     protected TransactionTemplate tx;
+    @MockitoBean
+    protected PublicadorEventos publicadorEventos;
 
     /** Deja las tablas limpias respetando el orden de las claves foráneas. */
     @BeforeEach

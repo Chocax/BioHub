@@ -1,30 +1,91 @@
-// PENDIENTE - NO MEDIBLE: depende de HU-01 (módulo registro de Hernando, hoy solo package-info.java; ARQ-01).
-// RNF2 / RNF4 / ASR2: registro de hallazgo con archivos adjuntos <= 5 s (p95), también durante el pico x60 público.
-// Este esqueleto queda listo: cuando exista POST /api/cientifico/hallazgos, ajustar RUTA y el cuerpo según 04-contrato-api.md,
-// y combinarlo con el escenario `pico` de consulta-publica-pico.js para RNF2 (registro durante el pico).
-// Ejecutar: export TOKEN=<JWT de investigador>; ./correr-k6.sh k6/registro-hallazgo.js -e BASE_URL=http://127.0.0.1:8080 (TOKEN se pasa por entorno, ver README)
+// ASR2: mide el tiempo de respuesta del alta real de hallazgos (p95 < 5 s).
+// Por ahora mide JSON sin archivos; el servicio aún no expone una API de carga de adjuntos.
+// Ejecutar desde pruebas-carga/ con TOKEN y un servicio-cientifico local levantado.
 import http from 'k6/http';
 import { check } from 'k6';
+import { Counter, Rate } from 'k6/metrics';
 
 const BASE_URL = __ENV.BASE_URL || 'http://127.0.0.1:8080';
-const RUTA = __ENV.RUTA || '/api/cientifico/hallazgos';          // PENDIENTE: no existe (HU-01)
-const ADJUNTO = open('./lib/adjunto-ejemplo.bin', 'b');             // PENDIENTE: archivo de prueba (p. ej. 1-2 MB)
+const RUTA = __ENV.RUTA || '/api/cientifico/hallazgos';
+const TASA = parseInt(__ENV.R || '2');
+const DURACION = __ENV.DUR || '60s';
+const creados = new Counter('asr2_hallazgos_creados');
+const registroCorrecto = new Rate('asr2_registro_correcto');
 
 export const options = {
-  scenarios: { registro: { executor: 'constant-arrival-rate', rate: 2, timeUnit: '1s', duration: '60s', preAllocatedVUs: 10, maxVUs: 50 } },
-  thresholds: {
-    // PENDIENTE de HU-01: este umbral NO se ha evaluado nunca contra un registro real.
-    http_req_duration: ['p(95)<5000'],
-    http_req_failed: ['rate<0.01'],
+  scenarios: {
+    registro: {
+      executor: 'constant-arrival-rate',
+      rate: TASA,
+      timeUnit: '1s',
+      duration: DURACION,
+      preAllocatedVUs: parseInt(__ENV.PRE_VUS || '10'),
+      maxVUs: parseInt(__ENV.MAX_VUS || '50'),
+    },
   },
+  thresholds: {
+    'http_req_duration{endpoint:registro}': ['p(95)<5000'],
+    'http_req_failed{endpoint:registro}': ['rate<0.01'],
+    asr2_registro_correcto: ['rate>0.99'],
+  },
+  summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
+  discardResponseBodies: true,
 };
 
 export default function () {
-  const datos = {
-    nombreCientifico: 'Pristimantis carga', familia: 'Strabomantidae', fechaRecoleccion: '2026-03-14',
-    estadoConservacion: 'NO_AMENAZADA', departamento: '15',
-    archivo: http.file(ADJUNTO, 'adjunto.bin', 'application/octet-stream'),
+  const fecha = new Date().toISOString().slice(0, 10);
+  const cuerpo = {
+    nombreCientifico: 'Pristimantis carga',
+    familia: 'Strabomantidae',
+    tipoEspecimen: 'Adulto',
+    fechaRecoleccion: fecha,
+    departamento: '15',
+    categoriaUicn: 'NE',
+    descripcion: 'Registro sintético de prueba ASR2',
   };
-  const r = http.post(`${BASE_URL}${RUTA}`, datos, { headers: { Authorization: `Bearer ${__ENV.TOKEN}` }, timeout: '15s' });
-  check(r, { 'registro creado (201)': (x) => x.status === 201 });
+  const respuesta = http.post(`${BASE_URL}${RUTA}`, JSON.stringify(cuerpo), {
+    headers: {
+      Authorization: `Bearer ${__ENV.TOKEN}`,
+      'Content-Type': 'application/json',
+      'Idempotency-Key': `asr2-${Date.now()}-${__VU}-${__ITER}`,
+    },
+    tags: { endpoint: 'registro' },
+    timeout: '15s',
+  });
+  const correcto = respuesta.status === 201;
+  registroCorrecto.add(correcto);
+  if (correcto) creados.add(1);
+  check(respuesta, { 'hallazgo creado (201)': () => correcto });
+}
+
+export function handleSummary(data) {
+  const metric = (name, stat) => data.metrics[name]?.values?.[stat] ?? null;
+  const peticiones = metric('http_reqs', 'count') || 0;
+  const resumen = {
+    parametros: {
+      tasa_req_s: TASA,
+      duracion: DURACION,
+      base_url: BASE_URL,
+      ruta: RUTA,
+      con_adjuntos: false,
+      commit: __ENV.COMMIT || null,
+      red_k6: __ENV.RED_K6 || null,
+    },
+    peticiones,
+    creados: metric('asr2_hallazgos_creados', 'count') || 0,
+    exitos_pct: metric('asr2_registro_correcto', 'rate') === null
+      ? null : metric('asr2_registro_correcto', 'rate') * 100,
+    latencia_ms: {
+      p50: metric('http_req_duration{endpoint:registro}', 'med'),
+      p95: metric('http_req_duration{endpoint:registro}', 'p(95)'),
+      p99: metric('http_req_duration{endpoint:registro}', 'p(99)'),
+      max: metric('http_req_duration{endpoint:registro}', 'max'),
+    },
+  };
+  const salida = __ENV.SALIDA || '/resultados/asr2-registro.json';
+  return {
+    [salida]: JSON.stringify(resumen, null, 2),
+    stdout: `\n=== ASR2 registro JSON ===\npeticiones=${peticiones} creados=${resumen.creados}`
+      + ` exitos=${resumen.exitos_pct?.toFixed(2) ?? 'n/d'}% p95=${resumen.latencia_ms.p95 ?? 'n/d'} ms\n`,
+  };
 }

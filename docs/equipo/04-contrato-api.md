@@ -723,7 +723,7 @@ Roles: `investigador_campo`, `cientifico_alto_rango`, `administrador`.
 | `familia` | Sí | 1–100 |
 | `tipoEspecimen` | Sí | ≤ 80 (HU-01 lo exige; el evento lo admite vacío) |
 | `fechaRecoleccion` | Sí | no futura (`America/Bogota`) |
-| `departamento` | Sí | del catálogo de 33; lo valida ubicación |
+| `departamento` | Sí | del catálogo oficial de 33; se valida antes de guardar y ubicación también lo valida al sincronizar |
 | `categoriaUicn` | No | `CR`, `EN`, `VU`, `NT`, `LC`, `DD`, `NE`; por defecto `NE` |
 | `nombreComun`, `descripcion` | No | ≤ 150 / ≤ 5000, sin coordenadas en el texto |
 | `latitud`, `longitud` | No | ambas o ninguna; se entregan a ubicación y **no** se guardan en registro |
@@ -734,6 +734,11 @@ Roles: `investigador_campo`, `cientifico_alto_rango`, `administrador`.
 Errores: `400 DATOS_INVALIDOS` (campo del formulario), `400 UBICACION_INVALIDA` (lo rechazó ubicación;
 la transacción se revirtió entera), `403` si el rol no corresponde.
 
+La petición debe enviar `Idempotency-Key` (1–100 caracteres). Un reintento con la misma clave, usuario y
+cuerpo devuelve el mismo `hallazgoId` sin crear otra fila; reutilizar la clave con otro cuerpo o usuario
+devuelve `409 CLAVE_IDEMPOTENCIA_REUTILIZADA`. La clave se persiste con restricción única para cubrir
+reintentos concurrentes. El departamento se valida contra el catálogo antes de guardar.
+
 ### 13.2 `PUT /api/cientifico/hallazgos/{id}` — reclasificar (HU-03)
 Roles: `cientifico_alto_rango`, `administrador`.
 
@@ -741,7 +746,7 @@ Mismo cuerpo que el alta **sin** `latitud`/`longitud`, más `justificacion` (obl
 campos nulos no se tocan. Devuelve `{ "hallazgoId": "...", "version": n }` con la versión nueva.
 
 Errores: `400 DATOS_INVALIDOS` (incluye la falta de justificación), `404 HALLAZGO_NO_ENCONTRADO`,
-`409 UBICACION_NO_REGISTRADA`.
+`409 UBICACION_NO_REGISTRADA` o `409 RECLASIFICACION_CONCURRENTE` si otra reclasificación ganó la carrera.
 
 ### 13.3 `GET /api/cientifico/hallazgos/{id}` — consultar
 Roles: `investigador_campo`, `cientifico_alto_rango`, `auditor_cientifico`, `administrador`.
@@ -777,6 +782,11 @@ Cada fila: `campo`, `valorPrevio`, `valorNuevo`, `justificacion`, `autor`, `fech
 ### 13.8 `GET /api/cientifico/hallazgos/{id}/comparar?desde=1&hasta=2` — comparar versiones (HU-05)
 Devuelve **solo los campos que cambiaron**, que es lo que el auditor necesita resaltar. El orden de los
 parámetros no importa. `400` si ambos son iguales; `404` si alguna versión no existe.
+
+### 13.9 `POST /api/cientifico/hallazgos/{id}/versiones/{version}/republicar-evento`
+Solo `administrador`. Republica a RabbitMQ el evento a partir del snapshot inmutable de esa versión y
+responde `202` con el sobre publicado. Responde `404` si no existe esa versión. Esta operación permite
+recuperación manual; el outbox transaccional queda como trabajo pendiente.
 
 ## 14. Garantías que registro cumple del contrato
 

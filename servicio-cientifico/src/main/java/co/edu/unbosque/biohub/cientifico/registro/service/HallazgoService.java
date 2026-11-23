@@ -1,9 +1,13 @@
 package co.edu.unbosque.biohub.cientifico.registro.service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -12,6 +16,10 @@ import java.util.UUID;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 
 import co.edu.unbosque.biohub.cientifico.eventos.domain.HallazgoReclasificado;
 import co.edu.unbosque.biohub.cientifico.eventos.domain.HallazgoRegistrado;
@@ -52,19 +60,27 @@ public class HallazgoService {
     private final CambioAuditoriaRepository auditoria;
     private final ConstructorSnapshotPublico snapshotPublico;
     private final ValidadorTextoPublico validadorTexto;
+    private final FichaPlantillaService plantillas;
+    private final ValidadorDepartamento departamentos;
     private final ApplicationEventPublisher publicador;
+    private final ObjectMapper objectMapper;
     private final Clock reloj;
 
     @SuppressWarnings("java:S107")
     public HallazgoService(HallazgoRepository hallazgos, VersionHallazgoRepository versiones,
                            CambioAuditoriaRepository auditoria, ConstructorSnapshotPublico snapshotPublico,
-                           ValidadorTextoPublico validadorTexto, ApplicationEventPublisher publicador, Clock reloj) {
+                           ValidadorTextoPublico validadorTexto, FichaPlantillaService plantillas,
+                           ValidadorDepartamento departamentos, ApplicationEventPublisher publicador,
+                           ObjectMapper objectMapper, Clock reloj) {
         this.hallazgos = hallazgos;
         this.versiones = versiones;
         this.auditoria = auditoria;
         this.snapshotPublico = snapshotPublico;
         this.validadorTexto = validadorTexto;
+        this.plantillas = plantillas;
+        this.departamentos = departamentos;
         this.publicador = publicador;
+        this.objectMapper = objectMapper;
         this.reloj = reloj;
     }
 
@@ -76,12 +92,35 @@ public class HallazgoService {
      */
     @Transactional
     public ResultadoRegistro registrar(RegistrarHallazgoComando comando, String investigador) {
+        return registrar(comando, investigador, null);
+    }
+
+    /** Registro idempotente para que un reintento HTTP no cree otro hallazgo. */
+    @Transactional
+    public ResultadoRegistro registrar(RegistrarHallazgoComando comando, String investigador, String claveIdempotencia) {
+        String clave = normalizarClaveIdempotencia(claveIdempotencia);
+        String huella = clave == null ? null : huella(comando, investigador);
+        if (clave != null) {
+            var anterior = hallazgos.findByIdempotencyKey(clave);
+            if (anterior.isPresent()) {
+                Hallazgo existente = anterior.get();
+                String huellaExistente = existente.getIdempotencyHash();
+                if (huellaExistente == null || !MessageDigest.isEqual(
+                        huellaExistente.getBytes(StandardCharsets.US_ASCII), huella.getBytes(StandardCharsets.US_ASCII))) {
+                    throw new IdempotencyKeyConflictException();
+                }
+                return new ResultadoRegistro(existente.getId(), 1);
+            }
+        }
+
         validarComunes(comando.nombreCientifico(), comando.familia(), comando.fechaRecoleccion(),
                 comando.departamento(), comando.descripcion(), comando.nombreComun(), comando.tipoEspecimen());
         exigirTexto("investigador", investigador, 100);
         // HU-01: el tipo de espécimen es obligatorio al registrar, aunque el evento público lo admita vacío.
         exigirTexto("tipoEspecimen", comando.tipoEspecimen(), MAX_TIPO_ESPECIMEN);
         validarCoordenadas(comando.latitud(), comando.longitud());
+        validarDepartamento(comando.departamento());
+        Integer plantillaVersion = plantillas.validarValores(comando.nombreCientifico(), comando.atributos());
 
         CategoriaUicn categoria = comando.categoriaUicn() == null ? CategoriaUicn.NE : comando.categoriaUicn();
         EstadoConservacion estado = categoria.estadoConservacion();
@@ -89,7 +128,7 @@ public class HallazgoService {
         Hallazgo hallazgo = new Hallazgo(UUID.randomUUID(), comando.nombreCientifico().strip(),
                 limpiar(comando.nombreComun()), comando.familia().strip(), limpiar(comando.tipoEspecimen()),
                 comando.fechaRecoleccion(), investigador.strip(), comando.departamento().strip(),
-                estado, categoria, limpiar(comando.descripcion()), comando.atributos(), null);
+                estado, categoria, limpiar(comando.descripcion()), comando.atributos(), plantillaVersion, clave, huella);
 
         // 1. El hallazgo existe antes de que nadie más lo mire.
         hallazgos.saveAndFlush(hallazgo);
@@ -144,6 +183,7 @@ public class HallazgoService {
         }
         if (comando.departamento() != null) {
             exigirTexto("departamento", comando.departamento(), MAX_DEPARTAMENTO);
+            validarDepartamento(comando.departamento());
         }
         if (comando.fechaRecoleccion() != null) {
             validarFecha(comando.fechaRecoleccion());
@@ -151,6 +191,20 @@ public class HallazgoService {
         validarLongitud("nombreComun", comando.nombreComun(), MAX_NOMBRE);
         validarLongitud("tipoEspecimen", comando.tipoEspecimen(), MAX_TIPO_ESPECIMEN);
         validarLongitud("descripcion", comando.descripcion(), MAX_DESCRIPCION);
+        validadorTexto.verificar("nombreCientifico", comando.nombreCientifico());
+        validadorTexto.verificar("nombreComun", comando.nombreComun());
+        validadorTexto.verificar("familia", comando.familia());
+        validadorTexto.verificar("tipoEspecimen", comando.tipoEspecimen());
+        validadorTexto.verificar("departamento", comando.departamento());
+        validadorTexto.verificar("descripcion", comando.descripcion());
+
+        boolean cambiaPlantilla = comando.nombreCientifico() != null || comando.atributos() != null;
+        String especieFinal = comando.nombreCientifico() == null
+                ? hallazgo.getNombreCientifico() : comando.nombreCientifico();
+        Map<String, Object> atributosFinales = comando.atributos() == null
+                ? hallazgo.getAtributos() : comando.atributos();
+        Integer plantillaVersion = cambiaPlantilla
+                ? plantillas.validarValores(especieFinal, atributosFinales) : hallazgo.getPlantillaVersion();
 
         Hallazgo previo = copiaDeReferencia(hallazgo);
         CategoriaUicn categoria = comando.categoriaUicn();
@@ -159,7 +213,7 @@ public class HallazgoService {
         int versionNueva = hallazgo.reclasificar(limpiar(comando.nombreCientifico()), limpiar(comando.nombreComun()),
                 limpiar(comando.familia()), limpiar(comando.tipoEspecimen()), comando.fechaRecoleccion(),
                 limpiar(comando.departamento()), estado, categoria, limpiar(comando.descripcion()),
-                comando.atributos());
+                comando.atributos(), plantillaVersion);
 
         hallazgos.saveAndFlush(hallazgo);
 
@@ -291,6 +345,34 @@ public class HallazgoService {
             throw new DatosHallazgoInvalidosException(campo, "obligatorio, maximo " + maximo + " caracteres");
         }
         validarLongitud(campo, valor, maximo);
+    }
+
+    private void validarDepartamento(String departamento) {
+        if (!departamentos.existeEnCatalogo(departamento)) {
+            throw new DatosHallazgoInvalidosException("departamento", "debe pertenecer al catálogo oficial");
+        }
+    }
+
+    private String normalizarClaveIdempotencia(String clave) {
+        if (clave == null) {
+            return null;
+        }
+        String normalizada = clave.strip();
+        if (normalizada.isEmpty() || normalizada.length() > 100) {
+            throw new DatosHallazgoInvalidosException("Idempotency-Key", "debe tener entre 1 y 100 caracteres");
+        }
+        return normalizada;
+    }
+
+    private String huella(RegistrarHallazgoComando comando, String investigador) {
+        try {
+            ObjectMapper canonico = objectMapper.copy().enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS);
+            String contenido = investigador + "\n" + canonico.writeValueAsString(comando);
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(contenido.getBytes(StandardCharsets.UTF_8)));
+        } catch (JsonProcessingException | NoSuchAlgorithmException e) {
+            throw new IllegalStateException("No se pudo calcular la huella de idempotencia", e);
+        }
     }
 
     private static void validarLongitud(String campo, String valor, int maximo) {
