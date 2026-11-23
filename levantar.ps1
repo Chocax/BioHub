@@ -479,6 +479,14 @@ foreach ($s in $Servicios) { $p = [int](Valor $s.Clave $s.Defecto); if (Puerto-A
 foreach ($w in $Webs) { if (Puerto-Abierto $w.Puerto) { $ocupados += "$($w.Puerto) ($($w.Nombre))" } }
 if ($ocupados.Count -gt 0) {
   Mal "puertos ocupados por otro programa: $($ocupados -join ', ')"
+  if ($previos -gt 0) {
+    # Se intentó apagarlos y siguen ahí: casi siempre es una corrida anterior abierta como administrador, que una
+    # consola normal no puede cerrar (Windows no lo permite).
+    Nota 'Son de una corrida anterior que no pude cerrar. Si esa vez abriste la consola como administrador:'
+    Nota 'abre CMD como administrador, ve a la carpeta del proyecto y corre  levantar -Detener  (luego  levantar).'
+    Nota 'Si BioHub ya está funcionando, no hace falta reiniciar: revisa con  levantar -Estado'
+    Salir 'No arranqué nada para no duplicar los servicios.'
+  }
   Salir 'Ciérralo (o busca quién es con: Get-NetTCPConnection -LocalPort <puerto> -State Listen) y vuelve a correr.'
 }
 Bien 'puertos de servicios y webs libres'
