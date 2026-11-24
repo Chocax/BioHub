@@ -47,7 +47,11 @@ public class ValidadorTextoPublico {
     private static final Pattern PLANAS_CLAVE = Pattern.compile("^(?:norte|este|northing|easting)(?:_|\\d|$)");
     private static final Pattern NUMERO_EN_TEXTO = Pattern.compile("[-+]?\\d{1,20}(?:\\.\\d{1,20})?");
 
-    private static final Pattern ETIQUETA_SCRIPT = Pattern.compile("(?i)<\\s*/?\\s*script\\b");
+    /**
+     * {@code <script} o {@code </script} con espacios en medio. Los cuantificadores posesivos ({@code \s*+}) no devuelven
+     * espacios al retroceder: un texto con miles de espacios tras un {@code <} se revisa en tiempo lineal (ReDoS, CodeQL).
+     */
+    private static final Pattern ETIQUETA_SCRIPT = Pattern.compile("(?i)<\\s*+/?\\s*+script\\b");
 
     /**
      * @return {@code true} si el texto parece contener una coordenada geográfica
