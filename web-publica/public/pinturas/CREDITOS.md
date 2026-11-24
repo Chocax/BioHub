@@ -28,9 +28,9 @@ Acuarelas de la Comisión Corográfica y de Edward Walhouse Mark, una lámina de
 |---|---|---|---|---|---|
 | `chita-grande.webp`, `chita-1600.webp`, `chita-800.webp` | Vista del nevado de Chita y del gran nevero que tiene hacia Güicán (Tundama) | Carmelo Fernández, Comisión Corográfica, 1851 | Biblioteca Nacional de Colombia | Dominio público | https://commons.wikimedia.org/wiki/File:Vista_del_nevado_de_Chita_i_del_gran_nevero_que_tiene_hacia_Guicán.jpg |
 
-## Las mismas 19 obras en los tres fondos (2026-11-23)
+## Las mismas 20 obras en los tres fondos (2026-11-23; el cóndor se sumó el 2026-11-24)
 
-El carrusel del inicio interno, el cielo del portal y el fondo del login muestran las mismas 19 obras. Estos archivos son versiones de obras cuyo crédito completo (autor, museo o colección, licencia y fuente) está en `web-interna/public/pinturas/CREDITOS.md`; se generaron desde los mismos originales.
+El carrusel del inicio interno, el cielo del portal y el fondo del login muestran las mismas 20 obras. Estos archivos son versiones de obras cuyo crédito completo (autor, museo o colección, licencia y fuente) está en `web-interna/public/pinturas/CREDITOS.md`; se generaron desde los mismos originales.
 
 | Archivo | Obra |
 |---|---|
@@ -47,3 +47,11 @@ El carrusel del inicio interno, el cielo del portal y el fondo del login muestra
 | `choachi-grande.webp`, `choachi-1600.webp`, `choachi-800.webp` | Rancho campesino (E. W. Mark, 1846) |
 
 Las ilustraciones (monograma, follaje, mariposa morpho) son SVG propios del proyecto, en `src/components/Ilustraciones.jsx`.
+
+## El cóndor andino (Internet Archive, dominio público)
+
+El ave del escudo de Colombia. Lámina IX del *Recueil d'observations de zoologie et d'anatomie comparée* del viaje de Humboldt y Bonpland por el Nuevo Continente, escaneada por la biblioteca de libros raros de McGill (hoja n462). Se recortó en horizontal alrededor de la cabeza y se pasó a WebP; no se alteró su contenido.
+
+| Archivo | Obra | Autor y año | Colección | Licencia | Fuente |
+|---|---|---|---|---|---|
+| `condor-grande.webp`, `condor-1600.webp`, `condor-800.webp` | Cabeza del cóndor (*Vultur gryphus*), lámina IX | Alexander von Humboldt y Aimé Bonpland, 1811 | McGill University Library, Rare Books and Special Collections | Dominio público | https://archive.org/details/McGillLibrary-rbsc_recueil-dobservations-de-zoologie-danatomie_folioOAH881_425918111-21655 |

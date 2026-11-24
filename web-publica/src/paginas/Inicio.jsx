@@ -24,9 +24,9 @@ function leerPagina(valor) {
 }
 
 /**
- * Fondo del héroe: las 19 pinturas de pantalla completa (las mismas del carrusel interno y del login), que se alternan con un fundido lento (cada 25 s, 3 s de transición). Solo se
+ * Fondo del héroe: las 20 pinturas de pantalla completa (las mismas del carrusel interno y del login), que se alternan con un fundido lento (cada 25 s, 3 s de transición). Solo se
  * renderizan la actual y la siguiente (que se precarga en silencio) y, durante el fundido, la anterior: nunca las
- * diecinueve a la vez (FE-R-5). `ancho` es el ancho real del archivo grande: si se declara de menos, el navegador estira
+ * veinte a la vez (FE-R-5). `ancho` es el ancho real del archivo grande: si se declara de menos, el navegador estira
  * la versión pequeña y la pintura se ve pixelada. Con movimiento reducido solo hay una pintura, quieta.
  */
 export const FONDOS = [
@@ -49,6 +49,7 @@ export const FONDOS = [
   { src: '/pinturas/mariquita-grande.webp', media: '/pinturas/mariquita-1600.webp', chica: '/pinturas/mariquita-800.webp', ancho: 1905 },
   { src: '/pinturas/bongo-grande.webp', media: '/pinturas/bongo-1600.webp', chica: '/pinturas/bongo-800.webp', ancho: 1488 },
   { src: '/pinturas/choachi-grande.webp', media: '/pinturas/choachi-1600.webp', chica: '/pinturas/choachi-800.webp', ancho: 1270 },
+  { src: '/pinturas/condor-grande.webp', media: '/pinturas/condor-1600.webp', chica: '/pinturas/condor-800.webp', ancho: 2400 },
 ];
 const CADA_MS = 25000;
 const FUNDIDO_MS = 3000;

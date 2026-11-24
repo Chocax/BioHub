@@ -30,7 +30,7 @@ const ACCION_PRINCIPAL = [
 ];
 
 /**
- * Mensajes de la tarjeta negra del carrusel. Las pinturas son las 19 de FONDOS_GRANDES en orden aleatorio, y estos
+ * Mensajes de la tarjeta negra del carrusel. Las pinturas son las 20 de FONDOS_GRANDES en orden aleatorio, y estos
  * mensajes se turnan encima de ellas (no dependen de una obra en particular).
  */
 const MENSAJES = [
@@ -89,7 +89,7 @@ function LienzoRotativo() {
     <section className="lienzo" aria-label="Sobre BioHub" aria-roledescription="carrusel"
       onMouseEnter={() => setPausa(true)} onMouseLeave={() => setPausa(false)}
       onFocus={() => setPausa(true)} onBlur={() => setPausa(false)} onKeyDown={alTeclear}>
-      {/* Solo la actual y sus vecinas: con 19 obras, montarlas todas bajaría varios MB al abrir el inicio */}
+      {/* Solo la actual y sus vecinas: con 20 obras, montarlas todas bajaría varios MB al abrir el inicio */}
       {diapositivas.map((d, i) => ({ d, i })).filter(({ i }) => [actual, (actual + 1) % total, (actual - 1 + total) % total].includes(i)).map(({ d, i }) => (
         <img key={d.pintura} className="lienzo__imagen" data-activa={i === actual}
           src={PINTURAS[d.pintura].src} srcSet={`${PINTURAS[d.pintura].chica} 800w, ${PINTURAS[d.pintura].src} 2000w`}
@@ -108,7 +108,7 @@ function LienzoRotativo() {
         </div>
         <div className="lienzo__pie">
           <span>{String(actual + 1).padStart(2, '0')} / {String(diapositivas.length).padStart(2, '0')}</span>
-          {/* Con 19 obras no caben puntos: una línea de avance (para moverse están las flechas y las teclas ← →) */}
+          {/* Con 20 obras no caben puntos: una línea de avance (para moverse están las flechas y las teclas ← →) */}
           <span className="lienzo__progreso" aria-hidden="true">
             <span style={{ width: `${((actual + 1) / total) * 100}%` }} />
           </span>

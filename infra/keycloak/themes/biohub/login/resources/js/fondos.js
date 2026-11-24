@@ -1,14 +1,14 @@
 /*
- * Fondo del inicio de sesión de BioHub: diecinueve pinturas de dominio público que se alternan cada 6,5 s con un fundido
+ * Fondo del inicio de sesión de BioHub: veinte pinturas de dominio público que se alternan cada 6,5 s con un fundido
  * de 1,8 s. Cada imagen se carga justo antes de mostrarse (la siguiente y la de después), así que no se bajan todas
  * de entrada. Con movimiento reducido se queda la primera.
  * El orden se baraja en cada visita y la primera nunca es la misma con la que arrancó la vez anterior (solo se
  * recuerda su nombre en localStorage; si el navegador no deja guardar, igual se baraja).
  */
 (function () {
-  // Las mismas 19 del carrusel interno y del portal (FONDOS_GRANDES en web-interna/src/componentes/pinturas.js)
+  // Las mismas 20 del carrusel interno y del portal (FONDOS_GRANDES en web-interna/src/componentes/pinturas.js)
   var FONDOS = ['andes', 'rio', 'colibri', 'tequendama', 'lluvia', 'pasiflora', 'nubes', 'tropico', 'tequendama-cima',
-    'pitahaya', 'guacamaya', 'sudamerica', 'chimborazo', 'sangay', 'chita', 'cachiri', 'mariquita', 'bongo', 'choachi'];
+    'pitahaya', 'guacamaya', 'sudamerica', 'chimborazo', 'sangay', 'chita', 'cachiri', 'mariquita', 'bongo', 'choachi', 'condor'];
   var CADA_MS = 6500;
   var CLAVE = 'biohub.login.primera';
   var base = (document.currentScript && document.currentScript.src.replace(/js\/fondos\.js.*$/, 'img/')) || '';
@@ -42,6 +42,24 @@
     });
     document.documentElement.classList.add('bh-con-fondos');
     if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    // Dos cóndores andinos planeando en círculos (la térmica): uno cerca, a la izquierda, y otro lejos, más pequeño.
+    [
+      { izq: '17vw', arriba: '30vh', ancho: '150px', vuelta: '44s', ruta: 'path("M 0 -70 A 210 70 0 1 1 0 70 A 210 70 0 1 1 0 -70")', clase: '' },
+      { izq: '80vw', arriba: '20vh', ancho: '74px', vuelta: '58s', ruta: 'path("M 0 50 A 140 50 0 1 0 0 -50 A 140 50 0 1 0 0 50")', clase: ' bh-condor--lejos' },
+    ].forEach(function (c) {
+      var vuelo = document.createElement('div');
+      vuelo.className = 'bh-condor' + c.clase;
+      vuelo.setAttribute('aria-hidden', 'true');
+      vuelo.style.left = c.izq; vuelo.style.top = c.arriba;
+      vuelo.style.setProperty('--bh-condor-ancho', c.ancho);
+      vuelo.style.setProperty('--bh-condor-vuelta', c.vuelta);
+      vuelo.style.setProperty('--bh-condor-ruta', c.ruta);
+      var ave = document.createElement('img');
+      ave.src = base + 'condor.svg'; ave.alt = '';
+      vuelo.appendChild(ave);
+      document.body.insertBefore(vuelo, capas[0].nextSibling); // justo después de las pinturas
+    });
 
     var actual = 0;
     function precargar(i) {
