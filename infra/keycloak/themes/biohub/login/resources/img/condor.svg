@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 84" role="img" aria-label="Cóndor andino planeando">
+  <!-- Cóndor andino (Vultur gryphus) visto desde arriba: alas largas y anchas con las primarias abiertas como dedos,
+       la franja blanca de las secundarias y el collar blanco. Ilustración propia de BioHub. -->
+  <g fill="#14130f" stroke="#14130f" stroke-linecap="round" stroke-linejoin="round">
+    <!-- alas -->
+    <path stroke-width="1" d="M113 33 C 94 27, 64 25, 42 27 C 35 33, 35 45, 41 51 C 63 55, 91 57, 113 53 Z"/>
+    <path stroke-width="1" d="M127 33 C 146 27, 176 25, 198 27 C 205 33, 205 45, 199 51 C 177 55, 149 57, 127 53 Z"/>
+    <!-- primarias abiertas, cinco por lado -->
+    <g fill="none" stroke-width="6.2">
+      <path d="M43 29 Q 28 23, 13 21"/><path d="M41 34 Q 25 31, 8 30"/><path d="M40 39 Q 24 39, 7 40"/>
+      <path d="M40 44 Q 25 46, 10 50"/><path d="M42 49 Q 29 53, 17 59"/>
+      <path d="M197 29 Q 212 23, 227 21"/><path d="M199 34 Q 215 31, 232 30"/><path d="M200 39 Q 216 39, 233 40"/>
+      <path d="M200 44 Q 215 46, 230 50"/><path d="M198 49 Q 211 53, 223 59"/>
+    </g>
+    <!-- cuerpo, cola en abanico y cabeza -->
+    <ellipse cx="120" cy="43" rx="9.5" ry="15" stroke-width="0"/>
+    <path stroke-width="1" d="M113 54 L 110 66 Q 120 71, 130 66 L 127 54 Z"/>
+    <ellipse cx="120" cy="22.5" rx="4" ry="5.6" stroke-width="0"/>
+  </g>
+  <!-- franja blanca de las secundarias -->
+  <path fill="#efece4" opacity=".92" d="M50 45 C 72 48.5, 94 50, 111 47 L 111 51.5 C 92 54.5, 69 53.5, 48 50 Z"/>
+  <path fill="#efece4" opacity=".92" d="M190 45 C 168 48.5, 146 50, 129 47 L 129 51.5 C 148 54.5, 171 53.5, 192 50 Z"/>
+  <!-- collar -->
+  <ellipse cx="120" cy="29.5" rx="6.6" ry="3.2" fill="#efece4"/>
+</svg>

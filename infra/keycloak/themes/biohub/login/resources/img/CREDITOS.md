@@ -36,9 +36,9 @@ Acuarelas de la Comisión Corográfica y de Edward Walhouse Mark, una lámina de
 | `cachiri.webp` | Casa principal de Cachirí (Soto) | Carmelo Fernández, Comisión Corográfica, 1850 | Biblioteca Nacional de Colombia | Dominio público | https://commons.wikimedia.org/wiki/File:Soto_-_Casa_principal_de_Cachirí_(1850).jpg |
 | `mariquita.webp` | Minas de plata de Santa Ana (provincia de Mariquita) | Henry Price, Comisión Corográfica, 1852 | Biblioteca Nacional de Colombia | Dominio público | https://commons.wikimedia.org/wiki/File:Wdl_09138-fc_corografica_140-V02.jpg |
 
-## Las mismas 19 obras en los tres fondos (2026-11-23)
+## Las mismas 20 obras en los tres fondos (2026-11-23; el cóndor se sumó el 2026-11-24)
 
-El carrusel del inicio interno, el cielo del portal y el fondo del login muestran las mismas 19 obras. Estos archivos son versiones de obras cuyo crédito completo (autor, museo o colección, licencia y fuente) está en `web-interna/public/pinturas/CREDITOS.md`; se generaron desde los mismos originales.
+El carrusel del inicio interno, el cielo del portal y el fondo del login muestran las mismas 20 obras. Estos archivos son versiones de obras cuyo crédito completo (autor, museo o colección, licencia y fuente) está en `web-interna/public/pinturas/CREDITOS.md`; se generaron desde los mismos originales.
 
 | Archivo | Obra |
 |---|---|
@@ -46,3 +46,13 @@ El carrusel del inicio interno, el cielo del portal y el fondo del login muestra
 | `guacamaya.webp` | Guacamaya, Bogotá (F. E. Church, 1853) |
 | `bongo.webp` | Bongo del Magdalena (E. W. Mark, 1845) |
 | `choachi.webp` | Rancho campesino (E. W. Mark, 1846) |
+
+## El cóndor andino (Internet Archive, dominio público)
+
+El ave del escudo de Colombia. Lámina IX del *Recueil d'observations de zoologie et d'anatomie comparée* del viaje de Humboldt y Bonpland por el Nuevo Continente, escaneada por la biblioteca de libros raros de McGill (hoja n462). Se recortó en horizontal alrededor de la cabeza y se pasó a WebP; no se alteró su contenido.
+
+| Archivo | Obra | Autor y año | Colección | Licencia | Fuente |
+|---|---|---|---|---|---|
+| `condor.webp` | Cabeza del cóndor (*Vultur gryphus*), lámina IX | Alexander von Humboldt y Aimé Bonpland, 1811 | McGill University Library, Rare Books and Special Collections | Dominio público | https://archive.org/details/McGillLibrary-rbsc_recueil-dobservations-de-zoologie-danatomie_folioOAH881_425918111-21655 |
+
+`condor.svg` (el cóndor que planea sobre el fondo) es una ilustración propia del proyecto.
