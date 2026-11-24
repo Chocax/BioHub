@@ -259,14 +259,22 @@ table.tabla { width: 100%; border-collapse: collapse; font-size: 14px; }
 .sala__titulo { font: 400 clamp(40px, 6.5vw, 88px)/.9 var(--serif); letter-spacing: -.025em; margin: 0 0 12px; text-transform: uppercase; }
 .sala__titulo em { text-transform: none; font-style: italic; }
 .sala__bajada { color: #b9b7b0; max-width: 56ch; margin: 0 auto 48px; font-size: 14px; letter-spacing: .02em; text-transform: uppercase; }
-.vinetas { display: grid; gap: 36px 28px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); max-width: 1100px; margin: 0 auto; }
-.vineta { display: grid; justify-items: center; gap: 14px; text-decoration: none; color: inherit; }
-.vineta__titulo { font: 400 23px/1.2 var(--serif); margin: 0; }
-.vineta__circulo { width: 190px; height: 190px; border-radius: 50%; overflow: hidden; background: #222; transition: transform .5s cubic-bezier(.2, .7, .1, 1); }
-.vineta__circulo img { width: 100%; height: 100%; object-fit: cover; transition: transform 1.2s cubic-bezier(.2, .7, .1, 1); }
-.vineta:hover .vineta__circulo { transform: scale(1.04); }
-.vineta:hover .vineta__circulo img { transform: scale(1.12); }
-.vineta__texto { color: #b9b7b0; font-size: 13px; max-width: 30ch; margin: 0; }
+/* Viñetas de la sala: filas centradas (si la última no se llena, queda en el medio) */
+.vinetas { display: flex; flex-wrap: wrap; justify-content: center; gap: 36px 28px; max-width: 1100px; margin: 0 auto; }
+.vineta { display: grid; justify-items: center; align-content: start; gap: 10px; flex: 0 1 240px; color: inherit; }
+.vineta__enlace { display: grid; justify-items: center; gap: 14px; text-decoration: none; color: inherit; border-radius: 12px; }
+.vineta__titulo { font: 400 23px/1.2 var(--serif); margin: 0; text-align: center; min-height: 2.4em; display: flex; align-items: flex-end; justify-content: center; }
+.vineta__circulo { position: relative; width: 190px; height: 190px; border-radius: 50%; overflow: hidden; background: #222; transition: transform .5s cubic-bezier(.2, .7, .1, 1); }
+.vineta__obra { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 1.4s ease-in-out, transform 1.2s cubic-bezier(.2, .7, .1, 1); }
+.vineta__obra--activa { opacity: 1; }
+.vineta__enlace:hover .vineta__circulo { transform: scale(1.04); }
+.vineta__enlace:hover .vineta__obra { transform: scale(1.12); }
+.vineta__texto { color: #b9b7b0; font: 13px/1.5 var(--sans); max-width: 30ch; margin: 0; text-align: center; min-height: 3em; }
+.vineta__obras { display: inline-flex; gap: 2px; }
+.vineta__punto { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: none; color: #d8d5cc; cursor: pointer; transition: color .2s, transform .2s; }
+.vineta__punto:hover { color: #fff; transform: scale(1.15); }
+.vineta__punto[aria-pressed='true'] { color: #fff; }
+.vineta__punto .hex { width: 12px; height: 12px; }
 
 /* Aparición al desplazarse */
 .revelar { opacity: 0; transform: translateY(18px); transition: opacity .8s ease, transform .8s cubic-bezier(.2, .7, .1, 1); }

@@ -4,6 +4,13 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
 ## [Unreleased]
 
+### Changed (front y sustentación, 2026-11-24)
+- Inicio interno: cada sala turna tres obras con fundido (con desfase entre salas, pausa con el mouse o el foco y quieta con «reducir movimiento»). Los hexágonos de abajo eligen la obra en vez de abrir la sala, y las filas incompletas quedan centradas con los círculos alineados.
+- Búsqueda de hallazgos: «¿Por qué?» de la columna Coordenadas sube hasta el aviso del rol, le da el foco y lo resalta, en vez de repetir el texto debajo de la tabla.
+
+### Added (sustentación, 2026-11-24)
+- `docs/entrega-3/`: presentación final en PDF (alcance frente a la Entrega 2, arquitectura real, commits y aportes, plan de pruebas y dobles de prueba, demo y QR del repositorio) y el guion con la demo paso a paso y las preguntas por integrante.
+
 ### Fixed (registro desde la web, 2026-11-24)
 - Registrar un hallazgo desde la web interna daba 400 "encabezado obligatorio": el servicio científico exige `Idempotency-Key` desde el PR #23 y ni la web ni el gateway la enviaban. La web manda una clave por intento (la misma si se reintenta sin cambios) y el gateway la permite en CORS.
 - `levantar -Sembrar` no creaba hallazgos (mismo encabezado) ni equipos (el alta exige custodio desde el PR #22): ahora envía la clave y asigna los equipos a `investigador1`.

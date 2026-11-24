@@ -601,6 +601,7 @@ Antes de abrir el PR, actualiza tu rama con `develop` (`git fetch origin` y `git
 | [10-verificacion-sad.md](docs/equipo/10-verificacion-sad.md) | Verificación del código contra el SAD |
 | [11-seguridad-y-acceso.md](docs/equipo/11-seguridad-y-acceso.md) | Cómo entra cada petición y la matriz de roles |
 | [trazabilidad.md](docs/equipo/trazabilidad.md) | Trazabilidad de requisitos a código y pruebas |
+| [entrega-3/](docs/entrega-3/) | Presentación final y guion de la sustentación |
 | [CHANGELOG.md](CHANGELOG.md) | Cambios por versión |
 
 ## 15. Créditos y licencia

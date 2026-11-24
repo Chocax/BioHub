@@ -52,18 +52,27 @@ describe('PaginaBusqueda: coordenadas según el rol', () => {
     expect(within(tabla).getByRole('columnheader', { name: /Coordenadas/ })).toBeInTheDocument();
   });
 
-  it('otro rol: aviso del rol siempre visible y "¿Por qué?" despliega la explicación', async () => {
+  it('otro rol: aviso del rol siempre visible y "¿Por qué?" lleva hasta él y lo resalta', async () => {
     const cliente = clienteFalso(() => pagina([filaProtegida()]));
     const u = userEvent.setup();
+    const desplazar = vi.fn();
+    Element.prototype.scrollIntoView = desplazar;
     render(<PaginaBusqueda cliente={cliente} roles={['auditor_cientifico']} />);
     await screen.findByRole('table');
     const textoAviso = /Tu rol no permite ver las coordenadas exactas\. Solo el personal científico de alto rango puede verlas\./;
     expect(screen.getByText(textoAviso)).toBeVisible();
     const porque = screen.getByRole('button', { name: '¿Por qué?' });
-    expect(porque).toHaveAttribute('aria-expanded', 'false');
+    expect(porque).toHaveAttribute('aria-controls', screen.getByText(textoAviso).closest('.ub-aviso').id);
+
     await u.click(porque);
-    expect(porque).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getAllByText(textoAviso)).toHaveLength(2);
+
+    // Un solo aviso (no se repite el texto): se desplaza hasta él, recibe el foco y queda resaltado
+    expect(screen.getAllByText(textoAviso)).toHaveLength(1);
+    const aviso = screen.getByText(textoAviso).closest('.ub-aviso');
+    expect(desplazar).toHaveBeenCalledWith(expect.objectContaining({ block: 'center' }));
+    expect(aviso).toHaveFocus();
+    expect(aviso).toHaveClass('ub-aviso--resaltado');
+    delete Element.prototype.scrollIntoView;
   });
 
   it('sin roles (vacío) se trata como rol sin permiso', async () => {

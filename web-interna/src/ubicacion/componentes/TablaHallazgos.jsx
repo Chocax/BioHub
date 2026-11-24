@@ -1,4 +1,3 @@
-import { useId, useState } from 'react';
 import { fechaCorta, formatearCoordenada } from '../utilidades/formato.js';
 import Boton from './Boton.jsx';
 import ChipEstado from './ChipEstado.jsx';
@@ -15,10 +14,11 @@ function CeldaCoordenadas({ h, altoRango }) {
   return <span className="ub-suave">Sin coordenadas</span>;
 }
 
-/** Tabla de hallazgos (apilada en pantallas pequeñas por CSS). Columna "Acción" solo para alto rango. */
-export function TablaHallazgos({ hallazgos, altoRango, onVerEnMapa, onVerDetalle, cargando = false }) {
-  const [verPorQue, setVerPorQue] = useState(false);
-  const idPorQue = useId();
+/**
+ * Tabla de hallazgos (apilada en pantallas pequeñas por CSS). Columna "Acción" solo para alto rango.
+ * Sin alto rango, «¿Por qué?» lleva al aviso del rol de la página (`idAviso`) con `onPorQue`.
+ */
+export function TablaHallazgos({ hallazgos, altoRango, onVerEnMapa, onVerDetalle, onPorQue, idAviso, cargando = false }) {
   return (
     <div className="ub-tabla-contenedor">
       <table className="ub-tabla" aria-busy={cargando}>
@@ -32,8 +32,8 @@ export function TablaHallazgos({ hallazgos, altoRango, onVerEnMapa, onVerDetalle
             <th scope="col">Estado</th>
             <th scope="col">
               Coordenadas
-              {!altoRango ? (
-                <button type="button" className="ub-porque" aria-expanded={verPorQue} aria-controls={idPorQue} onClick={() => setVerPorQue((v) => !v)}>
+              {!altoRango && onPorQue ? (
+                <button type="button" className="ub-porque" aria-controls={idAviso} onClick={onPorQue}>
                   ¿Por qué?
                 </button>
               ) : null}
@@ -70,7 +70,6 @@ export function TablaHallazgos({ hallazgos, altoRango, onVerEnMapa, onVerDetalle
           ))}
         </tbody>
       </table>
-      {!altoRango && verPorQue ? <p id={idPorQue} className="ub-porque-texto">{TEXTO_ROL_RESTRINGIDO}</p> : null}
     </div>
   );
 }
