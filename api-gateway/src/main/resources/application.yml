@@ -101,7 +101,7 @@ biohub:
       # SEC-J-04: el mapa de web-interna pide las teselas al gateway y el gateway a OSM. OSM solo ve al gateway.
       url-origen: ${GATEWAY_TESELAS_URL:https://tile.openstreetmap.org/{z}/{x}/{y}.png}
       # La política de uso de OSM exige un User-Agent que identifique a la aplicación (sin datos personales).
-      agente-usuario: ${GATEWAY_TESELAS_AGENTE:BioHub-api-gateway/0.1 (+https://github.com/JuaniMP/BioHub)}
+      agente-usuario: ${GATEWAY_TESELAS_AGENTE:BioHub-api-gateway/0.1 (+https://github.com/Chocax/BioHub)}
       # Igual a ZOOM_MAXIMO de web-interna/src/ubicacion/componentes/MapaHallazgos.jsx.
       zoom-maximo: 12
       por-usuario: ${GATEWAY_TESELAS_POR_USUARIO:600}

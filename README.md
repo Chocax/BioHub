@@ -6,7 +6,7 @@
 
 **Sistema Nacional de Registro y Vigilancia de Biodiversidad.** Un solo lugar para registrar, proteger y divulgar el inventario de flora y fauna de Colombia.
 
-<a href="https://github.com/JuaniMP/BioHub/actions/workflows/ci.yml"><img src="docs/readme/fichas/ci.svg" alt="CI: GitHub Actions" height="30"></a>
+<a href="https://github.com/Chocax/BioHub/actions/workflows/ci.yml"><img src="docs/readme/fichas/ci.svg" alt="CI: GitHub Actions" height="30"></a>
 <img src="docs/readme/fichas/entrega.svg" alt="Entrega 3: implementación" height="30">
 <img src="docs/readme/fichas/curso.svg" alt="Curso: Ingeniería de Software 2" height="30">
 <img src="docs/readme/fichas/universidad.svg" alt="Universidad El Bosque, 2026" height="30">
@@ -556,4 +556,4 @@ gitGraph
 - **Autores:** Juanita Mejía Pineda, Santiago Pinzón Vásquez, Hernando Javier García Mogollón y Nicolás Espinosa Estrada. Ingeniería de Software 2, Universidad El Bosque.
 - **Obras:** todas de dominio público o CC0 (Wikimedia Commons, Smithsonian Cooper Hewitt, Biblioteca Nacional de Colombia y la biblioteca de libros raros de McGill en Internet Archive). El crédito completo de cada una está en `web-interna/public/pinturas/CREDITOS.md`, `web-publica/public/pinturas/CREDITOS.md` y `infra/keycloak/themes/biohub/login/resources/img/CREDITOS.md`.
 - **Mapa:** © colaboradores de OpenStreetMap.
-- **Licencia del código:** pendiente de definir (el repositorio aún no incluye archivo `LICENSE`).
+- **Licencia del código:** [MIT](LICENSE). Las obras y fotografías conservan su propia licencia (dominio público, CC0 o la que indique cada `CREDITOS.md`).
