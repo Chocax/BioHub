@@ -43,11 +43,12 @@ export async function obtenerToken() {
  * Llama al API Gateway con el JWT.
  * @param {string} metodo GET, POST, PUT, DELETE
  * @param {string} ruta empieza con /api/...
- * @param {{ cuerpo?: any, formulario?: FormData, como?: 'json'|'blob'|'nada', senal?: AbortSignal }} opciones
+ * @param {{ cuerpo?: any, formulario?: FormData, como?: 'json'|'blob'|'nada', senal?: AbortSignal,
+ *   cabeceras?: Record<string, string> }} opciones  cabeceras: extra, por ejemplo Idempotency-Key
  */
-export async function pedir(metodo, ruta, { cuerpo, formulario, como = 'json', senal } = {}) {
+export async function pedir(metodo, ruta, { cuerpo, formulario, como = 'json', senal, cabeceras: extra } = {}) {
   const token = await obtenerToken();
-  const cabeceras = { Authorization: `Bearer ${token}`, Accept: como === 'blob' ? '*/*' : 'application/json' };
+  const cabeceras = { ...extra, Authorization: `Bearer ${token}`, Accept: como === 'blob' ? '*/*' : 'application/json' };
   let body;
   if (formulario) {
     body = formulario; // el navegador pone el Content-Type multipart con su boundary

@@ -114,6 +114,20 @@ class ProxyServiceTest {
     }
 
     @Test
+    void reenviaLaIdempotencyKeyDelRegistro() {
+        servidor.expect(requestTo("http://cientifico:8081/api/cientifico/hallazgos"))
+                .andExpect(header("Idempotency-Key", "registro-123"))
+                .andRespond(withStatus(HttpStatus.CREATED));
+
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/cientifico/hallazgos");
+        req.addHeader("Idempotency-Key", "registro-123");
+        req.setContent("{}".getBytes());
+
+        proxy.reenviar(req);
+        servidor.verify();
+    }
+
+    @Test
     void rechazaCuerpoMayorAlLimiteSinReenviar() {
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/cientifico/hallazgos");
         req.setContent("01234567890".getBytes()); // 11 bytes > 10

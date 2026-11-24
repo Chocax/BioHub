@@ -1,10 +1,10 @@
 import { IconoAdvertencia, IconoInfo } from './Iconos.jsx';
 
 /** info/advertencia -> role=status; error -> role=alert. */
-export default function Aviso({ tipo = 'info', children, ...resto }) {
+export default function Aviso({ tipo = 'info', className, children, ...resto }) {
   const Icono = tipo === 'info' ? IconoInfo : IconoAdvertencia;
   return (
-    <div role={tipo === 'error' ? 'alert' : 'status'} className={`ub-aviso ub-aviso--${tipo}`} {...resto}>
+    <div role={tipo === 'error' ? 'alert' : 'status'} className={['ub-aviso', `ub-aviso--${tipo}`, className].filter(Boolean).join(' ')} {...resto}>
       <Icono />
       <p>{children}</p>
     </div>
