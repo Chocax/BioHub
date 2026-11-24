@@ -10,10 +10,11 @@ import org.springframework.stereotype.Component;
 
 import co.edu.unbosque.biohub.cientifico.ubicacion.domain.Departamento;
 import co.edu.unbosque.biohub.cientifico.ubicacion.domain.DepartamentoRepository;
+import co.edu.unbosque.biohub.cientifico.registro.service.ValidadorDepartamento;
 
 /** Resuelve un departamento por código DANE o nombre oficial (sin distinguir mayúsculas ni tildes). */
 @Component
-public class CatalogoDepartamentos {
+public class CatalogoDepartamentos implements ValidadorDepartamento {
 
     private final DepartamentoRepository repositorio;
     private volatile Map<String, Departamento> indice;
@@ -27,6 +28,11 @@ public class CatalogoDepartamentos {
             return Optional.empty();
         }
         return Optional.ofNullable(indice().get(normalizar(texto)));
+    }
+
+    @Override
+    public boolean existeEnCatalogo(String departamento) {
+        return resolver(departamento).isPresent();
     }
 
     private Map<String, Departamento> indice() {

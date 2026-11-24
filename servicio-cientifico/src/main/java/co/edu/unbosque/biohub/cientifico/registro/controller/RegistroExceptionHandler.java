@@ -4,15 +4,21 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.context.request.WebRequest;
 
 import co.edu.unbosque.biohub.cientifico.registro.domain.VersionIncompletaException;
 import co.edu.unbosque.biohub.cientifico.registro.service.DatosHallazgoInvalidosException;
+import co.edu.unbosque.biohub.cientifico.registro.service.IdempotencyKeyConflictException;
+import co.edu.unbosque.biohub.cientifico.eventos.service.EventoNoPublicadoException;
 import co.edu.unbosque.biohub.cientifico.registro.service.HallazgoNoEncontradoException;
 import co.edu.unbosque.biohub.cientifico.registro.service.EvidenciaNoEncontradaException;
 import co.edu.unbosque.biohub.cientifico.registro.service.PlantillaNoEncontradaException;
@@ -42,6 +48,18 @@ public class RegistroExceptionHandler {
     public ResponseEntity<ProblemaRegistroResponse> datosInvalidos(DatosHallazgoInvalidosException e,
                                                                    WebRequest peticion) {
         return validacion(e.campo(), e.getMessage(), "DATOS_INVALIDOS", peticion);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ProblemaRegistroResponse> jsonInvalido(HttpMessageNotReadableException e,
+                                                                  WebRequest peticion) {
+        return validacion("cuerpo", "JSON mal formado o incompatible con el contrato", "JSON_INVALIDO", peticion);
+    }
+
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ProblemaRegistroResponse> encabezadoRequerido(MissingRequestHeaderException e,
+                                                                        WebRequest peticion) {
+        return validacion(e.getHeaderName(), "encabezado obligatorio", "ENCABEZADO_REQUERIDO", peticion);
     }
 
     /** El Builder del historial recibió una versión incompleta o sin justificación (HU-03, HU-05). */
@@ -101,6 +119,36 @@ public class RegistroExceptionHandler {
                         "El hallazgo no tiene ubicacion registrada", ruta(peticion), "UBICACION_NO_REGISTRADA", null));
     }
 
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ProblemaRegistroResponse> reclasificacionConcurrente(
+            OptimisticLockingFailureException e, WebRequest peticion) {
+        return conflicto("El hallazgo cambió mientras se procesaba la reclasificación. Vuelve a cargarlo.",
+                "RECLASIFICACION_CONCURRENTE", peticion);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ProblemaRegistroResponse> conflictoPersistencia(DataIntegrityViolationException e,
+                                                                           WebRequest peticion) {
+        return conflicto("La operación entra en conflicto con un cambio concurrente o una clave ya utilizada.",
+                "CONFLICTO_REGISTRO", peticion);
+    }
+
+    @ExceptionHandler(IdempotencyKeyConflictException.class)
+    public ResponseEntity<ProblemaRegistroResponse> idempotenciaConflictiva(IdempotencyKeyConflictException e,
+                                                                              WebRequest peticion) {
+        return conflicto(e.getMessage(), "CLAVE_IDEMPOTENCIA_REUTILIZADA", peticion);
+    }
+
+    @ExceptionHandler(EventoNoPublicadoException.class)
+    public ResponseEntity<ProblemaRegistroResponse> brokerNoDisponible(EventoNoPublicadoException e,
+                                                                         WebRequest peticion) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(new ProblemaRegistroResponse("https://biohub/errores/no-disponible", "Servicio no disponible",
+                        HttpStatus.SERVICE_UNAVAILABLE.value(), "No se pudo publicar el evento.", ruta(peticion),
+                        "EVENTO_NO_PUBLICADO", null));
+    }
+
     /** Ya hay una republicación de fotos públicas en curso (SEC-I27-7). */
     @ExceptionHandler(RepublicacionEnCursoException.class)
     public ResponseEntity<ProblemaRegistroResponse> republicacionEnCurso(RepublicacionEnCursoException e,
@@ -126,6 +174,14 @@ public class RegistroExceptionHandler {
                 .contentType(MediaType.APPLICATION_PROBLEM_JSON)
                 .body(new ProblemaRegistroResponse(TIPO_NO_ENCONTRADO, "No encontrado",
                         HttpStatus.NOT_FOUND.value(), mensaje, ruta(peticion), codigo, null));
+    }
+
+    private static ResponseEntity<ProblemaRegistroResponse> conflicto(String mensaje, String codigo,
+                                                                        WebRequest peticion) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(new ProblemaRegistroResponse(TIPO_CONFLICTO, "Conflicto", HttpStatus.CONFLICT.value(), mensaje,
+                        ruta(peticion), codigo, null));
     }
 
     private static String ruta(WebRequest peticion) {

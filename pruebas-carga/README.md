@@ -16,10 +16,10 @@ un despliegue). Miden la consulta pública (ASR1/RNF1, pico x60) y su comportami
 | `correr-k6.sh` | Ejecuta un script k6 con la imagen `grafana/k6` (versión fija en `K6_VERSION`) y deja el JSON en `resultados/`. |
 | `k6/consulta-publica-pico.js` | **ASR1/RNF1.** Perfil de tasa constante: base N req/s, rampa, pico N x `MULT` (60 por defecto), bajada y post-pico. Mide % de 200, 5xx/timeouts, p95 por fase y por ventana de 15 s, y la estabilización tras la rampa. Mezcla 60 % fichas (85 % "virales", caché caliente) y 40 % búsquedas. |
 | `k6/carga-cientifica-simultanea.js` | **ASR4/RNF5 (CG-04).** Mide la lectura pública con y sin carga científica (`CIENTIFICA=0|1`). La carga son eventos `hallazgo.registrado`/`hallazgo.reclasificado` publicados a RabbitMQ y consumidos por consulta-publica (SELECT ... FOR UPDATE + INSERT/UPDATE e invalidación de caché). Al final comprueba que la **DLQ de carga esté vacía** (umbral `dlq_mensajes`) y reporta eventos publicados, procesados (ack) y pendientes. |
+| `k6/registro-hallazgo.js` | **ASR2 parcial.** Mide el POST real de registro JSON, con Idempotency-Key, p95 < 5 s y tasa de éxito. Aún no incluye archivos: el servicio no expone una API de carga de adjuntos. |
 | `k6/gateway-limite-api-externa.js` | **ASR8/RNF11, HU-08 c.2, HU-12 c.2.** Va contra el **api-gateway**, no contra NGINX. Un consumidor abusivo (A) recibe 429 con `Retry-After` y como máximo 60 respuestas 200 por minuto. Mientras tanto, otros dos consumidores (uno con límite configurado) y el portal siguen en 200 sin perder latencia. Además, una key revocada a mitad de la prueba recibe 401 desde la petición siguiente. Ver la sección siguiente. |
 | `k6/busqueda-publica-fria.js` + `correr-hu06-frio.sh` + `resumir-hu06.sh` + `datos/vaciar-cache.sh` | **HU-06 c.3 / CG-02 (RNF5).** Búsqueda del portal con 10.000 fichas y la caché vacía: fase A (100 búsquedas distintas, 1 VU) y fase B (100 distintas, 10 VUs); el script vacía `biohub:publica:*` antes de cada fase y `resumir-hu06.sh` calcula la mediana de las corridas. Ver la sección "HU-06 c.3 / CG-02". |
 | `k6/consulta-publica-portada.js`, `datos/sembrar-fotos.sh`, `nginx-carga-cache-fotos.conf` | **ASR1 sobre la portada con fotos (D66)** y su contrafactual. Ver la sección "Iteración 27". |
-| `k6/registro-hallazgo.js` | **Pendiente** (depende de HU-01, módulo registro). Esqueleto para RNF2/RNF4. |
 | `k6/lib/comun.js` | Utilidades compartidas (mezcla de peticiones, ids de la semilla, ventanas). |
 | `resultados/` | JSON de cada corrida. Los que empiezan por `descartado-` documentan fallos del banco de pruebas y **no cuentan como evidencia** (D42). |
 
@@ -47,6 +47,11 @@ REPLICAS=2 CPUS=2 ./correr-k6.sh k6/consulta-publica-pico.js -e N=20 -e SALIDA=/
 ./correr-k6.sh k6/carga-cientifica-simultanea.js -e CIENTIFICA=0 -e SALIDA=/resultados/asr4-sin.json
 ./correr-k6.sh k6/carga-cientifica-simultanea.js -e CIENTIFICA=1 -e SALIDA=/resultados/asr4-con.json
 #     humo corto: -e R=10 -e EV=5 -e DUR=15s
+
+# 4c. Registro de hallazgos (ASR2 parcial: solo JSON, sin archivos adjuntos)
+export TOKEN='<JWT de investigador_campo>'
+RED_K6=host ./correr-k6.sh k6/registro-hallazgo.js -e BASE_URL=http://127.0.0.1:8080 -e R=2 -e DUR=60s
+unset TOKEN
 
 # 5. Apagar y limpiar (en este orden: limpiar.sh borra la cola de carga, que las réplicas no deben seguir usando)
 docker compose -p biohub-carga -f compose-carga.yml --env-file ../.env down -v
@@ -206,6 +211,9 @@ Los `ensayo-portada-*` (95 s, máquina cargada) son exploratorios y los `descart
   `limpiar.sh` pasan `MYSQL_PWD`, `REDISCLI_AUTH` y las credenciales de RabbitMQ por entorno o por stdin.
 - La imagen de k6 está fijada (`grafana/k6:2.3.0`; cámbiala con `K6_VERSION`), no `latest`.
 - Solo local: NGINX y las réplicas escuchan en `127.0.0.1` o en la red de Docker.
+- `registro-hallazgo.js` no demuestra todavía ASR2 completo: el backend aún no recibe ni guarda adjuntos. El resultado solo
+  es evidencia de latencia para altas JSON sin archivos; antes de afirmar el umbral con adjuntos hay que implementar y
+  desplegar esa API y adaptar el escenario.
 
 ## Qué guardar con cada corrida (D42)
 

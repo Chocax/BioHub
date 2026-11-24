@@ -47,6 +47,8 @@ public class ValidadorTextoPublico {
     private static final Pattern PLANAS_CLAVE = Pattern.compile("^(?:norte|este|northing|easting)(?:_|\\d|$)");
     private static final Pattern NUMERO_EN_TEXTO = Pattern.compile("[-+]?\\d{1,20}(?:\\.\\d{1,20})?");
 
+    private static final Pattern ETIQUETA_SCRIPT = Pattern.compile("(?i)<\\s*/?\\s*script\\b");
+
     /**
      * @return {@code true} si el texto parece contener una coordenada geográfica
      */
@@ -60,6 +62,9 @@ public class ValidadorTextoPublico {
      * @throws DatosHallazgoInvalidosException si el texto parece contener coordenadas
      */
     public void verificar(String campo, String texto) {
+        if (texto != null && ETIQUETA_SCRIPT.matcher(texto).find()) {
+            throw new DatosHallazgoInvalidosException(campo, "no puede contener etiquetas script");
+        }
         if (contieneCoordenadas(texto)) {
             throw new DatosHallazgoInvalidosException(campo, "no puede contener coordenadas");
         }

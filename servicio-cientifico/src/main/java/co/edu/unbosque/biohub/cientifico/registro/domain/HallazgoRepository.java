@@ -22,4 +22,6 @@ public interface HallazgoRepository extends JpaRepository<Hallazgo, UUID> {
     /** Un hallazgo que no esté anulado; para operaciones que no deben tocar hallazgos retirados. */
     @Query("select h from Hallazgo h where h.id = :id and h.anuladoEn is null")
     Optional<Hallazgo> buscarVigente(@Param("id") UUID id);
+
+    Optional<Hallazgo> findByIdempotencyKey(String idempotencyKey);
 }

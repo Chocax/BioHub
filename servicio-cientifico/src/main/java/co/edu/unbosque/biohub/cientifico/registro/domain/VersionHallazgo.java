@@ -1,6 +1,7 @@
 package co.edu.unbosque.biohub.cientifico.registro.domain;
 
 import java.time.Instant;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -93,7 +94,7 @@ public class VersionHallazgo {
     }
 
     public Map<String, Object> getSnapshot() {
-        return snapshot == null ? Map.of() : Map.copyOf(snapshot);
+        return snapshot == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(snapshot));
     }
 
     public String getJustificacion() {

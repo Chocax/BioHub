@@ -793,7 +793,7 @@ Roles: `investigador_campo`, `cientifico_alto_rango` (D63: el administrador no c
 | `familia` | Sí | 1–100 |
 | `tipoEspecimen` | Sí | ≤ 80 (HU-01 lo exige; el evento lo admite vacío) |
 | `fechaRecoleccion` | Sí | no futura (`America/Bogota`) |
-| `departamento` | Sí | del catálogo de 33; lo valida ubicación |
+| `departamento` | Sí | del catálogo oficial de 33; se valida antes de guardar y ubicación también lo valida al sincronizar |
 | `categoriaUicn` | No | `CR`, `EN`, `VU`, `NT`, `LC`, `DD`, `NE`; por defecto `NE` |
 | `nombreComun`, `descripcion` | No | ≤ 150 / ≤ 5000, sin coordenadas en el texto |
 | `latitud`, `longitud` | No | ambas o ninguna; se entregan a ubicación y **no** se guardan en registro |
@@ -804,6 +804,11 @@ Roles: `investigador_campo`, `cientifico_alto_rango` (D63: el administrador no c
 Errores: `400 DATOS_INVALIDOS` (campo del formulario), `400 UBICACION_INVALIDA` (lo rechazó ubicación;
 la transacción se revirtió entera), `403` si el rol no corresponde.
 
+La petición debe enviar `Idempotency-Key` (1–100 caracteres). Un reintento con la misma clave, usuario y
+cuerpo devuelve el mismo `hallazgoId` sin crear otra fila; reutilizar la clave con otro cuerpo o usuario
+devuelve `409 CLAVE_IDEMPOTENCIA_REUTILIZADA`. La clave se persiste con restricción única para cubrir
+reintentos concurrentes. El departamento se valida contra el catálogo antes de guardar.
+
 ### 13.2 `PUT /api/cientifico/hallazgos/{id}` — reclasificar (HU-03)
 Roles: `investigador_campo`, `cientifico_alto_rango` (D63).
 
@@ -811,7 +816,7 @@ Mismo cuerpo que el alta **sin** `latitud`/`longitud`, más `justificacion` (obl
 campos nulos no se tocan. Devuelve `{ "hallazgoId": "...", "version": n }` con la versión nueva.
 
 Errores: `400 DATOS_INVALIDOS` (incluye la falta de justificación), `404 HALLAZGO_NO_ENCONTRADO`,
-`409 UBICACION_NO_REGISTRADA`.
+`409 UBICACION_NO_REGISTRADA` o `409 RECLASIFICACION_CONCURRENTE` si otra reclasificación ganó la carrera.
 
 ### 13.3 `GET /api/cientifico/hallazgos/{id}` — consultar
 Roles: `investigador_campo`, `cientifico_alto_rango`, `auditor_cientifico`, `administrador`.
@@ -876,6 +881,11 @@ Evidencia: `{ id, nombre, tipo: FOTOGRAFIA|AUDIO, contentType, tamanoBytes, sha2
 | `POST /api/cientifico/admin/fotos-publicas/republicar` | `administrador` | **202** `{ "fotos": n }`. Vuelve a publicar `evidencia.publicada` de todas las fotos marcadas como públicas (genera las miniaturas que falten). Es idempotente del lado del consumidor. Sirve para migrar y para recuperar eventos perdidos |
 
 Especie: `{ nombreCientifico, nombreComun, familia, estadoConservacion, categoriaUicn, registros, departamentos, ultimaRecoleccion, fichaVersion, atributosFicha, foto: { hallazgoId, evidenciaId, publica } | null }`. La foto prefiere una pública; si no hay, la más reciente. Se descarga con §13.9.
+
+### 13.11 `POST /api/cientifico/hallazgos/{id}/versiones/{version}/republicar-evento`
+Solo `administrador`. Republica a RabbitMQ el evento a partir del snapshot inmutable de esa versión y
+responde `202` con el sobre publicado. Responde `404` si no existe esa versión. Esta operación permite
+recuperación manual; el outbox transaccional queda como trabajo pendiente.
 
 ## 14. Garantías que registro cumple del contrato
 

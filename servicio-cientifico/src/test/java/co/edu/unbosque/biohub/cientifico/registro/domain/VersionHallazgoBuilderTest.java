@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
@@ -87,5 +88,20 @@ class VersionHallazgoBuilderTest {
         assertThatThrownBy(() -> version.getSnapshot().put("otro", "valor"))
                 .isInstanceOf(UnsupportedOperationException.class);
         assertThatCode(() -> version.getSnapshot().get("nombreCientifico")).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("un snapshot con valores nulos se puede leer e igualmente es inmutable")
+    void snapshotAdmiteValoresNulos() {
+        Map<String, Object> snapshotConNulos = new LinkedHashMap<>();
+        snapshotConNulos.put("nombreComun", null);
+        VersionHallazgo version = VersionHallazgo.primeraVersion(HALLAZGO)
+                .snapshot(snapshotConNulos)
+                .autor("investigador1")
+                .build();
+
+        assertThat(version.getSnapshot()).containsEntry("nombreComun", null);
+        assertThatThrownBy(() -> version.getSnapshot().put("otro", "valor"))
+                .isInstanceOf(UnsupportedOperationException.class);
     }
 }

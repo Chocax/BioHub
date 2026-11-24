@@ -92,14 +92,14 @@ public class FichaPlantillaService {
      * @throws DatosHallazgoInvalidosException si falta un obligatorio o un valor no corresponde al tipo
      */
     @Transactional(readOnly = true)
-    public void validarValores(String nombreCientifico, Map<String, Object> valores) {
+    public Integer validarValores(String nombreCientifico, Map<String, Object> valores) {
         Optional<FichaPlantilla> plantilla = vigente(nombreCientifico);
         if (plantilla.isEmpty()) {
             if (valores != null && !valores.isEmpty()) {
                 throw new DatosHallazgoInvalidosException("atributos",
                         "la especie no tiene plantilla configurada");
             }
-            return;
+            return null;
         }
         List<AtributoPlantilla> habilitados = plantilla.get().getAtributosHabilitados();
         Map<String, Object> recibidos = valores == null ? Map.of() : valores;
@@ -120,6 +120,7 @@ public class FichaPlantillaService {
             }
             validarTipo(atributo, valor);
         }
+        return plantilla.get().getVersion();
     }
 
     private void validarAtributos(List<AtributoPlantilla> atributos) {
