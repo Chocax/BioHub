@@ -49,7 +49,8 @@ public class Hallazgo {
     @Column(name = "idempotency_key", length = 100, unique = true)
     private String idempotencyKey;
 
-    @Column(name = "idempotency_hash", length = 64)
+    // CHAR(64) en la migración V20261122_1900: sin columnDefinition, Hibernate (ddl-auto: validate) espera VARCHAR
+    @Column(name = "idempotency_hash", length = 64, columnDefinition = "char(64)")
     private String idempotencyHash;
 
     @Column(name = "nombre_cientifico", nullable = false, length = 150)

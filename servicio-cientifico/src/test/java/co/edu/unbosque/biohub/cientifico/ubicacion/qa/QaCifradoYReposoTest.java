@@ -224,7 +224,10 @@ class QaCifradoYReposoTest extends QaBase {
         List<String> cols = jdbc.queryForList("SELECT CONCAT(table_name,'.',column_name) FROM information_schema.columns"
                 + " WHERE table_schema = 'cientifico' AND (LOWER(column_name) REGEXP"
                 + " 'lat|lon|lng|coord|geom|point|ubicacion_exacta|x_|y_') AND LOWER(column_name) NOT IN"
-                + " ('coord_cifrada','coord_nonce') AND table_name NOT LIKE 'qa\\_%'", String.class);
+                // idempotency_key/_hash (registro, V20261122_1900) contienen "y_" por casualidad: son la llave de
+                // idempotencia y su SHA-256, no coordenadas.
+                + " ('coord_cifrada','coord_nonce','idempotency_key','idempotency_hash') AND table_name NOT LIKE 'qa\\_%'",
+                String.class);
         assertThat(cols).as("columnas sospechosas de guardar coordenadas en claro").isEmpty();
         List<String> tipos = jdbc.queryForList("SELECT CONCAT(table_name,'.',column_name,':',data_type) FROM information_schema.columns"
                 + " WHERE table_schema = 'cientifico' AND table_name = 'ubicacion_hallazgo' AND data_type IN"
