@@ -156,7 +156,8 @@ async function pedirCommons(url, intentos = 4) {
   return null;
 }
 
-const sinEtiquetas = (html) => (html ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+// Quita las etiquetas y después cualquier < o > suelto, para que un resto como "<scr<x>ipt>" no deje una etiqueta armada.
+const sinEtiquetas = (html) => (html ?? '').replace(/<[^>]*>/g, '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim();
 
 async function fotoDeCommons(nombreCientifico) {
   const consulta = new URLSearchParams({
