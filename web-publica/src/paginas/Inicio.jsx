@@ -54,8 +54,8 @@ const CADA_MS = 25000;
 const FUNDIDO_MS = 3000;
 
 export function CieloRotativo() {
-  // Orden al azar en cada visita, y nunca la misma pintura de arranque que la vez anterior.
-  const [fondos] = useState(() => ordenAleatorio(FONDOS, 'biohub.cielo.primera', (f) => f.src));
+  // Orden al azar en cada visita. El portal no guarda nada en el navegador (WP-08), así que no recuerda la anterior.
+  const [fondos] = useState(() => ordenAleatorio(FONDOS));
   const [pos, setPos] = useState({ actual: 0, anterior: null });
   const [quieto] = useState(() => Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches));
   useEffect(() => {

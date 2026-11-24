@@ -98,14 +98,15 @@ describe('PaginaMapa: alto rango', () => {
     expect(sim.propsTeselas.attribution).toMatch(/OpenStreetMap<\/a> contributors/);
     expect(sim.propsTeselas.attribution).toContain('https://www.openstreetmap.org/copyright');
     expect(sim.propsTeselas.cliente).toBe(cliente); // las teselas salen por el cliente (gateway), no por OSM
-    expect(sim.fitBounds).toHaveBeenCalledWith([[5.1, -73.1]], expect.objectContaining({ maxZoom: 8, padding: [32, 32] }));
+    // El ajuste del encuadre ocurre un tick después de pintar el marcador: se espera (en la CI cargada llegaba tarde).
+    await waitFor(() => expect(sim.fitBounds).toHaveBeenCalledWith([[5.1, -73.1]], expect.objectContaining({ maxZoom: 8, padding: [32, 32] })));
   });
 
   it('con varios hallazgos el ajuste automático usa maxZoom 10', async () => {
     const cliente = clienteFalso(() => mapa([feature('a', -73.1, 5.1), feature('b', -74.1, 4.1)]));
     render(<PaginaMapa cliente={cliente} roles={ALTO} />);
     await screen.findAllByTestId('marcador');
-    expect(sim.fitBounds).toHaveBeenCalledWith(expect.any(Array), expect.objectContaining({ maxZoom: 10, padding: [32, 32] }));
+    await waitFor(() => expect(sim.fitBounds).toHaveBeenCalledWith(expect.any(Array), expect.objectContaining({ maxZoom: 10, padding: [32, 32] })));
   });
 
   it('ignora features con coordenadas inválidas', async () => {

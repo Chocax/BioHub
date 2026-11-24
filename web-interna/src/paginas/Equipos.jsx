@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Ban, Binoculars, Check, PackageCheck, Plus, Undo2, Wrench } from 'lucide-react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Ban, Binoculars, Check, History, PackageCheck, Plus, Undo2, Wrench } from 'lucide-react';
 import { api } from '../api/cliente.js';
 import { Aviso, AvisoError, CabeceraPagina, Campo, Cargando, ChipEstado, formatearFecha, Paginacion, Vacio } from '../componentes/ui.jsx';
 
@@ -16,8 +16,11 @@ function useInvestigadores() {
   return lista;
 }
 
-function Registrar({ alCrear }) {
-  const [datos, setDatos] = useState({ codigoInventario: '', nombre: '', categoria: CATEGORIAS[0], descripcion: '' });
+const VACIO = { codigoInventario: '', nombre: '', categoria: CATEGORIAS[0], descripcion: '', custodioId: '' };
+
+/** HU-04: todo equipo nace entregado a un investigador de campo activo (el servicio exige `custodioId`). */
+function Registrar({ investigadores, alCrear }) {
+  const [datos, setDatos] = useState(VACIO);
   const [error, setError] = useState(null);
   const [guardando, setGuardando] = useState(false);
   const cambiar = (c) => (e) => setDatos((d) => ({ ...d, [c]: e.target.value }));
@@ -26,7 +29,7 @@ function Registrar({ alCrear }) {
     setGuardando(true); setError(null);
     try {
       const creado = await api.post('/api/equipos', { ...datos, descripcion: datos.descripcion.trim() || null });
-      setDatos({ codigoInventario: '', nombre: '', categoria: CATEGORIAS[0], descripcion: '' });
+      setDatos(VACIO);
       alCrear(creado);
     } catch (falla) { setError(falla); } finally { setGuardando(false); }
   }
@@ -39,6 +42,16 @@ function Registrar({ alCrear }) {
         <Campo etiqueta="Nombre" obligatorio>{(p) => <input {...p} required maxLength={120} value={datos.nombre} onChange={cambiar('nombre')} />}</Campo>
         <Campo etiqueta="Categoría" obligatorio>{(p) => <select {...p} value={datos.categoria} onChange={cambiar('categoria')}>{CATEGORIAS.map((c) => <option key={c}>{c}</option>)}</select>}</Campo>
       </div>
+      <Campo etiqueta="Custodio" obligatorio ayuda={investigadores.length
+        ? 'Investigador de campo activo que se lleva el equipo'
+        : 'No hay investigadores de campo activos: crea uno en Usuarios y roles'}>
+        {(p) => (
+          <select {...p} required value={datos.custodioId} onChange={cambiar('custodioId')}>
+            <option value="">Elige quién lo recibe</option>
+            {investigadores.map((u) => <option key={u.id} value={u.id}>{u.nombre} {u.apellido} ({u.usuario})</option>)}
+          </select>
+        )}
+      </Campo>
       <Campo etiqueta="Descripción">{(p) => <textarea {...p} maxLength={500} value={datos.descripcion} onChange={cambiar('descripcion')} />}</Campo>
       <div><button type="submit" className="boton" disabled={guardando}><Plus className="icono" aria-hidden="true" />{guardando ? 'Guardando…' : 'Registrar equipo'}</button></div>
     </form>
@@ -55,10 +68,11 @@ function Acciones({ equipo, investigadores, alCambiar }) {
   }
   return (
     <div style={{ display: 'grid', gap: 8 }}>
-      {equipo.estado !== 'BAJA' && equipo.estado !== 'MANTENIMIENTO' && (
+      {/* Solo un equipo disponible se asigna: uno en expedición se devuelve primero (sin asignaciones simultáneas) */}
+      {equipo.estado === 'DISPONIBLE' && (
         <div className="acciones">
           <select aria-label={`Custodio para ${equipo.nombre}`} value={custodio} onChange={(e) => setCustodio(e.target.value)} className="celda-entrada">
-            <option value="">{equipo.estado === 'ASIGNADO' ? 'Reasignar a…' : 'Asignar a…'}</option>
+            <option value="">Asignar a…</option>
             {investigadores.map((u) => <option key={u.id} value={u.id}>{u.nombre} {u.apellido} ({u.usuario})</option>)}
           </select>
           <button type="button" className="boton boton--chico" disabled={!custodio || ocupado}
@@ -80,6 +94,41 @@ function Acciones({ equipo, investigadores, alCambiar }) {
         )}
       </div>
       {error && <p className="campo__error" role="alert">{error.message}</p>}
+    </div>
+  );
+}
+
+const ACCIONES = {
+  ALTA_ASIGNADA: 'Alta y entrega', ASIGNACION: 'Asignado', CAMBIO_ESTADO: 'Cambio de estado', BAJA_DEFINITIVA: 'Baja definitiva',
+};
+
+/** Historial de custodia de un equipo (GET /api/equipos/{id}/historial): quién lo tuvo y cada cambio de estado. */
+function HistorialEquipo({ equipo }) {
+  const [lista, setLista] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    api.get(`/api/equipos/${equipo.id}/historial`).then(setLista).catch(setError);
+  }, [equipo.id]);
+  return (
+    <div className="historial-equipo">
+      <AvisoError error={error} titulo="No se pudo cargar el historial" />
+      {!lista && !error && <Cargando texto="Cargando historial…" />}
+      {lista?.length === 0 && <p className="texto-suave">Sin movimientos registrados.</p>}
+      {lista?.length > 0 && (
+        <ol className="historial-equipo__lista" aria-label={`Historial de custodia de ${equipo.nombre}`}>
+          {lista.map((h) => (
+            <li key={h.id}>
+              <span className="historial-equipo__fecha">{formatearFecha(h.registradoEn, true)}</span>
+              <strong>{ACCIONES[h.accion] ?? h.accion.replace(/_/g, ' ').toLowerCase()}</strong>
+              {h.estadoAnterior && h.estadoNuevo && h.estadoAnterior !== h.estadoNuevo && (
+                <span> · <ChipEstado estado={h.estadoAnterior} /> → <ChipEstado estado={h.estadoNuevo} /></span>
+              )}
+              {h.custodioUsuario && <span> · {h.custodioUsuario}</span>}
+              {h.observacion && <span className="texto-suave"> · {h.observacion}</span>}
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   );
 }
@@ -118,6 +167,7 @@ export default function Equipos() {
   const [pagina, setPagina] = useState(null);
   const [error, setError] = useState(null);
   const [mensaje, setMensaje] = useState(null);
+  const [historialDe, setHistorialDe] = useState(null);
 
   const cargar = useCallback(() => {
     const q = new URLSearchParams({ page: filtros.page, size: 15 });
@@ -155,12 +205,23 @@ export default function Equipos() {
                   <thead><tr><th>Equipo</th><th>Estado</th><th>Custodio</th><th>Acciones</th></tr></thead>
                   <tbody>
                     {pagina.content.map((e) => (
-                      <tr key={e.id}>
+                      <Fragment key={e.id}>
+                      <tr>
                         <td><strong>{e.nombre}</strong><div className="mono texto-suave">{e.codigoInventario} · {e.categoria}</div></td>
                         <td><ChipEstado estado={e.estado} /></td>
                         <td>{e.custodioUsuario ?? '—'}{e.asignadoEn && <div className="texto-suave" style={{ fontSize: 12 }}>desde {formatearFecha(e.asignadoEn)}</div>}</td>
-                        <td><Acciones equipo={e} investigadores={investigadores} alCambiar={(nuevo) => { setMensaje(`${nuevo.nombre}: ${nuevo.estado === 'ASIGNADO' ? `asignado a ${nuevo.custodioUsuario}` : 'estado actualizado'}.`); cargar(); }} /></td>
+                        <td>
+                          <Acciones equipo={e} investigadores={investigadores} alCambiar={(nuevo) => { setMensaje(`${nuevo.nombre}: ${nuevo.estado === 'ASIGNADO' ? `asignado a ${nuevo.custodioUsuario}` : 'estado actualizado'}.`); cargar(); }} />
+                          <button type="button" className="enlace historial-equipo__boton" aria-expanded={historialDe === e.id}
+                            onClick={() => setHistorialDe((h) => (h === e.id ? null : e.id))}>
+                            <History className="icono" aria-hidden="true" />{historialDe === e.id ? 'Ocultar historial' : 'Historial'}
+                          </button>
+                        </td>
                       </tr>
+                      {historialDe === e.id && (
+                        <tr className="historial-equipo__fila"><td colSpan={4}><HistorialEquipo key={e.actualizadoEn ?? e.id} equipo={e} /></td></tr>
+                      )}
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -169,7 +230,7 @@ export default function Equipos() {
             </>
           )}
         </div>
-        <Registrar alCrear={(e) => { setMensaje(`${e.nombre} registrado.`); cargar(); }} />
+        <Registrar investigadores={investigadores} alCrear={(e) => { setMensaje(`${e.nombre} registrado y entregado a ${e.custodioUsuario ?? 'su custodio'}.`); cargar(); }} />
       </div>
     </section>
   );

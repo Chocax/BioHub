@@ -4,6 +4,12 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed (2026-11-24)
+- CI de web-publica: el portal volvía a guardar algo en el navegador (el orden de las pinturas), lo que rompe WP-08. Ahora baraja sin guardar nada; la web interna y el login sí recuerdan la primera obra.
+
+### Changed (equipos, 2026-11-24)
+- Web interna al día con el PR #22: el alta de un equipo pide el custodio (obligatorio), solo se asigna un equipo disponible y cada equipo muestra su historial de custodia.
+
 ### Changed (pinturas, 2026-11-23)
 - El carrusel del inicio interno, el cielo del portal y el fondo del login muestran las mismas 19 obras de pantalla completa, en orden aleatorio, y nunca arrancan con la misma de la visita anterior. Las tres verticales y pequeñas (Mutisia, Icononzo, catedral de Santa Marta) quedan en las salas. Una prueba vigila que las tres listas coincidan.
 - El carrusel interno monta solo la pintura actual y sus vecinas, y cambia los puntos por una línea de avance.
