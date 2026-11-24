@@ -3,7 +3,7 @@
 #   mvn -B -DskipTests package
 #   docker build -f servicio-cientifico/Dockerfile -t biohub/servicio-cientifico .
 # (Solo para ejecucion en contenedores; ver docs/equipo/09-despliegue.md.)
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 RUN groupadd --system --gid 10001 app \
  && useradd --system --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app
 WORKDIR /app
