@@ -1,0 +1,19 @@
+# Imagen a partir del jar ya compilado (el host necesita solo Docker; no requiere BuildKit/buildx).
+# Pasos (desde la RAIZ del monorepo):
+#   mvn -B -DskipTests package
+#   docker build -f servicio-cientifico/Dockerfile -t biohub/servicio-cientifico .
+# (Solo para ejecucion en contenedores; ver docs/equipo/09-despliegue.md.)
+FROM eclipse-temurin:21-jre
+RUN groupadd --system --gid 10001 app \
+ && useradd --system --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app
+WORKDIR /app
+# Auditoria de ubicaciones (SEC-J-08): logs/auditoria-ubicacion.log; montar un volumen persistente en /app/logs
+RUN mkdir -p /app/logs && chown app:app /app/logs
+COPY --chown=app:app servicio-cientifico/target/servicio-cientifico-*.jar /app/app.jar
+USER app
+ENV SERVER_ADDRESS=0.0.0.0 \
+    JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError"
+EXPOSE 8081
+HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=5 \
+  CMD curl -fsS http://127.0.0.1:8081/actuator/health || exit 1
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]

@@ -1,0 +1,158 @@
+# Corpus de paridad del detector de coordenadas (SEC-I27-1). DEBE SER IDÉNTICO en servicio-cientifico y servicio-consulta-publica.
+# Formato: "<marca>|<texto>". Marcas: "+" debe detectarse; "-" legítimo, no debe detectarse;
+# "?" falso positivo CONOCIDO (hoy se detecta; documentado en DetectorCoordenadas). Se admiten escapes \uXXXX y \t.
+# Si una copia del detector cambia, hay que actualizar el corpus y el resumen del bloque en las dos.
+#
+# --- Regresiones de la iteración 27 (antes las detectaba ValidadorTextoPublico) ---
++|5.532, 73.367
++|4.609 74.081
++|5 31 55 N 73 22 10 W
++|5°31N 73°22W
+# --- Garmin y hemisferio delante ---
++|N05 31.928 W073 22.027
++|N05°31.928 W073°22.027
++|N5.53214 W73.36712
++|N 5.53214 W 73.36712
++|latitud: N 5.53214
++|N5.532 W73.367
+# --- Normalización Unicode ---
++|5.53214,\u00A0-73.36712
++|5.53214\u00A0\u00A0\u00A0-73.36712
++|\uFF15.\uFF15\uFF13\uFF12\uFF11\uFF14, -\uFF17\uFF13.\uFF13\uFF16\uFF17\uFF11\uFF12
++|5.53214, \u2010 73.36712
++|5.53214, \u2212 73.36712
++|5.53214,\u2007-73.36712
++|5.53\u200B214, -73.36\u200B712
++|\u0665.\u0665\u0663\u0662\u0661\u0664, -\u0667\u0663.\u0663\u0666\u0667\u0661\u0662
++|5\u00BA31'55"N
++|5\u02DA31'55"N
+# --- Decimales y GMS con símbolos (ya cubiertos) ---
++|colectado en 5.53214, -73.36712
++|colectado en 5,53214 -73,36712
++|5.53214; -73.36712
++|5.53214 / -73.36712
++|5.53214\t-73.36712
++|5.5321 73.3671
++|5°31'55"N 73°22'02"W
++|5.5321 N, 73.3671 W
++|5.53214°N 73.36712°W
++|73° 22′ W
++|lat: 5.53 lon: -73.36
++|latitud 5.53 longitud -73.36
+# --- SEC-I27g-1: espacios múltiples y saltos de línea con sangría (se pegan desde una hoja de cálculo) ---
++|5.53214    -73.36712
++|5.53214,\u000A    -73.36712
++|5.53214\u000D\u000A\u0009\u0009-73.36712
++|5.53214\u0009\u0009\u0009\u0009\u0009-73.36712
+# --- SEC-I27g-1: hemisferio en minúscula ---
++|n05 31.928 w073 22.027
++|5 31 55 n 73 22 10 w
++|5 31 55 n
++|5 31 n
++|5°31 n
++|5°31n 73°22w
++|n5.53214 w73.36712
+# --- SEC-I27g-1: GMS sin símbolo de grado y con ":" o "-" ---
++|5 31' 55" N
++|5 31' 55" N 73 22' 10" W
++|5 31' 55"
++|05:31:55 N, 073:22:10 W
++|5-31-55 N
++|05:31:55 n 073:22:10 w
+# --- SEC-I27g-1: longitud primero (GeoJSON, WKT, QGIS) y par con "y" ---
++|POINT(-73.367 5.532)
++|73.367, 5.532
++|-73.367 5.532
++|-73.367,5.532
++|POINT (-73.36712 5.53214)
++|5.53214 y -73.36712
++|5.53214 y -73.36712 en el sector
+# --- Hemisferio en palabras ---
++|latitud norte 5.53214 y longitud oeste 73.36712
++|5.53214 norte, 73.36712 oeste
++|norte 5.53214 oeste 73.36712
++|5 grados 31 minutos norte
+# --- Coordenadas planas y UTM ---
++|Norte 1012345 Este 1045678
++|Norte 1012345 Este 1045678 (Magna Origen Bogotá)
++|N: 1.012.345 E: 1.045.678
++|E 1045678 N 1012345
++|N=1012345 E=1045678
+# --- Identificadores: un UUID o un hash que empieza por "e" y 7 cifras no es una coordenada plana (CI del PR #18) ---
+-|e5926615-93c3-4e3a-809c-8d03fe2da7c5
+-|{"id":"e3370060-353a-42fe-88e8-c26a810ae484","tipo":"hallazgo.registrado"}
+-|hallazgo E9165664-A04B-4D78-8688-C8405F8D1DEC
+-|n1012345
++|18N 612345 1012345
+# --- Legítimos que deben pasar ---
+-|Longitud total: 12 cm
+-|Largo 12 cm
+-|12,5 cm
+-|longitud total 12 cm
+-|longitud del cuerpo: 12 mm
+-|3.200, 3.500 msnm
+-|altitud 3.200 - 3.500 msnm
+-|altitud entre 3.200 y 3.500 msnm
+-|entre 12.500 y 13.000 individuos
+-|12.500, 13.000 individuos
+-|2026-03-14
+-|14/03/2026
+-|recolectado el 2026-03-14 a las 10:30
+-|se contaron 1.250 ejemplares en 3 transectos
+-|Nota 1: 2 hembras
+-|peso 1.250 g
+-|medía 12,5 cm y pesaba 3,2 g
+-|E3 y N2 son parcelas
+-|altitud 2.600 msnm, 14 °C
+-|temperatura 18 ° C
+-|temperatura 18°C, humedad 80 %
+-|ángulo de 45° respecto al suelo
+-|a 2.800 m, 3.100 m y 3.400 m de altitud
+-|población de 1.500 individuos
+-|talla 5.2, peso 3.1
+-|Anfibio endémico de páramo
+-|Rana arlequín de Boyacá
+-|Parque Nacional Natural Chingaza, sector Monterredondo
+-|lat
+-|vive en el norte del páramo, a 3.000 m
+-|zona este de la quebrada, 12 individuos
+-|pendiente al sur, 30 grados
+-|entre los 5 y los 31 años
+-|ver figura 5 y tabla 31
+-|se observaron 5 31 individuos en total
+-|presencia de 12 ejemplares de 5 a 7 cm
+-|Sector 3, parcela 12, transecto 4
+# --- SEC-I27g-1: más legítimos (no deben chocar con las reglas nuevas) ---
+-|5 n de individuos
+-|medida 12 cm en 3 puntos
+-|se capturaron 5 n 12 hembras
+-|a las 05:31:55
+-|2026-03-14 05:31:55
+-|duración 5 12 s
+-|CV 2.345 y -1.234
+-|1.234 y -2.345
+-|temperatura 18.5 y 20.3
+-|Muestra 18N 2 tubos
+-|Teléfono 601 3216549
+-|precio 1.250.000 pesos
+-|Colección ICN 12345 y 67890
+-|se observaron 5 individuos y 12 hembras
+-|sectores 3 y 5 de la quebrada
+-|n = 12 individuos
+-|peso 70.250 g, talla 3.100 cm
+-|estado del estero nortenio, 12 individuos
+-|ver páginas 5 31 y 55
+-|ratio 2.3, 3.4 y 5.6
+# --- Falsos positivos conocidos y aceptados (ver javadoc de DetectorCoordenadas) ---
+?|talla 5 12 N
+?|long. 12 cm
+?|lat 3
+?|N 12 3.5
+?|N 1.250.000 individuos
+?|5.500, 73.000 individuos
+?|talla 5 12 n
+?|n 12 3.5
+?|70.250, 3.100 g
+#
+# Resumen SHA-256 del bloque <reglas-compartidas> sin espacios (se actualiza al cambiar las reglas, en las dos copias):
+@reglas-sha256=d5e5b899395850da81ce20f98c5d94817ae61f5f09610ab524fa33d2eaa6643e

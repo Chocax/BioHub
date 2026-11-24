@@ -1,0 +1,4 @@
+# Artefactos de Playwright (E2E del módulo de ubicación)
+test-results/
+playwright-report/
+blob-report/

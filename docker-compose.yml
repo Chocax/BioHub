@@ -20,17 +20,27 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_TRANSACCIONAL_ROOT_PASSWORD:?Falta en .env}
-      MYSQL_CIENTIFICO_USER: ${MYSQL_CIENTIFICO_USER:?Falta en .env}
-      MYSQL_CIENTIFICO_PASSWORD: ${MYSQL_CIENTIFICO_PASSWORD:?Falta en .env}
-      MYSQL_EQUIPOS_USER: ${MYSQL_EQUIPOS_USER:?Falta en .env}
-      MYSQL_EQUIPOS_PASSWORD: ${MYSQL_EQUIPOS_PASSWORD:?Falta en .env}
+      # Usuarios con los mismos permisos que en Aiven: *_app para el servicio, *_migr solo para Flyway
+      # (infra/mysql/initdb/01-usuarios.sh). Las contraseñas de migración se exigen al crear el volumen.
+      BIOHUB_BASE_1: cientifico
+      BIOHUB_APP_USER_1: ${MYSQL_CIENTIFICO_USER:?Falta en .env}
+      BIOHUB_APP_PASSWORD_1: ${MYSQL_CIENTIFICO_PASSWORD:?Falta en .env}
+      BIOHUB_MIGR_USER_1: ${CIENTIFICO_MIGR_USER:-cientifico_migr}
+      BIOHUB_MIGR_PASSWORD_1: ${CIENTIFICO_MIGR_PASSWORD:-}
+      BIOHUB_BASE_2: equipos
+      BIOHUB_APP_USER_2: ${MYSQL_EQUIPOS_USER:?Falta en .env}
+      BIOHUB_APP_PASSWORD_2: ${MYSQL_EQUIPOS_PASSWORD:?Falta en .env}
+      BIOHUB_MIGR_USER_2: ${EQUIPOS_MIGR_USER:-equipos_migr}
+      BIOHUB_MIGR_PASSWORD_2: ${EQUIPOS_MIGR_PASSWORD:-}
       MYSQL_ROOT_HOST: 127.0.0.1   # root solo desde dentro del contenedor (no existe root@'%')
       TZ: America/Bogota
     ports:
       - "127.0.0.1:${MYSQL_TRANSACCIONAL_PORT:-3307}:3306"
     volumes:
       - mysql-transaccional-data:/var/lib/mysql
-      - ./infra/mysql/transaccional:/docker-entrypoint-initdb.d:ro
+      - ./infra/mysql/initdb:/docker-entrypoint-initdb.d:ro
+      # Historial append-only (D60): el mismo archivo que se corre en Aiven
+      - ./deploy/aiven/03-registro-historial-append-only.sql.example:/biohub/historial.sql:ro
     healthcheck: *mysql-healthcheck
 
   mysql-lectura:
@@ -39,15 +49,18 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_LECTURA_ROOT_PASSWORD:?Falta en .env}
-      MYSQL_DATABASE: consulta_publica
-      MYSQL_USER: ${MYSQL_LECTURA_USER:?Falta en .env}
-      MYSQL_PASSWORD: ${MYSQL_LECTURA_PASSWORD:?Falta en .env}
+      BIOHUB_BASE_1: consulta_publica
+      BIOHUB_APP_USER_1: ${MYSQL_LECTURA_USER:?Falta en .env}
+      BIOHUB_APP_PASSWORD_1: ${MYSQL_LECTURA_PASSWORD:?Falta en .env}
+      BIOHUB_MIGR_USER_1: ${CONSULTA_MIGR_USER:-consulta_migr}
+      BIOHUB_MIGR_PASSWORD_1: ${CONSULTA_MIGR_PASSWORD:-}
       MYSQL_ROOT_HOST: 127.0.0.1   # root solo desde dentro del contenedor (no existe root@'%')
       TZ: America/Bogota
     ports:
       - "127.0.0.1:${MYSQL_LECTURA_PORT:-3308}:3306"
     volumes:
       - mysql-lectura-data:/var/lib/mysql
+      - ./infra/mysql/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck: *mysql-healthcheck
 
   mysql-analitica:
@@ -56,15 +69,18 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ANALITICA_ROOT_PASSWORD:?Falta en .env}
-      MYSQL_DATABASE: reportes
-      MYSQL_USER: ${MYSQL_ANALITICA_USER:?Falta en .env}
-      MYSQL_PASSWORD: ${MYSQL_ANALITICA_PASSWORD:?Falta en .env}
+      BIOHUB_BASE_1: reportes
+      BIOHUB_APP_USER_1: ${MYSQL_ANALITICA_USER:?Falta en .env}
+      BIOHUB_APP_PASSWORD_1: ${MYSQL_ANALITICA_PASSWORD:?Falta en .env}
+      BIOHUB_MIGR_USER_1: ${REPORTES_MIGR_USER:-reportes_migr}
+      BIOHUB_MIGR_PASSWORD_1: ${REPORTES_MIGR_PASSWORD:-}
       MYSQL_ROOT_HOST: 127.0.0.1   # root solo desde dentro del contenedor (no existe root@'%')
       TZ: America/Bogota
     ports:
       - "127.0.0.1:${MYSQL_ANALITICA_PORT:-3309}:3306"
     volumes:
       - mysql-analitica-data:/var/lib/mysql
+      - ./infra/mysql/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck: *mysql-healthcheck
 
   mysql-gateway:
@@ -73,15 +89,18 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_GATEWAY_ROOT_PASSWORD:?Falta en .env}
-      MYSQL_DATABASE: gateway
-      MYSQL_USER: ${MYSQL_GATEWAY_USER:?Falta en .env}
-      MYSQL_PASSWORD: ${MYSQL_GATEWAY_PASSWORD:?Falta en .env}
+      BIOHUB_BASE_1: gateway
+      BIOHUB_APP_USER_1: ${MYSQL_GATEWAY_USER:?Falta en .env}
+      BIOHUB_APP_PASSWORD_1: ${MYSQL_GATEWAY_PASSWORD:?Falta en .env}
+      BIOHUB_MIGR_USER_1: ${GATEWAY_MIGR_USER:-gateway_migr}
+      BIOHUB_MIGR_PASSWORD_1: ${GATEWAY_MIGR_PASSWORD:-}
       MYSQL_ROOT_HOST: 127.0.0.1   # root solo desde dentro del contenedor (no existe root@'%')
       TZ: America/Bogota
     ports:
       - "127.0.0.1:${MYSQL_GATEWAY_PORT:-3310}:3306"
     volumes:
       - mysql-gateway-data:/var/lib/mysql
+      - ./infra/mysql/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck: *mysql-healthcheck
 
   redis:
@@ -90,8 +109,10 @@ services:
     restart: unless-stopped
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?Falta en .env}
-    # La contraseña se escribe en un .conf dentro del contenedor (no queda en los argumentos del proceso)
-    command: ["sh", "-c", "umask 077 && printf 'appendonly yes\\nrequirepass %s\\n' \"$$REDIS_PASSWORD\" > /tmp/redis.conf && exec redis-server /tmp/redis.conf"]
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-256mb}
+    # La contraseña se escribe en un .conf dentro del contenedor (no queda en los argumentos del proceso).
+    # Memoria acotada (SEC-J-05): todas las claves de BioHub vencen, y si se llena sale la menos usada.
+    command: ["sh", "-c", "umask 077 && printf 'appendonly yes\\nrequirepass %s\\nmaxmemory %s\\nmaxmemory-policy volatile-lru\\n' \"$$REDIS_PASSWORD\" \"$$REDIS_MAXMEMORY\" > /tmp/redis.conf && exec redis-server /tmp/redis.conf"]
     ports:
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
@@ -122,6 +143,27 @@ services:
       retries: 6
       start_period: 20s
 
+  # Tarea de una sola vez: crea los usuarios de RabbitMQ por servicio (SEC-04) y termina.
+  rabbitmq-usuarios:
+    image: curlimages/curl:8.11.1
+    container_name: biohub-rabbitmq-usuarios
+    restart: "no"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_ADMIN_USER: ${RABBITMQ_USER:?Falta en .env}
+      RABBITMQ_ADMIN_PASSWORD: ${RABBITMQ_PASSWORD:?Falta en .env}
+      RABBITMQ_CIENTIFICO_USER: ${RABBITMQ_CIENTIFICO_USER:-cientifico_mq}
+      RABBITMQ_CIENTIFICO_PASSWORD: ${RABBITMQ_CIENTIFICO_PASSWORD:-}
+      RABBITMQ_CONSULTA_USER: ${RABBITMQ_CONSULTA_USER:-consulta_mq}
+      RABBITMQ_CONSULTA_PASSWORD: ${RABBITMQ_CONSULTA_PASSWORD:-}
+      RABBITMQ_REPORTES_USER: ${RABBITMQ_REPORTES_USER:-reportes_mq}
+      RABBITMQ_REPORTES_PASSWORD: ${RABBITMQ_REPORTES_PASSWORD:-}
+    entrypoint: ["sh", "/scripts/crear-usuarios.sh"]
+    volumes:
+      - ./infra/rabbitmq:/scripts:ro
+
   keycloak:
     image: quay.io/keycloak/keycloak:26.8.1
     container_name: biohub-keycloak
@@ -136,11 +178,15 @@ services:
       KC_HEALTH_ENABLED: "true"
       # Usada por el placeholder del realm-biohub.json para los usuarios de prueba
       KEYCLOAK_TEST_USERS_PASSWORD: ${KEYCLOAK_TEST_USERS_PASSWORD:?Falta en .env}
+      # Secreto del cliente biohub-gateway del realm (administración de usuarios, HU-10)
+      KEYCLOAK_GATEWAY_CLIENT_SECRET: ${KEYCLOAK_GATEWAY_CLIENT_SECRET:?Falta en .env}
     ports:
       - "127.0.0.1:${KEYCLOAK_PORT:-8180}:8080"
     volumes:
       - keycloak-data:/opt/keycloak/data   # H2 en data/h2; el import se monta dentro
       - ./infra/keycloak:/opt/keycloak/data/import:ro
+      # Tema de inicio de sesión con el estilo de BioHub (D64). start-dev no lo guarda en caché: un cambio de CSS se ve al recargar.
+      - ./infra/keycloak/themes/biohub:/opt/keycloak/themes/biohub:ro
     healthcheck:
       # La imagen no trae curl: se consulta el puerto de management (9000) con bash.
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]

@@ -125,3 +125,713 @@ El esqueleto cumple el contrato: build y tests verdes (17 Java + 4 web), matriz 
 
 Re-verificación completa tras `docker compose down -v`: 7/7 healthy, Flyway V1 en 5 esquemas, 5 pings 200, negativos OK, E2E navegador OK con investigador1 y admin1.
 Tests automatizados: Maven 31 (gateway 23: ProxyServiceTest 18 + GatewaySecurityTest 5; 2 por servicio), web-interna 2, web-publica 2.
+
+---
+# Iteración despliegue + RabbitMQ (tarea 13e)
+Fecha: 2026-10-22. Rama `feature/despliegue`. Casos en `06-plan-pruebas.md` (secciones 6-9).
+
+## Resumen de ejecución
+| Prueba | Resultado |
+|---|---|
+| `mvn -B verify` (raíz), con Docker | BUILD SUCCESS. **73 tests, 0 fallos, 0 errores, 0 omitidos** |
+| api-gateway | 23 |
+| servicio-cientifico | 16 (Testcontainers: `PublicadorEventosIntegracionTest` 2) |
+| servicio-equipos | 2 |
+| servicio-consulta-publica | 16 (Testcontainers: 2 clases IT) |
+| servicio-reportes | 16 (Testcontainers: 2 clases IT) |
+| `npm test` web-interna / web-publica | 2 / 2 pasan (sin cambios) |
+| Tests opt-in contra RabbitMQ con las definitions de despliegue | 2 de 2 pasan |
+
+- Backend-senior reportó 71; la primera corrida de `verify` dio 71 (0 omitidos: los Testcontainers sí se ejecutaron; se vieron arrancar los contenedores `rabbitmq:4-management`). Los 2 adicionales son tests agregados por QA (abajo). No se midió cobertura (sin JaCoCo en el proyecto).
+- Tests agregados por QA (solo `src/test`):
+  - `servicio-reportes/.../eventos/ConsumidorEventosRechazosIntegracionTest` y `servicio-consulta-publica/.../eventos/ConsumidorEventosRechazosIntegracionTest`: con broker real, un evento cuya routing key (`hallazgo.registrado`) difiere de su `tipo` (`prueba.ping`) y otro de más de 64 KB terminan en la DLQ, la cola principal queda vacía y no se almacena nada. Antes solo estaban cubiertos a nivel unitario.
+  - Opt-in (se omiten sin `QA_RMQ_PORT`): `ConsumidorBrokerDesplegadoTest` (reportes) y `PublicadorBrokerDesplegadoTest` (científico), que usan los usuarios `reportes_mq` y `cientifico_mq`.
+- Problema del propio test/entorno corregido: mi primera corrida opt-in falló con `ACCESS_REFUSED` porque yo leí la contraseña de la plantilla incluyendo el comentario de fin de línea; no era un defecto del despliegue (con la contraseña limpia pasan).
+
+## Cobertura de criterios del evento
+Cubiertos y verdes: POST 202/400/401/403/503; GET recibidos 401/403/200 en ambos consumidores; límite de 20 y orden; DLQ por JSON roto, tipo desconocido, routing key distinta del tipo y >64 KB (con broker real); cabecera `__TypeId__` ignorada (el IT envía una clase inexistente y el evento se consume); mensaje exacto de 200 válido y 201 inválido.
+Verificado además contra un RabbitMQ real cargado con el `definitions.json` generado por `generar-definitions.sh` (con contraseñas ficticias, en contenedor local, sin tocar ningún entorno compartido): 4 usuarios (`biohub` administrator, `cientifico_mq`, `consulta_mq`, `reportes_mq`), sin `guest`; `reportes_mq` declara su topología, consume y envía a DLQ; `cientifico_mq` publica con confirmación y recibe `ACCESS_REFUSED` al leer `reportes.eventos`; el evento publicado por `cientifico_mq` llegó a `reportes.eventos` (1 mensaje, cola durable con los argumentos DLX esperados). `consulta_mq` no se probó en vivo (su regla es simétrica a la de `reportes_mq`).
+
+## Artefactos de despliegue (estático)
+
+Sección retirada en la iteración 15 (VPN de malla eliminada; ver 09-despliegue.md).
+
+## Bugs
+No se encontraron bugs Críticos, Altos ni Medios. Hallazgos menores:
+
+BUG-04 (`.env.example` de `deploy/`): sección retirada en la iteración 15 (VPN de malla eliminada; ver 09-despliegue.md).
+
+### Observaciones (para ciberseguridad / Tech Lead)
+- O-9: Los tests opt-in dependen de variables de entorno; no hay prueba automática en CI de las definitions reales. Sugerencia: añadir un IT que cargue `definitions.json` generado en Testcontainers.
+- O-10: Sin cobertura medida (JaCoCo) ni E2E automatizado del flujo de eventos por el gateway; queda el procedimiento manual (plan, sección 9).
+
+## Veredicto: APROBADO CON OBSERVACIONES
+El código de RabbitMQ cumple el contrato (73/73 tests con broker real, 0 omitidos) y los permisos por usuario funcionan contra un RabbitMQ real con las definitions generadas. La verificación de los artefactos de despliegue en VMs fue retirada en la iteración 15 (VPN de malla eliminada; ver 09-despliegue.md).
+
+---
+# Iteración 15h – verificación final (2026-11-04)
+Rama `feature/ubicacion-consulta-publica`, con los cambios sin commit del árbol de trabajo (refactor de patrones en ubicación, degradación automática, verificación del publicador AMQP activa por defecto, `pruebas-carga/`). Todo se ejecutó en esta sesión; no se confió en el reporte de backend.
+
+## 1. Backend (`mvn -o test`, Docker disponible, Testcontainers reales)
+| Módulo | Tests | Fallos | Errores | Omitidos | Resultado |
+|---|---|---|---|---|---|
+| servicio-cientifico | **229** | 0 | 0 | **1** | BUILD SUCCESS (1 min 41 s) |
+| servicio-consulta-publica | **190** | 0 | 0 | 0 | BUILD SUCCESS (1 min 37 s) |
+
+- Coinciden exactamente con lo reportado por backend-senior. El omitido es `PublicadorBrokerDesplegadoTest` (opt-in: requiere `QA_RMQ_PORT/USER/PASS`); no es un fallo.
+- Corridos con el cambio del Tech Lead ya aplicado (`verificar-publicador:true` por defecto en `ConsumidorEventos`); `PublicadorNoPermitidoIntegracionTest` (4) pasa.
+- No se midió cobertura (el proyecto no tiene JaCoCo).
+
+## 2. web-publica (como CI)
+| Paso | Resultado |
+|---|---|
+| `npm run build` | OK (121 módulos) |
+| `npm test` (Vitest) | **32/32** (3 archivos) |
+| `npm audit --omit=dev --audit-level=high` | 0 vulnerabilidades |
+| E2E Playwright, Chromium + Firefox | **28/28** con la suite original; con los 2 tests nuevos de QA (abajo) quedan 15 tests x 2 navegadores = 30 |
+| E2E Playwright, WebKit | **No ejecutable en esta máquina**: 14/14 fallan en `browserType.launch: Host system is missing dependencies` (faltan librerías del sistema; `sudo npx playwright install-deps webkit`). Es limitación del entorno, no de la app; CI sí instala `--with-deps`. Se corrió con `E2E_SIN_WEBKIT=1`, que la propia config prevé. RNF13 en Safari queda sin verificar localmente |
+| `web-interna` `npm test` (páginas de ubicación, fuera de CI) | 9 pasan, **2 archivos no cargan** (`PaginaBusqueda.test.jsx`, `PaginaMapa.test.jsx`): `@testing-library/user-event` está en `package.json` pero no instalado en este `node_modules`. Es de entorno (falta `npm ci`), no un bug de código; no se corrigió. Nota: CI no corre los tests de web-interna |
+
+Tests agregados por QA (solo `web-publica/e2e/portal.spec.js`, bloque "QA 15h"): **WP-14** (texto malicioso `<img onerror>`, `<script>`, `<svg onload>` en los datos se muestra como texto, no se ejecuta, sin diálogos) y **WP-08** (búsqueda y ficha sin `Authorization`, `localStorage`/`sessionStorage`/cookies vacíos). Ambos pasan en Chromium y Firefox.
+
+## 3. Colección Bruno (viable y ejecutada)
+Se reprodujo el job de CI con la infraestructura del compose del repo ya levantada (Keycloak, RabbitMQ, Redis) y un MySQL 8.4 **efímero** en el puerto 3399 (`qa-mysql-bruno`, creado con `infra/ci/init-mysql.sql`; ya eliminado), sin tocar los MySQL de desarrollo. Los dos servicios se arrancaron con los jar recién empaquetados, perfil `local`, llave ficticia de CI y `BIOHUB_EVENTOS_PUBLICADOR_CIENTIFICO` = usuario de RabbitMQ (`rabbitUser` del entorno `local` de Bruno), es decir verificación activa. Se sembró con `infra/ci/SembrarHallazgos.java`.
+- `bru run --env local`: **44/44 requests, 77/77 tests, PASS** (10,5 s). Incluye los 4 eventos `setup/` con `user_id`, el caso de coordenadas (el servicio registró el incidente SEC-J-03 y lo descartó, esperado) y recifrado 401/403/200.
+- Servicios detenidos y contenedor eliminado al terminar. Con `--env ci` no se corrió (usa el usuario `biohub_ci`, que no existe en este broker); el entorno `local` es el equivalente.
+- Aviso menor: pasé `--reporter-junit` a un directorio inexistente y bru devolvió código 2 después de pasar todo; no es un fallo de la colección (CI usa `resultados/`, que se crea).
+
+## 4. `pruebas-carga/`
+- Sintaxis de los `.sh` correcta (`bash -n`). Humo ejecutado con `construir-imagen.sh` + `compose-carga.yml` (1 réplica + NGINX) + `datos/sembrar.sh` (2000 fichas) + `correr-k6.sh k6/consulta-publica-pico.js -e N=2 -e MULT=5` con tiempos cortos: 168 peticiones, 0 % no-200, 0 % 5xx, p95 10,6 ms. Los scripts de pico **funcionan y son reproducibles** con esos comandos. Después: `down -v`, `limpiar.sh` (0 fichas) y borrado del JSON de humo. No se interpreta contra el ASR (lo hace el arquitecto).
+- Se probó también `carga-cientifica-simultanea.js` (CIENTIFICA=1, 15 s): ver BUG-J2.
+- BUG-J3: el README está desactualizado (abajo).
+
+## 5. Bugs
+**BUG-J2 – Media – responsable: backend (carga) / Tech Lead.** La prueba `carga-cientifica-simultanea.js` (ASR4/RNF5, CG-04) ya no mide lo que dice: con la verificación del publicador activa por defecto, consulta-publica rechaza todos sus eventos.
+- Pasos: `./construir-imagen.sh`; `docker compose -p biohub-carga -f compose-carga.yml --env-file ../.env up -d --scale consulta-publica=1`; `./datos/sembrar.sh`; `./correr-k6.sh k6/carga-cientifica-simultanea.js -e CIENTIFICA=1 -e R=10 -e EV=5 -e DUR=15s`.
+- Esperado: los eventos se procesan (SELECT ... FOR UPDATE + INSERT, invalidación de caché) mientras se mide la lectura pública; DLQ vacía (CG-04).
+- Obtenido: k6 reporta `eventos=76 ok=100 %` (solo mide que el broker enrutó), pero el servicio registró 228 veces `Evento hallazgo.* con publicador no permitido` y la DLQ `consulta-publica.eventos.dlq` quedó con 76 mensajes. La carga de escritura nunca llega a la BD, así que la medición ASR4 sería optimista y engañosa.
+- Causa: la publicación por la API de management (`k6/carga-cientifica-simultanea.js`, ~línea 104) no pone `user_id` en `properties` y `compose-carga.yml` no define `BIOHUB_EVENTOS_PUBLICADOR_CIENTIFICO`. Arreglo: poner `user_id: RMQ_USER` en las propiedades (RabbitMQ solo lo acepta si coincide con el usuario autenticado) y pasar `BIOHUB_EVENTOS_PUBLICADOR_CIENTIFICO: ${RABBITMQ_USER}` al servicio en el compose. Además el script debería comprobar `cola_dlq == 0` y fichas resultantes, no solo `routed`.
+- Efecto secundario de mi prueba: dejé 76 mensajes en la DLQ del RabbitMQ de desarrollo; intenté purgarla y el permiso fue denegado, así que **queda pendiente purgar `consulta-publica.eventos.dlq`** (borrar contenido desde la UI de management o `rabbitmqctl purge_queue`).
+
+**BUG-J3 – Bajo – responsable: backend / Tech Lead.** `pruebas-carga/README.md` sigue diciendo "Carpeta reservada... Hoy está vacía: no hay scripts implementados" y no explica construir imagen, compose efímero, siembra, `correr-k6.sh` ni los parámetros. Los scripts no son reproducibles "según su README" porque el README no los describe (sí lo son leyendo las cabeceras de los scripts y del compose). `docs/equipo/trazabilidad.md` (líneas 9 y 111) también afirma que no hay scripts de carga ni colección Bruno.
+
+Observaciones (no bugs):
+- O-11: con el `.env` de desarrollo (`RABBITMQ_USER=biohub`), si se arranca consulta-publica sin `BIOHUB_EVENTOS_PUBLICADOR_CIENTIFICO=biohub` (el default es `cientifico_mq`), todo evento de cientifico se rechaza. `.env` no define esa variable ni `.env.example` explica el caso local. Documentarlo en el README de consulta-publica / 09-despliegue.
+- O-12: no hay bugs de severidad Crítica o Alta. Sin cobertura medida (JaCoCo).
+
+## 6. Casos del plan 06 (parte de Juanita, P3–P9) sin test automatizado propio
+Los tests no citan los IDs del plan (`CF-01`, etc.), así que no existe trazabilidad mecánica; el mapeo se hizo por área y contenido de las clases de test (229 + 190 + 32 + 15 E2E + 44 requests Bruno). Cobertura por área: cifrado/llaves, `UbicacionService`, cifrado en reposo, búsqueda interna, mapa, recifrado, JWT, auditoría, inyección/límites, consumo de eventos, DLQ, búsqueda pública, caché, Redis caído y degradación (automática y forzada) tienen tests. Sin cobertura automatizada o con cobertura solo parcial:
+- **CF-06** (UUID en mayúsculas en el AAD): no se encontró test explícito.
+- **LG-01/LG-02** (fuga por logs a nivel TRACE/DEBUG con captura de log): cobertura solo parcial (auditoría y "sin filtraciones", no barrido TRACE de Hibernate).
+- **CG-01..CG-11** (carga): solo hay k6 para pico x60 (≈CG-03/05), carga científica simultánea (CG-04, afectado por BUG-J2) y registro; sin script para CG-02, CG-06 (Redis caído en pico), CG-07 (degradado en pico), CG-08 (`-Dgroups=rendimiento`: no existe ese grupo), CG-09, CG-10; CG-11 bloqueado por rate limit.
+- **WP-15** (axe-core), **WP-16** (responsive), **WP-18** (humo real con compose), **WP-11** (matriz de navegadores incl. móvil real y Edge) y **UX-01..UX-05** (usabilidad, manuales): sin automatizar; WP-11 en WebKit además no ejecutable aquí. WP-10 (consola limpia) y WP-12/WP-13 solo parcialmente (Vitest y `erroresCsp`, no E2E completo).
+- Ahora **cubiertos por QA 15h**: WP-14, WP-08.
+- Bloqueados por dependencias de otros equipos (sin cambios): IE-01..IE-04, SG-17..SG-19, CG-11, WI-13, DX-01..DX-04 (requieren autorización y despliegue; VPN y VMs ya retiradas, estos casos están obsoletos).
+- Casos de `web-interna` (WI-*, WC-*): 9 tests pasan, 2 archivos no ejecutables por dependencia no instalada (ver §2); no verificados.
+
+## Veredicto 15h: APROBADO CON OBSERVACIONES
+Backend 229 + 190 tests verdes (0 fallos, 1 omitido opt-in), web-publica 32 unitarios + 30 E2E (Chromium/Firefox) + build + audit verdes, Bruno 44/44 (77/77 tests) con la verificación del publicador activa, y el humo de la carga de pico funciona. No hay bugs Críticos ni Altos. Se aprueba con reservas porque: BUG-J2 (Medio) invalida la prueba de carga científica simultánea tal como está (y dejó 76 mensajes en la DLQ de desarrollo por purgar), BUG-J3 (documentación de carga), WebKit no verificado localmente, y los casos sin automatizar de §6. BUG-J2 debe corregirse antes de usar `carga-cientifica-simultanea.js` como evidencia del ASR4.
+
+---
+
+## Re-verificación ciclo 1 (2026-11-04)
+
+Todo lo de abajo se ejecutó en esta sesión (no se tomó del reporte de backend). Sin commits; solo se añadió un test opt-in de QA.
+
+### Resultados
+
+| Verificación | Resultado |
+|---|---|
+| `mvn -o test` servicio-cientifico | **239 tests, 0 fallos, 0 errores, 1 omitido** (el opt-in de broker desplegado). BUILD SUCCESS. Coincide con el reporte. |
+| `mvn -o test` servicio-consulta-publica | **190 tests, 0 fallos, 0 errores, 0 omitidos**. BUILD SUCCESS. Coincide. |
+| Humo `carga-cientifica-simultanea.js` (`CIENTIFICA=1 R=10 EV=5 DUR=15s`, 2 réplicas, siguiendo solo el README) | Públicas 151 (p95 19,7 ms, 0 % no-200, 0 % 5xx). **Eventos 76 publicados, 76 procesados, cola pendiente 0, DLQ de carga 0.** Logs de las 2 réplicas: **0** apariciones de "publicador no permitido" y 0 de "descart". |
+| Aislamiento de la cola de desarrollo | `consulta-publica.eventos` = 0 y `consulta-publica.eventos.dlq` = 76 (los viejos), **sin cambios** antes y después. Las réplicas de carga consumían `consulta-publica.carga.eventos` (2 consumidores). |
+| Limpieza | `down -v` y `datos/limpiar.sh`: 0 fichas de carga; el JSON de humo se borró; la cola/DLQ/exchange de carga ya no existen en RabbitMQ. |
+| E2E real científico -> consulta-publica (ARQ-26) | **OK**, ver abajo. |
+| Bruno `--env local` (CLI 4.3.0, MySQL efímero 3399, ambos servicios con los jar actuales y `BIOHUB_EVENTOS_PUBLICADOR_CIENTIFICO=biohub`, verificación activa) | **44/44 requests, 77/77 tests, PASS** (9,4 s). Servicios detenidos y contenedor eliminado. |
+
+### E2E ARQ-26 (sin inyectar `user_id` a mano)
+No existe flujo real que publique `hallazgo.*` desde servicio-cientifico: el único endpoint que usa `PublicadorEventos` es `POST /api/cientifico/eventos/prueba` (`prueba.ping`, solo administrador), y el módulo de registro (HU-01) es de otro equipo. Se usó entonces el `PublicadorEventos` REAL (el mismo bean, con su `user_id` tomado de la conexión) desde un test opt-in nuevo: `servicio-cientifico/src/test/java/co/edu/unbosque/biohub/cientifico/eventos/PublicadorHallazgoE2ETest.java` (se activa con `QA_HALLAZGO_ID` + `QA_RMQ_PORT/USER/PASS`; sin esas variables se omite, por lo que no altera los 239 tests).
+- Se arrancó consulta-publica (jar actual, perfil `local`, MySQL de desarrollo, `BIOHUB_EVENTOS_VERIFICAR_PUBLICADOR=true`, `BIOHUB_EVENTOS_PUBLICADOR_CIENTIFICO=biohub`, valores de `.env.example`) y se publicó un `hallazgo.registrado` con UUID único.
+- Resultado: `GET /api/publica/fichas/{id}` devolvió 200 con la ficha completa (`ubicacionProtegida: true`, sin coordenadas); `consulta-publica.eventos` quedó en 0 y la DLQ de desarrollo siguió en 76 (no la usé para medir). Log del servicio sin WARN/ERROR de publicador. Con esto la cadena `user_id` AMQP del publicador -> verificación del consumidor funciona sin Bruno. Se eliminó la ficha de prueba de la BD de desarrollo.
+- Límite: no se ejercitó el endpoint HTTP de servicio-cientifico con un JWT de administrador (publica `prueba.ping`, que no es `hallazgo.*`); la cobertura de ese camino es `EventosPruebaControllerTest` y `PublicadorEventosIntegracionTest`, que pasan.
+
+### Estado de los hallazgos
+- **BUG-J2: CORREGIDO.** El humo reproduce lo que describía el bug (antes 228 rechazos y 76 mensajes en DLQ) y ahora da 76/76 procesados, DLQ de carga 0, 0 rechazos por publicador, sin tocar las colas de desarrollo. El script además comprueba la DLQ de carga y reporta procesados/pendientes.
+- **BUG-J3: CORREGIDO (parcial en otro documento).** Seguí `pruebas-carga/README.md` tal cual (construir jar e imagen, compose con `--scale`, siembra, k6, apagar y limpiar) sin conocimiento previo y funcionó a la primera; el orden `down -v` antes de `limpiar.sh` está explicado. Pendiente menor (no bloquea): `docs/equipo/trazabilidad.md` (líneas 9 y 176) sigue diciendo que `pruebas-carga/` solo tiene README y que no existen `.github/` ni la colección Bruno; es un documento ajeno al README.
+- **O-11: CERRADA.** `.env.example` raíz trae `BIOHUB_EVENTOS_VERIFICAR_PUBLICADOR=true` y `BIOHUB_EVENTOS_PUBLICADOR_CIENTIFICO=biohub` (igual a `RABBITMQ_USER`); con esos valores el E2E y Bruno pasan con verificación activa.
+- **Pendiente de usuario (heredado):** purgar `consulta-publica.eventos.dlq` (76 mensajes de mi prueba anterior).
+
+### Bugs nuevos
+Ninguno (sin BUG-J4). Observación de entorno: los jar de `target/` se reescribieron al empaquetar (no afecta a nada en ejecución).
+
+### No ejecutado
+WebKit local (limitación de librerías del sistema, igual que antes), web-publica/web-interna (fuera del alcance del ciclo, sin cambios), pico x60 y par `CIENTIFICA=0/1` completo (solo humo, por instrucción), y el endpoint HTTP de publicación con JWT de administrador sobre el servicio científico en ejecución.
+
+### Veredicto ciclo 1: APROBADO
+Los tres hallazgos (BUG-J2, BUG-J3, O-11) quedan cerrados con evidencia ejecutada, 239 + 190 tests en verde, Bruno 44/44, humo de carga limpio y ARQ-26 validado de punta a punta con el publicador real. Sin bugs nuevos.
+
+### CI en GitHub, primera ejecución (2026-11-04, run 41876849186)
+- backend cientifico y consulta-publica: OK. Bruno: 44/44 requests, 77/77 tests, pero el job salía con código 2 porque Bruno CLI no crea `resultados/` → `mkdir -p resultados` en `ci.yml`.
+- web-publica: 2 E2E fallaban solo en WebKit por `style-src-attr` "inline" en `<select>` nativos: artefacto de WebKit (se reproduce con un `<select>` estático en HTML puro con `style-src 'self'`), no de la app. El fixture `erroresCsp` ahora usa el evento `securitypolicyviolation` e ignora solo esa combinación exacta; 3 tests de guarda demuestran que `<style>`, `style=` y `<select style=...>` siguen detectándose. WebKit verificado en Docker (`mcr.microsoft.com/playwright:v1.64.1-noble`): 18 pasan, 1 omitido previo. CSP sin cambios (sin `'unsafe-inline'`).
+
+## Iteración 16 (2026-11-04): verificación de 81f4e28..HEAD
+
+Commits revisados: ARQ-33 (81f4e28), SEC-J-04 web-interna (47b5cc9), SEC-J-13 (786f4e1), SEC-J-12 (57ab7ad), SEC-J-08.3 (1e449ac), ARQ-29 (25d2175), ARQ-28 (aeb67d8).
+
+### Bug encontrado y corregido
+
+**BUG-J4 (Medio, responsable: QA, solo tests): `mvn verify` a secas falla con un `.env` local del perfil Aiven.**
+- Pasos: con un `.env` que define `CIENTIFICO_MIGR_USER/PASSWORD` (o `CONSULTA_MIGR_*`) en la raíz o en el servicio, ejecutar `mvn -B verify` en `servicio-cientifico` o `servicio-consulta-publica`.
+- Esperado: las pruebas son herméticas y no dependen del entorno del desarrollador. Obtenido: `spring.config.import` carga el `.env`, Flyway usa `cientifico_migr` contra el MySQL de Testcontainers y falla con `Access denied for user 'cientifico_migr'` (científico: decenas de errores de contexto, p. ej. MigracionesUbicacionTest 6/6 y QaSeguridadJwtTest 30/30; consulta-publica: igual). En CI no se ve porque no hay `.env`.
+- Primer intento descartado: sobrescribir `spring.config.import` en un `application.properties` de pruebas no sirve, porque Spring procesa los imports de cada archivo de configuración aunque otro tenga precedencia.
+- Corrección: `src/test/resources/application.properties` en ambos servicios con `spring.flyway.user=${spring.datasource.username}` y `spring.flyway.password=${spring.datasource.password}`. Solo afecta al classpath de pruebas; producción intacta; no se leyó ni copió ningún valor de los `.env`.
+- Evidencia tras la corrección, con el `.env` real presente y sin variables sobrescritas: científico 264 ejecutadas, 0 fallos, 0 errores, 2 omitidas, BUILD SUCCESS; consulta-publica 194, 0, 0, 0 omitidas, BUILD SUCCESS.
+
+### Resultados
+
+| Proyecto | Comando | Resultado |
+|---|---|---|
+| servicio-cientifico | `mvn -B verify` | 264 / 0 fallos / 0 errores / 2 omitidas |
+| servicio-consulta-publica | `mvn -B verify` | 194 / 0 / 0 / 0 omitidas |
+| web-interna | `npm test` y `npm run build` | 46 de 46 (4 archivos); build OK |
+| web-publica | `npm test` y `npm run build` | 32 de 32 (3 archivos); build OK |
+
+Las 2 omitidas de científico son las pruebas opt-in contra el broker desplegado (requieren `QA_RMQ_*`).
+
+### Revisión de que las pruebas nuevas prueban lo que dicen
+
+- SEC-J-13: `HallazgoRegistradoSerializacionTest` comprueba JSON y `convertValue` sin claves ni valores de coordenadas, y que siguen en memoria. `PublicadorEventosTest` cubre claves (6 variantes, sin distinguir mayúsculas), anidadas (mapa, lista, mapa), texto (decimal, grados, "lat:/lon:"), que el mensaje no filtra el valor, que no se llama al broker, un caso sin coordenadas con números con coma que se publica (sin falso positivo) y que `prueba.*` no se revisa. Sin hueco relevante.
+- SEC-J-12: `ProveedorDeLlavesKeyStoreTest` cubre 600 aceptado y 644/640/604 rechazados sin revelar la ruta.
+- SEC-J-08.3: `AuditoriaLogbackTest` carga el `logback-spring.xml` real con Joran: archivo propio, solo esas líneas, anexado entre reinicios, nivel INFO fijo aunque la raíz sea ERROR.
+- ARQ-29: regla ArchUnit sobre bytecode (con `allowEmptyShould`, hoy `registro` solo tiene `package-info`, así que la regla es preventiva) más comprobación sobre el código fuente que sí atrapa un import. Aceptable.
+- ARQ-28: `layeredArchitecture` en ambos servicios más reglas explícitas; en consulta-publica la deuda `service.vista`/`CriterioBusquedaPublica` queda congelada y documentada. Nota: en ubicacion la capa Infrastructure solo se restringe con `mayNotBeAccessedByAnyLayer`, y el acceso Service→Infrastructure queda cubierto por `infrastructureNoDependeDeService` y el resto de reglas D43.
+- SEC-J-04: `PaginaMapa.test.jsx` verifica `maxZoom` 8 con un punto, 10 con varios (`padding` incluido) y `referrerPolicy="no-referrer"` en la capa de teselas.
+
+No añadí casos nuevos: no vi huecos relevantes. Observación (Bajo, no bloquea): las comprobaciones de keystore 600/644 dependen de POSIX; en un sistema de archivos sin POSIX la prueba de 644 no es significativa.
+
+### No ejecutado
+
+E2E contra servicios desplegados y k6 (D42, pospuesto por la usuaria): fuera del alcance de esta iteración.
+
+### Veredicto Iteración 16: APROBADO
+
+Los siete commits cumplen lo declarado y las pruebas nuevas son significativas. El único bug (BUG-J4, aislamiento de pruebas) estaba en los tests y quedó corregido; sin bugs abiertos de producción.
+
+
+---
+
+# Iteración 17 (2026-11-08)
+
+Rama `feature/ubicacion-consulta-publica`. Alcance: `denyAll` y `@PreAuthorize` (D55), CI rojo (zona horaria y recifrado), integración del PR #7 (API Keys y límites) y E2E por el gateway con perfil `local`.
+
+## Comandos usados
+
+```bash
+# Suites como en CI (ci.yml tiene 3 servicios: cientifico, consulta-publica y api-gateway), con TZ=UTC y luego TZ=America/Bogota
+TZ=<zona> JAVA_TOOL_OPTIONS=-Duser.timezone=<zona> sg docker -c "mvn -B -ntp -pl <servicio> -am verify"
+# Repetición x10
+sg docker -c "mvn -B -ntp -q -pl servicio-cientifico -am test -Dtest='RecifradoServiceTest,BusquedaHallazgosApiTest' -Dsurefire.failIfNoSpecifiedTests=false"
+mvn -B -ntp -q -pl servicio-consulta-publica -am test -Dtest=ValidadorDatosHallazgoTest -Dsurefire.failIfNoSpecifiedTests=false   # (esta clase vive en consulta-publica)
+# E2E: MySQL locales del compose (docker compose up -d mysql-transaccional mysql-lectura mysql-gateway) y los 3 servicios con
+SPRING_PROFILES_ACTIVE=local java -jar <modulo>/target/<modulo>-0.0.1-SNAPSHOT.jar   # cwd fuera del repo, variables del .env raíz exportadas
+```
+
+Detalles del E2E: los jars se ejecutaron con el directorio de trabajo fuera del repo para que no leyeran `servicio-cientifico/.env` (tiene configuración y llave de Aiven). `servicio-cientifico` usó una `UBICACION_CLAVES` aleatoria generada para la prueba. En los logs el perfil activo fue `local` en los tres y las URL JDBC fueron `localhost:3307` (científico), `localhost:3308` (consulta pública) y `localhost:3310` (gateway). Ningún log contiene "aivencloud". Los tokens vienen del client `biohub-pruebas` (password grant); el script lee la contraseña de `.env` sin imprimirla.
+
+## Resultados de suites
+
+| Servicio | TZ | Ejecutadas | Fallos | Errores | Omitidas | SeguridadEndpointsTest | ArquitecturaSeguridadTest | Resultado |
+|---|---|---:|---:|---:|---:|---|---|---|
+| servicio-cientifico | UTC | 322 | 0 | 0 | 2 | 56/56 | 2/2 | BUILD SUCCESS |
+| servicio-cientifico | America/Bogota | 322 | 0 | 0 | 2 | 56/56 | 2/2 | BUILD SUCCESS |
+| servicio-consulta-publica | UTC | 239 | 0 | 0 | 0 | 40/40 | 2/2 | BUILD SUCCESS |
+| servicio-consulta-publica | America/Bogota | 239 | 0 | 0 | 0 | 40/40 | 2/2 | BUILD SUCCESS |
+| api-gateway | UTC | 168 | 0 | 0 | 0 | n/a | n/a | BUILD SUCCESS |
+| api-gateway | America/Bogota | 168 | 0 | 0 | 0 | n/a | n/a | BUILD SUCCESS |
+
+Las 2 omitidas de científico son `PublicadorHallazgoE2ETest` y `PublicadorBrokerDesplegadoTest` (opt-in con `QA_RMQ_*`, igual que en la iteración 16).
+
+Repeticiones (10 ejecuciones consecutivas cada una, todas con exit 0):
+
+| Prueba | Casos por ejecución | Zona | Fallos en 10 ejecuciones |
+|---|---:|---|---:|
+| `RecifradoServiceTest` | 6 | UTC | 0 |
+| `BusquedaHallazgosApiTest` | 21 | UTC | 0 |
+| `ValidadorDatosHallazgoTest` | 20 | UTC | 0 |
+| `ValidadorDatosHallazgoTest` | 20 | America/Bogota | 0 |
+
+## E2E por el gateway (puerto 8080, perfil `local`)
+
+Quién respondió se dedujo del cuerpo y las cabeceras: el 403 del gateway es `application/problem+json;charset=UTF-8` (solo ocurre con `sinrol1`, que no tiene ninguno de los 5 roles); el 403 del servicio es `application/problem+json` sin `charset`. El 401 sin token lo da el gateway (sin cuerpo).
+
+| Método | Ruta | Usuario | Esperado | Obtenido | |
+|---|---|---|---|---|---|
+| GET | /api/cientifico/ubicacion/hallazgos | cientifico1, investigador1, auditor1, analista1, admin1 | 200 | 200 (x5) | ✅ |
+| GET | /api/cientifico/ubicacion/hallazgos | sinrol1 | 403 | 403 problem+json `ROL_INSUFICIENTE` (gateway) | ✅ |
+| GET | /api/cientifico/ubicacion/hallazgos | sin token | 401 | 401 | ✅ |
+| GET | /api/cientifico/ubicacion/mapa | cientifico1 | 200 | 200 | ✅ |
+| GET | /api/cientifico/ubicacion/mapa | admin1, investigador1, auditor1, analista1 | 403 | 403 problem+json `ROL_INSUFICIENTE` (servicio) x4 | ✅ |
+| GET | /api/cientifico/ubicacion/mapa | sinrol1 | 403 | 403 problem+json `ROL_INSUFICIENTE` (gateway) | ✅ |
+| GET | /api/cientifico/ubicacion/mapa | sin token | 401 | 401 | ✅ |
+| POST | /api/cientifico/ubicacion/recifrado | admin1 | 2xx | 200 `{claveActiva:v1, revisados:0, recifrados:0, fallidos:0}` | ✅ |
+| POST | /api/cientifico/ubicacion/recifrado | cientifico1, investigador1 | 403 | 403 problem+json (servicio) | ✅ |
+| POST | /api/cientifico/ubicacion/recifrado | sinrol1 | 403 | 403 problem+json (gateway) | ✅ |
+| POST | /api/cientifico/ubicacion/recifrado | sin token | 401 | 401 | ✅ |
+| GET | /api/cientifico/ping | los 5 roles | 200 | 200 (x5) | ✅ |
+| GET | /api/cientifico/ping | sinrol1 | 403 | 403 `ROL_INSUFICIENTE` (gateway) | ✅ |
+| GET | /api/cientifico/ping | sin token | 401 | 401 | ✅ |
+| GET | /api/publica/fichas | sin token | 200 | 200 | ✅ |
+| GET | /api/publica/fichas/00000000-0000-0000-0000-000000000000 | sin token | 404 | 404 problem+json "La ficha solicitada no existe." | ✅ |
+| GET | /api/publica/ping | sin token | 200 | 200 | ✅ |
+| GET | /api/publica/eventos/recibidos | admin1 | 200 | 200 | ✅ |
+| GET | /api/publica/eventos/recibidos | cientifico1, investigador1, sinrol1 | 403 | 403 (servicio, cuerpo vacío; ver OBS-J17-1) | ✅ |
+| GET | /api/publica/eventos/recibidos | sin token | 401 | 401 (servicio, cuerpo vacío) | ✅ |
+| POST | /api/publica/fichas | sin token / admin1 | rechazada | 401 / 403 `ROL_INSUFICIENTE` (gateway) | ✅ |
+| GET | /api/cualquiercosa | admin1 / sin token | rechazada | 403 `ROL_INSUFICIENTE` / 401 | ✅ |
+| GET | /api/gateway/consumidores | cientifico1 / sin token | 403 / 401 | 403 / 401 | ✅ |
+| POST | /api/gateway/consumidores | admin1 | 201 | 201 | ✅ |
+| POST | /api/gateway/consumidores/{id}/keys | admin1 | 201 | 201 (apiKey mostrada solo aquí) | ✅ |
+| GET | /api/v1/externa/fichas | X-API-Key válida | 200 | 200 con `X-RateLimit-Limit: 60` y `X-RateLimit-Remaining: 58` | ✅ |
+| GET | /api/v1/externa/fichas | sin key | 401 | 401 `API Key inválida` | ✅ |
+| GET | /api/v1/externa/fichas | key inválida | 401 | 401 | ✅ |
+| GET | /api/v1/externa/fichas | JWT de admin1 sin key | 401 | 401 | ✅ |
+| POST | /api/v1/externa/fichas | con key válida | rechazada | 401 (la ruta externa es solo GET) | ✅ |
+| DELETE | /api/gateway/keys/{id} | admin1 | 204 | 204 | ✅ |
+| GET | /api/v1/externa/fichas | key revocada | 401 | 401 (revocación inmediata) | ✅ |
+| GET | /api/publica/ping (x112) | sin token, misma IP | 429 + Retry-After | 429 en la petición 112 (había ~8 previas: 120 por minuto), `Retry-After: 58`, problem+json `LIMITE_EXCEDIDO` (gateway) | ✅ |
+
+Total: 50 comprobaciones del script principal, 50 aprobadas, 0 fallidas. Las llamadas internas con JWT no pidieron API Key (PR #7 no rompe lo anterior). La key de prueba se revocó y el consumidor `qa-j17-*` quedó creado en la BD local (no hay endpoint para borrarlo).
+
+Comprobaciones adicionales: mientras el cupo por IP estaba agotado, `/api/publica/eventos/recibidos` con y sin JWT también devolvió 429 (el límite se aplica antes de la autenticación; es coherente con el diseño). Llamadas directas a los puertos de los servicios confirman que el 403 de `eventos/recibidos` lo emite `servicio-consulta-publica` con cuerpo vacío.
+
+## Bugs
+
+No se encontraron bugs bloqueantes. Observaciones:
+
+### OBS-J17-1 (Bajo, no bloquea) — responsable sugerido: backend (consulta-publica)
+- **Qué:** el 403 y el 401 de `GET /api/publica/eventos/recibidos` salen del propio servicio con cuerpo vacío y `Content-Type: application/octet-stream` (solo la cabecera `WWW-Authenticate`). El 403 de `ubicacion` en científico sí es problem+json `ROL_INSUFICIENTE` (D55).
+- **Reproducir:** `GET /api/publica/eventos/recibidos` con token de `cientifico1` por el gateway, o directo a `localhost:8083`.
+- **Esperado vs obtenido:** el contrato (§ eventos/recibidos) solo exige 401/403, así que no incumple; pero es inconsistente con el formato de error del resto (§5.1 y D55). Obtenido: 403 con cuerpo vacío.
+- **Archivo probable:** `servicio-consulta-publica/.../config/SecurityConfig` (falta un `AccessDeniedHandler`/`AuthenticationEntryPoint` que emita problem+json).
+
+### OBS-J17-2 (Informativo)
+`/api/publica/**` no devuelve cabeceras `X-RateLimit-*` en respuestas 2xx (solo `Retry-After` en el 429). Es el comportamiento del código (`ApiKeyRateLimitFilter.atenderPortal`) y del contrato (`X-RateLimit-*` solo en la API externa), así que no es defecto; se anota porque el encargo esperaba cabeceras de límite en la ruta pública.
+
+### OBS-J17-3 (Informativo)
+Las pruebas de integración de `servicio-cientifico` leen `servicio-cientifico/.env` (cwd del módulo), que hoy contiene credenciales y llave reales de Aiven. No hubo conexión a Aiven (0 coincidencias de "aivencloud" en los logs de las suites), pero conviene que 17g lo revise.
+
+## No ejecutado
+
+- `web-publica` (npm test, build y Playwright del job `frontend` de CI): fuera del alcance de la tarea 17f.
+- Pruebas opt-in contra el broker desplegado (`QA_RMQ_*`): omitidas por diseño (2).
+- 429 de la API externa por consumidor (60/min) y por 20 keys inválidas/min: no probados en E2E; los cubre la suite del gateway.
+- `servicio-equipos` y `servicio-reportes` no se arrancaron (fuera de alcance).
+
+## Veredicto Iteración 17: APROBADO
+
+Las tres suites de CI pasan en UTC y en America/Bogota (322, 239 y 168 pruebas, 0 fallos), las pruebas antes inestables (`RecifradoServiceTest`, `BusquedaHallazgosApiTest`, `ValidadorDatosHallazgoTest`) pasaron 10 de 10 veces, y los 50 casos E2E por el gateway coinciden con la matriz de `11-seguridad-y-acceso.md`, el 403 de `sinrol1` es problem+json `ROL_INSUFICIENTE` (D55) y las API Keys y el límite por IP funcionan sin romper las rutas internas con JWT. Solo hay una observación de formato de error (Bajo).
+
+---
+
+# Iteración 18: verificación de SEC-J-19 y SEC-J-20
+
+Fecha: 2026-11-09. Rama `feature/ubicacion-consulta-publica`. Commits verificados: SEC-J-19 (`ArquitecturaSeguridadTest` sin vías de elusión) y SEC-J-20 (`ProblemaSeguridadHandler`: 403 problem+json `ROL_INSUFICIENTE` y 401 del contrato en todo el servicio). Durante la sesión el historial se reescribió: los hashes actuales son `fc769a9` (SEC-J-19) y `efed795` (SEC-J-20); el contenido es el mismo que los `d718be5` y `e49373a` del encargo.
+
+## Resumen de ejecución (`mvn -B -pl servicio-cientifico,servicio-consulta-publica -am verify`)
+
+| Ejecución | servicio-cientifico | servicio-consulta-publica | Resultado |
+|---|---|---|---|
+| TZ=UTC | 434 pruebas, 0 fallos, 2 omitidas | 339, 0 fallos, 0 omitidas | BUILD SUCCESS |
+| TZ=America/Bogota (1.ª) | 434, 0, 2 omitidas | 339, **1 fallo**, 0 | BUILD FAILURE (ver BUG-J18-1) |
+| TZ=America/Bogota (repetición completa) | 434, 0, 2 omitidas | 339, 0, 0 | BUILD SUCCESS |
+
+- La suma de los XML de `surefire-reports` de científico da 437 (2 omitidas), como midió el Tech Lead; el resumen de Maven da 434. Es una diferencia de conteo del informe (probablemente pruebas dinámicas/anidadas), no un fallo; las 2 omitidas coinciden (broker desplegado opt-in).
+- Repetí 5 veces `PublicadorNoPermitidoIntegracionTest` aislada en Bogota: 5/5 en verde. El fallo es intermitente (1 de 7 ejecuciones en total).
+- Cobertura (JaCoCo): no disponible en este build, no medida.
+
+## Cobertura de las pruebas nuevas (revisadas leyendo el código y ejecutadas)
+
+| Requisito | Dónde se prueba | Estado |
+|---|---|---|
+| 403 problem+json `ROL_INSUFICIENTE`, `Cache-Control: no-store`, cuerpo fijo (`type`, `title`, `status`, `detail`, `instance`, `codigo`) fuera de `ubicacion` | científico: `SeguridadEndpointsTest` (todo endpoint con JWT sin roles y con rol no permitido, `/api/cientifico/ping`, `/api/cientifico/eventos/prueba`, denyAll en `/`, `/actuator/*`, `/api/publica/*`...). consulta-pública: `/api/publica/eventos/recibidos` con 6 roles y sin roles, y rutas denyAll | Cubierto |
+| 401 sin cuerpo, `WWW-Authenticate: Bearer`, `no-store` | ambos `SeguridadEndpointsTest` (sin token en todos los endpoints; ruta pública con token malo) | Cubierto |
+| 401 sin la descripción interna del decodificador JWT | `unJwtInvalidoDa401SinCuerpoSinFiltrarElMotivoInterno` en ambos: cabecera exacta `Bearer error="invalid_token"`, sin "firma rota" ni "interno-7" | Cubierto |
+| `UbicacionExceptionHandler` sigue respondiendo y auditando primero en `ubicacion` | Sin prueba nueva en SEC-J-20; lo cubren las existentes `MapaApiTest.losDemasRolesRecibenElMapaDenegado` (problem+json, no-store, `ROL_INSUFICIENTE`) y `AuditoriaYSinFiltracionesTest` / `BusquedaHallazgosApiTest` (auditoría del 403); todas en verde | Cubierto (regresión) |
+| `ConsultaPublicaExceptionHandler` ya no convierte AccessDenied en 500 | `unAccessDeniedExceptionDeUnEndpointDeFichasNoSeConvierteEn500` (mock lanza `AccessDeniedException`, esperado 403 `ROL_INSUFICIENTE` sin filtrar el mensaje) | Cubierto |
+| El 403 no filtra trazas ni detalles internos | `elCuerpoDel403NoFiltraTrazasNiDetallesInternos` en ambos | Cubierto |
+
+Huecos menores (no bloqueantes): no hay prueba que combine "denyAll de la cadena de filtros" con auditoría (no se audita fuera de `ubicacion`, lo que es el diseño); el 403 de `/actuator/env` se probó en vivo (abajo) y en la suite, pero la suite no comprueba `Cache-Control` en esa ruta concreta salvo mediante `esRolInsuficiente`, que sí lo hace.
+
+## Prueba de mutación manual
+
+| Mutación (temporal) | Resultado |
+|---|---|
+| Quitar `@PreAuthorize` de `PingController` (científico, línea 21) | `ArquitecturaSeguridadTest` falla (69 pruebas, 1 fallo): "methods ... annotated with @RequestMapping should tener @PreAuthorize con un rol..." |
+| Cambiar `permitAll()` por `isAuthenticated()` en `FichasPublicasController` línea 44 (consulta-pública) | `ArquitecturaSeguridadTest` falla (66 pruebas, 1 fallo) |
+
+Ambos archivos restaurados con `git checkout -- <archivo>`; `git status` limpio tras cada mutación y al final.
+
+## E2E por el gateway (perfil `local`, nunca `aiven`)
+
+Infraestructura local arriba (keycloak, mysql, rabbitmq, redis). Levanté consulta-pública (8083), científico (8081) y api-gateway (8080) con perfil `local`, cwd fuera del repo y llave de ubicación aleatoria. Usuario `sinrol1` (sin ninguno de los 5 roles).
+
+| Petición | Resultado obtenido | Estado |
+|---|---|---|
+| GET `/api/publica/eventos/recibidos` por gateway, `sinrol1` | 403, `application/problem+json`, `no-store`, `{"codigo":"ROL_INSUFICIENTE", "instance":"/api/publica/eventos/recibidos", ...}` | OK |
+| Ídem sin token (gateway) | 401, `WWW-Authenticate: Bearer`, `no-store`, sin cuerpo | OK |
+| Ídem directo al servicio 8083, `sinrol1` | 403 problem+json `ROL_INSUFICIENTE`, `no-store` (antes de SEC-J-20: cuerpo vacío) | OK, es la causa raíz de OBS-J17-1 corregida |
+| Ídem directo 8083, sin token | 401 `WWW-Authenticate: Bearer`, `no-store`, sin cuerpo | OK |
+| Ídem directo 8083, token basura | 401 `WWW-Authenticate: Bearer error="invalid_token"`, sin descripción interna | OK |
+| Directo 8081 `/api/cientifico/ping`, `sinrol1` | 403 problem+json `ROL_INSUFICIENTE`, `no-store` | OK |
+| Directo 8081 `/api/cientifico/ubicacion/mapa`, `sinrol1` | 403 problem+json (handler de `ubicacion`) | OK |
+| Directo 8081 `/api/cientifico/ping` sin token | 401 `Bearer`, `no-store`, sin cuerpo | OK |
+| Directo 8081 `/actuator/env`, `sinrol1` | 403 problem+json `ROL_INSUFICIENTE` | OK |
+
+OBS-J17-1: **CERRADO**. Servicios y gateway detenidos al terminar; sin cambios en el árbol.
+
+## Bugs
+
+### BUG-J18-1 (Bajo) Prueba intermitente: `PublicadorNoPermitidoIntegracionTest.elBrokerRechazaUnUserIdFalsificado`
+- Responsable sugerido: backend (dueño de la prueba, no es código de producción).
+- Archivo: `servicio-consulta-publica/src/test/java/co/edu/unbosque/biohub/consultapublica/eventos/PublicadorNoPermitidoIntegracionTest.java:86`.
+- Reproducir: `TZ=America/Bogota mvn -B -pl servicio-cientifico,servicio-consulta-publica -am verify` repetidas veces; falló 1 vez en 7 (no falló en UTC ni en 5 ejecuciones aisladas).
+- Esperado: `assertThatThrownBy` recibe una excepción porque RabbitMQ rechaza el `user_id` falsificado.
+- Obtenido: `Expecting code to raise a throwable` (línea 86). El log de esa misma ejecución muestra que el broker sí rechazó: `PRECONDITION_FAILED - user_id property set to 'guest' but authenticated user was 'intruso_mq2'`, pero el cierre de canal llega de forma asíncrona y el `queueDeclarePassive` posterior se ejecutó antes de que se propagara (condición de carrera). No es una regresión de SEC-J-19/20 (ningún archivo tocado por esos commits interviene); no depende de la zona horaria, solo coincidió.
+- Sugerencia: esperar con `Awaitility` hasta ver el error de canal (o comprobar la ausencia de la ficha y que el mensaje no se entregó) en vez de una sola operación posterior.
+
+## No ejecutado
+
+- Frontends (`web-interna`, `web-publica`), servicio-equipos y servicio-reportes: fuera de alcance.
+- Cobertura JaCoCo: no configurada.
+
+## Veredicto Iteración 18: APROBADO
+
+SEC-J-19 y SEC-J-20 cumplen lo declarado: las mutaciones sobre `@PreAuthorize` son detectadas, el 403 problem+json `ROL_INSUFICIENTE` con `no-store` aplica a todo el servicio (comprobado en pruebas y en vivo), el 401 conserva el contrato sin filtrar la descripción del decodificador, el handler de `ubicacion` sigue auditando y `ConsultaPublicaExceptionHandler` ya no produce 500. Las suites pasan en UTC y Bogota (434 y 339, 0 fallos tras repetir). Queda un único hallazgo Bajo (BUG-J18-1, prueba intermitente), que no bloquea el push pero conviene estabilizar porque puede hacer fallar el CI al azar.
+
+---
+
+# Iteración 20 – teselas por el gateway (20b)
+
+Alcance: parte frontend de SEC-J-04 (cambios sin commit en `web-interna/src/ubicacion/**`: `CapaTeselasGateway.js`, `TeselasGateway.jsx`, `MapaHallazgos.jsx`, `PaginaMapa.jsx`, `ubicacionApi.js` con `getBlob`, y las pruebas asociadas).
+
+## Comandos y resultados
+
+| Comando (en `web-interna`) | Resultado |
+|---|---|
+| `npx vitest run` (estado recibido, sin mis pruebas) | 5 archivos, **73 pruebas aprobadas, 0 fallidas** |
+| `npx vitest run` (con `qa-teselas.test.jsx`) | 6 archivos, **84 pruebas aprobadas, 0 fallidas** |
+| `npm run build` | OK, 21 módulos, `index-*.js` 248.30 kB (77.42 kB gzip) |
+| Cobertura | No configurada |
+
+Alcance del cambio: `git status` fuera de `web-interna/src/ubicacion/**` solo muestra `docs/equipo/00-plan.md`, `04`, `11` (y `06`, mío). No se tocaron `App.jsx`, `package.json`, login ni navegación. No hay dependencias nuevas. Única mención a OSM en código: la atribución (obligatoria) y comentarios.
+
+## Qué se comprobó
+
+- Las pruebas del desarrollador sí prueban lo pedido: URL relativa `/api/gateway/teselas/{z}/{x}/{y}.png`, con el cliente real `fetch` a `apiUrl` + ruta con `Authorization: Bearer`, `Accept: image/png`, `credentials: omit` y sin `cache` (`ubicacionApi.test.js`, `CapaTeselasGateway.test.jsx`); `fetch` nunca recibe `openstreetmap` y no hay `<img src>` remoto; `getBlob` 200/400/401/403/429/502/503/sin red/corte de cuerpo/abort/fallo de token; aborto por tesela, por zoom y al desmontar sin `tileerror`; revocación de object URL (carga, error de decodificación, descarte, idempotente); 401 una sola vez; 403/429/5xx/0 no cierran sesión; cliente sin `getBlob` degrada a `tileerror`; umbral y paso a Lista en `PaginaMapa.test.jsx` (con `TeselasGateway` simulado).
+- No se rompió nada existente: las 73 pruebas previas pasan; `alt=''` y `role=presentation` en teselas; marcadores y teclado siguen cubiertos en `PaginaMapa.test.jsx`/`MapaHallazgos` sin cambios de comportamiento (el diff de `MapaHallazgos.jsx` solo cambia la capa y el contador).
+- Huecos que cubrí en `web-interna/src/ubicacion/pruebas/qa-teselas.test.jsx` (11 pruebas, todas pasan, con Leaflet real en jsdom): respuesta (blob) tardía tras desmontar con cliente que ignora la señal (sin object URL ni errores); 401 tardío tras desmontar (no cierra sesión); StrictMode (una sola capa, descargas del primer montaje abortadas, sin errores); cambio de `cliente` entre renders (capa recreada, señales anteriores abortadas); 429 repetidos superan `MAX_ERRORES_TESELAS` y avisan una sola vez; el umbral exacto no avisa; abortos no cuentan; sin `<img>` externos; 401 con aborto previo no avisa.
+- `06-plan-pruebas.md`: agregados WC-09..WC-14 y WI-15 (sin tocar lo existente) y la fila de trazabilidad de HU-07.2.
+
+## Bugs y observaciones
+
+### BUG-J20-1 (Bajo) `alSesionVencida` se llama una vez por capa, no una vez por mapa
+- Responsable sugerido: frontend.
+- Archivo: `web-interna/src/ubicacion/componentes/CapaTeselasGateway.js:24,55-58` (la bandera `_sesionAvisada` vive en la capa) y `TeselasGateway.jsx:17-29` (el efecto recrea la capa si cambia `cliente`, `attribution` o `maxZoom`).
+- Pasos: montar `TeselasGateway` con un cliente que responde 401, esperar, `rerender` con otro cliente que también da 401.
+- Esperado (README/11 §7: "una sola vez"): 1 llamada. Obtenido: 2 (`qa-teselas.test.jsx`, prueba "cambio de cliente... una vez POR CAPA", que documenta el comportamiento actual y pasa). Además, un 401 de la lista (`PaginaMapa.jsx:52`) y otro de teselas pueden llamarlo ambos. En la práctica `alSesionVencida` de Santiago redirige al login, por lo que el impacto es bajo; conviene que sea idempotente.
+- Corrección sugerida: mover la bandera a `TeselasGateway` (`useRef`) o dejar documentado que el consumidor debe ser idempotente.
+
+### BUG-J20-2 (Bajo, documentación) Casos de prueba existentes con texto obsoleto
+- Responsable: QA/docs. `06-plan-pruebas.md` WI-05 dice "teselas solo de OSM" y WP-09 "ninguna a teselas": ahora las teselas salen por el gateway del mismo origen. No los reescribí (regla); WC-09 y WI-15 describen el comportamiento vigente.
+
+### Observaciones (no son bugs del cambio)
+- El mapa base no reintenta: más de 3 teselas fallidas (incluido un 429 pasajero o un 503 del circuit breaker) pasan a la vista Lista hasta recargar, y el contador no se reinicia. Es el diseño previo; el riesgo de 429 es bajo (una vista usa 20-40 de 600/min), pero un `Retry-After` podría usarse.
+- No verificado en navegador real (WI-15 pendiente): carga de `blob:` con una CSP, comportamiento real de Leaflet al hacer zoom animado con descargas en vuelo y que el gateway esté levantado. Las pruebas usan jsdom con medidas simuladas.
+- La capa depende de internos de Leaflet (`_tiles`, `_tileZoom`, `_abortLoading`); está fijada la versión 1.9, pero una actualización mayor exige revisar `qa-teselas.test.jsx` y la prueba de zoom.
+
+## Veredicto Iteración 20b: APROBADO CON OBSERVACIONES
+
+El cambio cumple lo declarado: las teselas van solo al gateway con Bearer a través del `cliente` inyectado, cero peticiones a OSM, abortos y object URL bien manejados, aviso y paso a Lista intactos, sin regresiones (84/84 pruebas, build OK) y sin salirse del reparto. Quedan dos hallazgos Bajos (BUG-J20-1, BUG-J20-2) y la verificación en navegador real pendiente (WI-15), que no bloquean el commit.
+
+---
+
+## Iteración 20f – verificación de SEC-J-24 (zoom ≥ 9 sin caché)
+
+Alcance: cambios sin commit de la tarea 20e (`ubicacionApi.js`: `getBlob(ruta, { signal, sinCache })` y orden de `...opciones`; `CapaTeselasGateway.js`: `ZOOM_SIN_CACHE = 9`; pruebas, README, `11` §7, D57).
+
+### Comandos y resultados
+
+| Comando (en `web-interna`) | Resultado |
+|---|---|
+| `npx vitest run` (estado recibido) | 6 archivos, **86 pruebas aprobadas, 0 fallidas** (coincide con el Tech Lead; antes 84) |
+| `npm run build` | OK, 21 módulos, `index-*.js` 248.30 kB (77.42 kB gzip) |
+| `npx vitest run` (con mis 5 casos nuevos en `qa-teselas.test.jsx`) | 6 archivos, **91 pruebas aprobadas, 0 fallidas** |
+| Cobertura | No configurada |
+
+### Qué se comprobó
+
+- Umbral: la prueba nueva de `CapaTeselasGateway.test.jsx` cubre zooms 0, 5, 8 (`sinCache: false`) y 9, 10, 12 (`true`) y la constante `ZOOM_SIN_CACHE === 9`. Suficiente.
+- `ubicacionApi.test.js`: con `sinCache` el `fetch` lleva `cache: 'no-store'`, `Authorization: Bearer`, `credentials: 'omit'` y la misma `signal`; sin la opción no existe la propiedad `cache`. Suficiente.
+- Regresión por mover `...opciones`: `get` sigue con `cache: 'no-store'` (prueba existente `envía Bearer, no-store...` pasa y mi prueba nueva lo reafirma con headers exactos y `omit`). Con `opciones` primero ya nada puede sobrescribir `headers`, `credentials` ni `signal`; hoy `opciones` solo trae `cache`, así que no hay cambio observable. Las 11 pruebas previas de `qa-teselas.test.jsx` siguen pasando.
+- Huecos cubiertos por mí en `web-interna/src/ubicacion/pruebas/qa-teselas.test.jsx` (5 pruebas nuevas, todas pasan): mapa Leaflet real + cliente real con `fetch` simulado a zoom 8, 9 y 12 (cada petición: URL `http://gw/api/gateway/teselas/{z}/x/y.png`, `no-store` solo desde 9, Bearer, `Accept: image/png`, `omit` y `AbortSignal`); `sinCache: false` y `undefined` explícitos no mandan `cache`; `get` conserva `no-store` y headers exactos; con `sinCache` un 401 sigue traduciéndose a `ErrorApi` 401. Los tests del desarrollador probaban capa y cliente por separado; estos prueban la cadena completa.
+- Alcance: sin dependencias nuevas, sin cambios fuera de `web-interna/src/ubicacion/**` y docs. No toqué código de producción.
+
+### Bugs
+
+Ninguno nuevo (no se abre BUG-J20-3 ni posteriores). Siguen abiertos BUG-J20-1 y BUG-J20-2 de la 20b, sin relación con este cambio.
+
+### Observaciones (no bloquean)
+
+- `no-store` en la petición evita leer y guardar, pero NO borra entradas de zoom ≥ 9 que ya estén en disco de versiones anteriores (hasta 24 h por el `max-age=86400`). Es transitorio; el `Clear-Site-Data: "cache"` al cerrar sesión (opcional, Santiago) lo resolvería.
+- El umbral usa `coords.z` de Leaflet; con `zoomOffset` o capas retina distintos de 0 habría que revisarlo (hoy no se usan).
+- La no escritura real en la caché HTTP solo se puede comprobar en navegador real (pestaña Network / `chrome://cache`): las pruebas verifican la opción enviada a `fetch`, no el comportamiento del navegador. Pendiente manual junto con WI-15.
+
+### Veredicto 20f: APROBADO CON OBSERVACIONES
+
+SEC-J-24 queda corregido en el código: el umbral 9, la opción `no-store` y la conservación de token, `omit` y señal están cubiertos con pruebas, `get` no cambió y no hay regresiones (86/86 recibido, 91/91 con mis casos, build OK). Las observaciones son de verificación en navegador real y de entradas antiguas en caché.
+
+---
+
+# Iteración 21 – arnés, E2E de ubicación y CI de web-interna (21c)
+
+Alcance: cambios sin commit de 21a (arnés `src/ubicacion/dev/`, E2E `src/ubicacion/e2e/*.e2e.js`, `playwright.config.js`, `package.json`/lock, correcciones de `MapaHallazgos.jsx`, README) y 21b (`.github/workflows/ci.yml`). No toqué código de producción, pruebas existentes, `ci.yml` ni `package.json`; las mutaciones se aplicaron con copia de respaldo y se restauraron (verificado con `sha256sum`: los cuatro archivos tocados quedaron idénticos). Mis pruebas de apoyo están fuera del repo (scratchpad de la sesión).
+
+## Comandos ejecutados y resultados
+
+| Comando | Resultado |
+|---|---|
+| `cd web-interna && npx vitest run` | 6 archivos, **92 pruebas aprobadas, 0 fallidas** (coincide con el reporte del agente) |
+| `npm run build` | OK, 21 módulos; `dist/` = `index.html`, `assets/index-*.css` (0.65 kB), `assets/index-fygnyAIi.js` (248.30 kB, 77.42 kB gzip: mismo tamaño que en 20b/20f). `grep -ril "arnes\|simulado\|token-simulado\|sesionSimulada\|Playwright\|__llamadasFetch\|localhost:5175" dist` sin resultados: **nada del arnés en `dist/`** |
+| `E2E_SIN_WEBKIT=1 npm run test:e2e` (3 corridas seguidas, local, Chromium + Firefox) | **78 aprobadas, 0 fallidas, 0 inestables** en las 3 (35.4 s, 35.4 s, 34.9 s). 39 por motor |
+| `E2E_SIN_WEBKIT=1 npx playwright test --repeat-each=3 --workers=8` | **234 aprobadas, 0 fallidas** (1.6 min) |
+| Igual con carga: 4 procesos `yes` ocupando CPU, `--repeat-each=2 --workers=16` | **156 aprobadas, 0 fallidas** (1.6 min) |
+| Docker `mcr.microsoft.com/playwright:v1.64.1-noble`, `CI=1` (retries=1, reporter html), 3 motores, 2 corridas | **117/117 aprobadas en las dos** (47.3 s y 56.0 s); sin línea de "inestables" (`retries` no se usó). WebKit corre en la imagen |
+| `npm audit --omit=dev --audit-level=high` | 0 vulnerabilidades |
+| `TZ=America/Bogota mvn -B -ntp -pl servicio-consulta-publica -am test -DargLine=-Duser.timezone=America/Bogota` | BUILD SUCCESS, **364 pruebas, 0 fallos, 0 errores**; el XML de Surefire muestra `user.timezone=America/Bogota` (35 archivos). `ValidadorDatosHallazgoTest`: 20 pruebas |
+| Igual con `TZ=UTC` y `-DargLine=-Duser.timezone=UTC` | 364 / 0 / 0; `user.timezone=UTC` |
+| Humo del modo real del arnés (no es WI-13) | `http://localhost:5173/src/ubicacion/dev/arnes.html?pantalla=mapa` redirige al Keycloak de Compose y muestra el formulario "Sign in to BioHub". En el puerto 5175 Keycloak responde "Parámetro no válido: redirect_uri" (solo acepta 5173, como dice el README). No inicié sesión: queda pendiente |
+| Cobertura | No configurada |
+
+No se ejecutó: el job de GitHub Actions (no hay forma local; revisado por lectura y con `yaml.safe_load`, que lista los 4 jobs y las 5 entradas de la matriz), el modo real con login (WI-13) y la guía manual de caché (WI-15 manual), WebKit en el equipo (faltan librerías del sistema; sí en Docker).
+
+Incidente propio, sin efecto en el código: `npm ci --dry-run` **borró `web-interna/node_modules`** (comportamiento conocido de npm). Lo restauré con `npm ci` y repetí Vitest (92/92). `git status` no cambió. No usar `--dry-run` para "ver" si el lockfile es consistente.
+
+Inestabilidad observada: **ninguna** en 78+78+234+156 ejecuciones locales y 234 en Docker, con y sin carga. Las E2E esperan por condiciones (`expect`, `expect.poll`); quedan 4 `waitForTimeout`: `mapa.e2e.js:78` y `:209` (esperas negativas, "no debe aparecer ningún error"), `mapa.e2e.js:201` y `seguridad.e2e.js:12` (400 ms entre clics del zoom). Los dos últimos están en un bucle que termina por el estado del botón ("+" deshabilitado), así que una máquina lenta alarga la prueba pero no la rompe; el helper está duplicado en los dos archivos.
+
+## Mutaciones (código de producción, temporales; Vitest y Playwright Chromium, 39 pruebas)
+
+| # | Mutación | Vitest | E2E (Chromium) | Veredicto |
+|---|---|---|---|---|
+| M1 | `keydown:` -> `keydownX:` en `MapaHallazgos.jsx` (quita el Enter del marcador) | 1 falla (la nueva de Enter/Espacio) | 1 falla: WI-05 teclado | Detectada por las dos capas |
+| M2 | `ZOOM_SIN_CACHE` 9 -> 10 | 2 fallan | 1 falla: WI-15 (`no-store` a zoom 9) | Detectada |
+| M2b | `ZOOM_SIN_CACHE` 9 -> 8 | 2 fallan | 1 falla: WI-15 (zoom 8 no debe llevar `cache`) | Detectada |
+| M3 | `TeselasGateway.jsx` usa `L.tileLayer("https://tile.openstreetmap.org/...")` en vez de la capa del gateway | 8+ fallan | **7 fallan**: WI-15 (los dos), WI-14, WC-12, WC-13 (los 3 casos) | Detectada |
+| M5 | `ZOOM_MAXIMO` 12 -> 13 | 1 falla | 2 fallan: WI-14 y WI-15 | Detectada |
+| M6 | `esAltoRango()` devuelve siempre `true` | 8+ fallan | **9 fallan**: WI-02 (4 roles) y WI-06 (4 roles + sin rol) | Detectada |
+| M8 | `console.log(JSON.stringify(puntos))` en el mapa | 0 fallan | 1 falla: WI-10 (consola) | Detectada solo por la E2E (aporta valor sobre Vitest) |
+| M4 | Quitar `<CerrarZoomAlQuitar />` (volver al error `_leaflet_pos`) | 0 fallan | **0 fallan en la corrida completa** | **Detectada solo a veces**: ver abajo y BUG-J21-1 |
+| M9 | Quitar `!this._sesionAvisada` (un `alSesionVencida` por tesela) | 3 fallan | **0 fallan** | **No detectada por la E2E** (BUG-J21-2); sí por Vitest |
+| M10 | Quitar `' '` de `esTeclaDeActivacion` | 1 falla (Espacio) | no aplica (la E2E solo prueba Enter) | Detectada por Vitest |
+| M11 | Quitar `e.originalEvent.preventDefault()` del `keydown` | 0 fallan | 0 fallan | **No detectada** (BUG-J21-3) |
+
+Detalle de M4: la prueba "Saltar el mapa y ver la lista" de `mapa.e2e.js` sí reproduce el error, pero a veces. Con la corrección quitada y solo esa prueba con `--repeat-each=6` (Chromium y Firefox): **8 fallos y 4 aciertos de 12** (el `pageerror` `Cannot read properties of undefined (reading '_leaflet_pos')`, en Firefox `can't access property "_leaflet_pos", el is undefined`). En la corrida completa pasó. Con la corrección puesta, esa misma prueba pasó en todas las ejecuciones (cientos). Con una prueba mía que pulsa "Lista" a 0, 10, 30, 60, 100, 150 y 200 ms después de que aparecen los marcadores (3 repeticiones, 2 motores): sin la corrección falla en **25 de 42**, con la corrección en **0 de 42**.
+
+## Calidad de las E2E, caso por caso
+
+- **Fuertes** (comprueban lo que el caso pide; ver mutaciones): WI-02, WI-05 (marcadores, ratón y Enter/Esc con foco), WI-06 (0 peticiones al gateway medidas en la red, no solo en el mock), WI-10 (URL, título, almacenamiento, cookies, consola), WI-12, WI-14, WI-15 (red completa sin OSM ni hosts externos, Bearer, `fetch` en vez de `<img>`, `no-store` solo desde zoom 9, 429/503/sin red sin respaldo a OSM) y WC-13.
+- **Suficientes**: WI-01, WI-03, WI-07, WI-08 y WI-09 (afirman textos y la petición con filtros/`hallazgoId`).
+- **Débiles**: WI-04 y WC-12 (BUG-J21-2) y la parte "Lista durante el zoom" (BUG-J21-1).
+- **Límites que el propio README declara y confirmo**: las cabeceras `Cache-Control`/`Pragma` de las teselas solo se registran como anotación (Playwright desactiva la caché con rutas interceptadas), así que "no queda en disco" no es verificable en E2E y sigue en la guía manual. El WI-04 de las E2E prueba que la UI pide iniciar sesión, no la redirección real de Keycloak (eso es WI-13).
+- **Puertos**: 5175 fijo con `--strictPort` y `reuseExistingServer: !CI`. En CI no hay reutilización y falla ruidosamente si el puerto está ocupado; en local, un servidor ajeno en 5175 se reutilizaría (con `.env.development` apuntando a 8080 no rompe). 8080 no es un puerto que se use: es solo el origen interceptado (`page.route`); con un gateway real escuchando en 8080 las pruebas siguen sin tocarlo.
+- La constante `ZOOM_SIN_CACHE = 9` está copiada en `seguridad.e2e.js:3`: es deliberada, así M2 y M2b se detectan.
+
+## Las dos correcciones de `MapaHallazgos.jsx`
+
+- **Enter/Espacio (`keydown`)**: correcta. Leaflet 1.9.4 no convierte `keypress` en `click` (`Map.js` solo reenvía el evento), por eso Enter no abría el detalle; M1 lo demuestra. Verificado con una prueba mía en Chromium y Firefox: Espacio sobre el marcador abre el detalle y llega con `defaultPrevented = true`, otra tecla (`a`) no hace nada, Tab pasa al siguiente marcador y Enter abre el suyo, sin errores de página. La prueba unitaria nueva cubre Enter, Espacio y una tecla que no cuenta (M10 la rompe). No cubre `preventDefault` ni `'Spacebar'` (BUG-J21-3). Una pulsación mantenida repite `onSeleccionar`, que es idempotente.
+- **`CerrarZoomAlQuitar`**: correcta y mínima. Sin ella el error ocurre de verdad (reproducido arriba); con ella hay 0 errores en 42 + 156 + 234 ejecuciones. `Map._onZoomTransitionEnd` (Leaflet 1.9.4, `Map.js:1718`) sale si `_animatingZoom` es falso, que es justo lo que se aprovecha. Pasar a Lista, volver a Mapa y StrictMode no se rompen (efecto con dependencia `[mapa]`; en el doble montaje de StrictMode el cierre inicial pone `false`, que ya era el valor).
+- **Riesgo de `_animatingZoom`**: es un campo interno, no API. `package.json` declara `leaflet ^1.9.4`: dentro de 1.x no cambia (1.9.4 es la última), y 2.x no entra con ese rango. Si una versión futura lo renombrara, la asignación crearía una propiedad nueva sin error, el defecto volvería en silencio y la única red de seguridad sería la prueba de BUG-J21-1, que hoy es probabilística. Misma clase de riesgo que `_tiles` en `CapaTeselasGateway.js`. Aceptable si se estabiliza esa prueba y se anota la versión en el README (ya lo hace el comentario del código).
+
+## CI (21b)
+
+- **Lógica del YAML**: correcta. `hashFiles('web-interna/playwright.config.js')` se evalúa desde la raíz del workspace, no desde `working-directory` (el comentario lo dice bien). Los tres pasos condicionales lo usan; el del artefacto combina `failure() && hashFiles(...)`. Nombres de artefactos únicos: `playwright-report-web-interna` (frente a `playwright-report` de web-publica) y `surefire-<servicio>-utc|bogota` (la expresión `matrix.tz == 'UTC' && 'utc' || 'bogota'` es válida porque `'utc'` no es falso). Las 5 entradas de la matriz y sus nombres (`backend (servicio, tz)`) son únicos.
+- **Coincide con lo que necesitan las E2E**: `npx playwright install --with-deps chromium firefox webkit` (instala los 3 motores y las librerías del sistema que a mí me faltan para WebKit), `npm run test:e2e` (la config usa `CI` para `retries: 1`, `forbidOnly` y reporte `html` en `web-interna/playwright-report`, que es la ruta que sube el artefacto). Versión de Playwright fijada en 1.64.1 igual que la imagen con que probé; `package-lock.json` coherente y `npm audit` en 0. `npm test` no recoge los `*.e2e.js` (Vitest: 92, ya comprobado).
+- **Zona horaria**: `TZ` a nivel de job y `-DargLine=-Duser.timezone=<tz>` son efectivos: el XML de Surefire lo demuestra en las dos zonas, y ningún `pom.xml` define `argLine` ni usa Failsafe (todas las pruebas, incluidas las de integración, corren en Surefire, que lee la propiedad). Con la máquina del equipo ya en America/Bogota la corrida "Bogota" no distingue por sí sola; por eso confirmé la zona efectiva en el XML y repetí con UTC.
+- Observaciones de CI (no bloquean): (1) la condición `hashFiles` hace que, si alguien borra o renombra `playwright.config.js`, las E2E se salten en silencio; según `00-plan.md` el Tech Lead ya decidió quitarla antes del commit (SEC-J-I29). (2) `retries: 1` en CI deja pasar una prueba inestable con éxito y solo lo anota en el log; conviene revisar a mano si aparece "flaky". (3) La CI no comprueba que `dist/` esté libre del arnés; un paso `! grep -rilE "arnes|token-simulado" dist` lo dejaría vigilado. (4) El artefacto de Surefire solo toma `target/surefire-reports`; hoy sirve porque no hay Failsafe. (5) Los archivos `web-interna/playwright.config.js`, `web-interna/.gitignore`, `dev/` y `e2e/` están sin seguir en git: hay que añadirlos (`git add`) o el job `web-interna` correrá sin E2E y sin avisar. (6) Los nombres de los jobs de backend cambiaron: hay que actualizar cualquier "check requerido" de protección de ramas si algún día se configura (hoy no hay).
+
+## Bugs y observaciones
+
+### BUG-J21-1 (Bajo) La E2E que protege contra `_leaflet_pos` detecta la regresión solo en ~2 de 3 ejecuciones
+- Responsable sugerido: frontend (E2E).
+- Archivo: `web-interna/src/ubicacion/e2e/mapa.e2e.js:62-80` (prueba "Saltar el mapa y ver la lista").
+- Pasos: quitar `<CerrarZoomAlQuitar />` de `MapaHallazgos.jsx:76` y correr `E2E_SIN_WEBKIT=1 npx playwright test -g "Saltar el mapa" --repeat-each=6`.
+- Esperado: falla siempre. Obtenido: 8 fallos y 4 aciertos de 12; en `npm run test:e2e` completo pasó (0 fallos). Evidencia: `pageerror: Cannot read properties of undefined (reading '_leaflet_pos')`.
+- Causa: el clic llega en un instante variable respecto de la animación de `fitBounds` (250 ms); a veces ya terminó.
+- Corrección sugerida: provocar la animación de forma determinista (por ejemplo pulsar "Lista" nada más contar los marcadores con `page.getByRole('button', { name: 'Lista' })`, que en mis pruebas rompía 25/42 veces sin la corrección, o añadir una unitaria con Leaflet real en jsdom: `fitBounds` con animación, desmontar y avanzar 300 ms con temporizadores falsos).
+
+### BUG-J21-2 (Bajo) La aserción "una sola vez" de WC-12 y WI-04 no detecta llamadas repetidas
+- Responsable sugerido: frontend (E2E).
+- Archivos: `mapa.e2e.js:170` (WC-12), `:162` (WI-04 mapa) y `busqueda.e2e.js:145` (WI-04 búsqueda): `toContainText('(1)')`.
+- Pasos: en `CapaTeselasGateway.js:61` cambiar `error?.status === 401 && !this._sesionAvisada` por `error?.status === 401` y correr las E2E.
+- Esperado: WC-12 falla (el contador llegaría a (2), (3)...). Obtenido: 39/39 aprobadas en Chromium; Vitest sí falla (3 pruebas).
+- Causa: Playwright acepta el primer `(1)` antes de que llegue el segundo aviso, y `toContainText('(1)')` también casaría con "(10)".
+- Corrección sugerida: tras esperar que carguen las teselas (o que aparezca el aviso de mapa base), exigir el texto completo con `toHaveText(/\(1\)\. En modo real/)` dentro de `expect.poll` con una espera de estabilidad, o contar las peticiones de teselas del mock y comparar con el contador.
+
+### BUG-J21-3 (Bajo) Nada prueba que el `keydown` de Espacio evite el desplazamiento de la página
+- Responsable sugerido: frontend (pruebas).
+- Archivo: `web-interna/src/ubicacion/componentes/MapaHallazgos.jsx:89` (`e.originalEvent.preventDefault()`).
+- Pasos: quitar esa línea y correr Vitest y la E2E: 92/92 y 39/39.
+- Esperado: alguna prueba falla (Espacio con `defaultPrevented` falso desplaza la página al usar el teclado). Obtenido: ninguna.
+- Verificado a mano que hoy sí funciona (Chromium y Firefox: `defaultPrevented = true` para Espacio y `false` para otras teclas).
+- Corrección sugerida: en la unitaria, `const e = createEvent.keyDown(marcador, { key: ' ' }); fireEvent(marcador, e); expect(e.defaultPrevented).toBe(true)`; y una E2E de Espacio con un `window.addEventListener('keydown', ...)` que registre `defaultPrevented`.
+
+### Observaciones (no son bugs)
+- WebKit no se pudo correr en el equipo (faltan librerías del sistema); se cubrió con la imagen oficial de Playwright (117/117 dos veces). El primer intento con Docker montando el `node_modules` del equipo falló (`ERR_MODULE_NOT_FOUND`: binarios nativos de otro sistema): hay que ejecutar `npm ci` dentro del contenedor.
+- La guía manual del README tiene un paso (6) que se apoya en la pestaña Red del navegador; nada de eso se ejecutó, ver WI-13/WI-15 en `06-plan-pruebas.md` (P14).
+- Docs al día: 03 (D58), 09 (CI), 00-plan describen lo que hay; `00-plan.md` dice "local web-interna 91/91" y hoy son 92 (la prueba de Enter/Espacio se añadió después); trivial.
+
+## Veredicto Iteración 21c: APROBADO CON OBSERVACIONES
+
+Se cumple lo declarado: Vitest 92/92, `dist/` sin ningún rastro del arnés, E2E 78/78 en local (3 corridas, además de 234 y 156 repetidas con y sin carga), 117/117 dos veces en la imagen de Playwright con los 3 motores y sin inestabilidad. De las 11 mutaciones, 10 son detectadas por alguna capa (M4 solo de forma intermitente por la E2E, M9 y M10 solo por Vitest) y solo sobrevive M11; las E2E aportan valor propio (M3, M6, M8, M2). Las dos correcciones de `MapaHallazgos.jsx` son correctas y no rompen nada. El YAML del CI es coherente con lo que necesitan las E2E y el cambio de zona horaria es efectivo (364/0/0 en UTC y en Bogotá). Quedan tres hallazgos Bajos, todos de calidad de las pruebas y ninguno de producción (BUG-J21-1 a 3), y verificación pendiente en navegador real: WI-13 y la parte manual de WI-15 (guía del README), más Edge para WI-11. Ninguno bloquea el commit.
+
+---
+## Iteración 22 – mediciones de rendimiento de HU-06 c.3 y HU-13 c.3 (22a, 22b)
+
+**Veredicto: CUMPLEN las dos.** Consolidado por el Tech Lead a partir de los informes de los dos qa-tester. El Tech Lead repitió la prueba de HU-13 una vez y obtuvo un p95 máximo de 29,5 ms.
+
+### HU-06 c.3 / CG-02 / RNF5: búsqueda pública, p95 ≤ 2 s, 10.000 fichas, caché fría
+- **Entorno:** `compose-carga.yml` con 1 réplica (2 CPU y 1 GiB) detrás de NGINX, mysql-lectura 8.4.13 y Redis de desarrollo. Siembra con `FICHAS=10000 ./datos/sembrar.sh` (17 familias, 33 departamentos, 20 % `EN_PELIGRO`).
+- **Método:** se vacían solo las claves `biohub:publica:*` antes de cada fase (sin `FLUSHALL`). Fase A: 100 búsquedas distintas con 1 VU. Fase B: otras 100 distintas con 10 VUs. Hay 13 categorías de consulta. Se hicieron 3 corridas y se reporta la mediana. Los JSON cumplen D42.
+
+| Fase | p50 | p95 | p99 | máx | Umbral p95 |
+|---|---:|---:|---:|---:|---:|
+| A (1 VU) | 6,8 | **14,2** | 18,4 | 25,9 | 2.000 |
+| B (10 VUs) | 27,4 | **58,6** | 82,5 | 128,1 | 2.000 |
+
+- **Errores:** 0 respuestas no-200 y 0 búsquedas vacías (entre 8 y 10.000 coincidencias).
+- **Controles:** con la JVM fría, p95 de 20,6 y 84,7 ms (máximo 402 ms). Contra un destino inexistente, el script reporta NO CUMPLE.
+- **EXPLAIN:** usan índice el FULLTEXT por texto y los filtros de familia y departamento.
+- **Limitaciones:** la medición es local y sin gateway, a propósito (RQ-6). `deploy/backend/docker-compose.yml` ya no existe, así que se usaron los límites de ARQ-24. Si el despliegue real tiene menos CPU, hay que repetir con `CARGA_CPUS`.
+- **Evidencia:** `pruebas-carga/resultados/hu06-*.json`, `pruebas-carga/README.md` (sección HU-06 c.3), `correr-hu06-frio.sh` y `resumir-hu06.sh`.
+
+### HU-13 c.3 / CG-08 / HB-23 / DB-07: búsqueda interna, p95 < 3 s, 10.000 hallazgos
+- **Prueba:** `servicio-cientifico/.../ubicacion/rendimiento/BusquedaInterna10kRendimientoTest` (Testcontainers MySQL 8.4.13, Flyway real y MockMvc con la cadena de seguridad real). Se omite por defecto y se activa con `-Drendimiento=true`. El `verify` normal da 459 pruebas, 0 fallos y 3 omitidas.
+- **Siembra:** 10.000 hallazgos (20 % `EN_PELIGRO`), cifrados con el `CifradorCoordenadas` real (AES-256-GCM), en unos 1 s.
+- **Método:** 10 peticiones de calentamiento y 100 medidas por caso, con 4 combinaciones de 2 filtros (151 a 493 coincidencias). Se hicieron 3 corridas y se reporta la mediana.
+
+| Caso | p50 | p95 | p99 | máx |
+|---|---:|---:|---:|---:|
+| alto rango size=20 | 16,1 | 22,1 | 27,8 | 32,5 |
+| alto rango size=50 | 13,0 | 20,1 | 32,5 | 34,2 |
+| alto rango size=100 | 13,1 | 17,2 | 30,4 | 32,5 |
+| investigador size=20 | 8,7 | 12,4 | 17,8 | 24,5 |
+| investigador size=50 | 8,8 | 11,5 | 13,7 | 19,8 |
+| investigador size=100 | 8,0 | 10,4 | 12,3 | 13,6 |
+
+- **Peor caso informativo:** 10.000 coincidencias y página 99, con un p95 de 39,2 ms.
+- **HB-23:** alto rango descifra exactamente `size` registros (≤ `size`). El investigador hace 0 descifrados y no recibe coordenadas.
+- **DB-07 (observación DB-J22-1, Baja, para el dba):** con las estadísticas que deja Flyway, 2 de las 4 combinaciones (investigador+fecha y especie+fechas) tienen un plan degradado: MySQL toma como tabla directriz `ubicacion_departamento`, estimada en 1 fila, y hace "Range checked for each record" sobre unas 9.700 filas. Tras `ANALYZE TABLE` de `ubicacion_departamento` y `ubicacion_region`, usan `idx_ubicacion_hallazgo_invest_fecha` e `idx_ubicacion_hallazgo_especie_fecha`. Con 10.000 filas cuesta unos 10 ms, así que no afecta al criterio. Es un riesgo si el volumen crece. Posible corrección: `ANALYZE TABLE` del catálogo al final de su migración, o como tarea de mantenimiento.
+- **Limitaciones:** MockMvc no incluye la red, el gateway, la validación criptográfica del JWT ni la latencia a una base remota (2 consultas por búsqueda). Las peticiones son secuenciales, sin concurrencia.
+
+**Seguridad:** no aplica revisión de ciberseguridad. Solo hay código de prueba y scripts de carga locales: sin dependencias nuevas, sin cambios de autenticación y sin datos reales (fichas y hallazgos sintéticos).
+
+
+## Iteración 27 – verificación 27a-c/27g y mediciones ASR1/ASR4 (27d, 27e)
+
+**Veredicto: APROBADO con observaciones (0 Críticos, 0 Altos, 0 Medios; 3 Bajos).** Rama `feature/ubicacion-consulta-publica` sobre `14f140c`, con cambios sin confirmar (27a-c y la corrección 27g copiada de `biohub-fix27`). Fecha: 2026-11-22. Entorno: Ubuntu 26.04, 16 CPU compartidas con una VM `qemu` (`biohub-backend`, unos 4 CPU) y `ollama`; Docker con MySQL, Redis, RabbitMQ y Keycloak del Compose raíz.
+
+### Suites ejecutadas (todas aquí, sin tocar el código de producción)
+| Módulo | Comando | Pruebas | Fallos | Errores | Omitidas |
+|---|---|---:|---:|---:|---:|
+| servicio-cientifico | `mvn -B -ntp -pl servicio-cientifico,servicio-consulta-publica verify` | **654** | 0 | 0 | 3 |
+| servicio-consulta-publica | (el mismo comando) | **408** | 0 | 0 | 0 |
+| web-publica, unitarias | `npm test` (Vitest, 6 archivos) | **55** | 0 | 0 | 0 |
+| web-publica, build | `npm run build` | OK; `dist` sin `arnes`, `simulado` ni `token-simulado` | – | – | – |
+| web-publica, E2E | `E2E_SIN_WEBKIT=1 npm run test:e2e`, 3 veces | **38/38 las 3 veces** (19 casos x Chromium y Firefox; 21-23 s) | 0 | – | – |
+
+- Las 3 omitidas del científico son por falta de entorno externo, no por defecto: `PublicadorHallazgoE2ETest` (`QA_HALLAZGO_ID`, necesita un hallazgo real en las VMs), `PublicadorBrokerDesplegadoTest` (`QA_RMQ_PORT`, broker desplegado) y `BusquedaInterna10kRendimientoTest` (se activa con `-Drendimiento=true`). Coinciden con la referencia (654 y 408).
+- **WebKit no se ejecutó** (`E2E_SIN_WEBKIT=1`, el equipo no tiene las librerías; el criterio de aceptación de 27c pedía 38/38, que son Chromium y Firefox). El E2E no fue intermitente en 3 corridas (QA-R-3 se mantiene cerrado en este equipo).
+- Bruno, colección completa contra los servicios vivos: **77 de 78 peticiones y 132 de 133 pruebas**. Las nuevas `consulta-publica/19` a `23`, 5 de 5 en verde. El único fallo (`ubicacion/12-mapa-alto-rango-200`, `omitidos` = 3 en vez de 0) es del entorno: la base transaccional local tiene hallazgos de corridas anteriores cifrados con otra `UBICACION_CLAVES` aleatoria (el servicio los cuenta como omitidos y lo registra como "Integridad de ubicación fallida"). Para llegar a ese punto hubo que borrar y volver a sembrar con `infra/ci/SembrarHallazgos.java` las 3 filas de ubicación de los hallazgos semilla (A, B y C); antes fallaban 5 pruebas por la misma causa.
+- Los servicios se levantaron con el perfil `local`, cwd fuera del repo y `UBICACION_CLAVE_ACTIVA=v1` además de `UBICACION_CLAVES` (sin la primera el científico no arranca). Al terminar se detuvieron los 3 procesos y el Compose de carga.
+
+### Verificación de los criterios (en vivo: gateway :8080 + científico :8081 + consulta-publica :8083)
+| Criterio | Resultado | Evidencia |
+|---|---|---|
+| **Miniatura al publicar (D66)** | Cumple | Foto de 3000x2000 px y 3,7 MB con EXIF y GPS: la miniatura sale de 1200x800 y 480 KB, sin EXIF ni GPS (solo marcador APP0), y su sha256 es el `ETag` de la respuesta. Un audio marcado como público da 400 `DATOS_INVALIDOS` |
+| **Eventos `evidencia.*` y cola `consulta-publica.fotos`** | Cumple | Cola con 1 consumidor, DLX `biohub.eventos.dlx`; cada `publicada`/`retirada` se publica y se confirma (5 de 5 tras la prueba) y la DLQ queda en 0. `reportes.eventos` no recibe eventos de fotos. Retirar la foto da 404 en `/especies/fotos/{id}` y `fotoId: null` en el catálogo de inmediato |
+| **Rutas de foto por `fotoId`** | Cumple | Válida: 200 `image/jpeg`, `Cache-Control: public, max-age=31536000, immutable`, `ETag`, `nosniff`, y `If-None-Match` da 304. UUID en mayúsculas: 200. `no-es-un-uuid` y `%20`: 400 `PARAMETRO_INVALIDO` campo `fotoId`, `no-store`. UUID inexistente o retirado: 404 `NO_ENCONTRADO`. Ruta de compatibilidad `?nombre=`: 200 con `max-age=300`, 404 sin foto, 400 con `<script>`, vacío o con dígitos |
+| **Ninguna ruta de foto sin rol en científico** | Cumple | `/api/cientifico/**` queda `authenticated()` y el único `permitAll` es `actuator/health`; `FotoPublicaController` y `FotosCientificoHttp` están eliminados. `GET /api/cientifico/publico/especies/foto` da 401 sin token y 404 con token |
+| **`familia=` vacío** | Cumple | `/fichas?familia=` y `?familia=%20%20` dan 200 con el mismo total (34) y `filtrosIgnorados` vacío; `/especies?familia=` también |
+| **Republicación (SEC-I27-7, 409)** | Cumple | Sin token 401; investigador, alto rango y auditor 403; `GET` 405; administrador 202 `{"fotos":2}`. Con 8 peticiones en paralelo: 1 con 202 y 7 con **409** `CONFLICTO` en problem+json (el log dice quién la pidió) |
+| **Pendiente 27c: `fotoId` real** | Cumple | El catálogo devuelve el `evidenciaId` real como `fotoId`; la web-publica construida contra el gateway pinta las fotos de la portada (2 de 2 con `naturalWidth` 1200) y la ficha, en Chromium y Firefox |
+| **Pendiente 27c: CORS de la foto** | Cumple | `GET` por el gateway con `Origin: http://localhost:5174`: `Access-Control-Allow-Origin` solo para ese origen y `Vary: Origin`; origen ajeno 403; `OPTIONS` 200. El portal usa `fetch` con `credentials: 'omit'` |
+| **Pendiente 27c: `blob:` en la CSP** | Cumple | `img-src 'self' data: blob: http://localhost:8080` en el build. **Control negativo:** la misma página sin `blob:` queda con `naturalWidth` 0 y Chromium registra "Loading the image 'blob:...' violates the following Content Security Policy directive". Coincide con el README de web-publica (líneas 22, 28 y 36) |
+| **27g: detector endurecido** | Cumple | Corpus `detector-corpus.txt` idéntico en las dos copias (`cmp`), `DetectorCoordenadasParidadTest` y `DetectorCoordenadasTest` en verde. En vivo se rechazan con 400: `5.532, 73.367`, `5°31N 73°22W`, formato Garmin, `lat/lon`, coma decimal, UTM, coordenadas en `nombreComun` y en `atributos` (clave `latitud`, `lat`/`lon`, par en texto, claves `x`/`y` con números). Se aceptan: `altitud 2.500 m, longitud 12 cm`, `25.5 g y 12.75 cm`, `temperatura 12.5 C, pH 7.2`, `temperatura_agua: 12.5` |
+
+Casos nuevos de esta iteración: `06-plan-pruebas.md` P15 (FP-01 a FP-12, DT-01 a DT-05, CG-ASR4, CG-ASR1P).
+
+### Mediciones de carga (27d): ASR1/RNF1 y ASR4/RNF5 con metadatos D42
+**Qué se hizo.** Las corridas de ASR1 (fichas y portada) y el contrafactual son las de la noche anterior y **no se repitieron**, salvo dos que esta verificación detectó como inconsistentes (ver "Descartados"). **ASR4 no existía** (no había `asr4-*.json`): se corrió aquí, con el jar de 27g (imagen `biohub/servicio-consulta-publica:carga` reconstruida), 2 réplicas de 2 CPU y 1 GiB tras NGINX, 2.000 fichas, k6 `grafana/k6:2.3.0` dentro de `biohub_default`, y la caché de `biohub:publica:*` vaciada antes de cada corrida. Todas las corridas válidas declaran N, multiplicador, réplicas (verificadas con Docker), CPU, commit (`14f140c`, árbol sin confirmar), red de k6, fecha, caché y estado de carga del equipo (`parametros`). Umbrales (01, RNF1/RNF5): al menos 95 % de respuestas sin 5xx, estabilización < 5 min, p95 <= 2 s.
+
+**ASR1, fichas y búsquedas virales** (`consulta-publica-pico.js`, N=60, pico x60 = 3.600 req/s, 2 CPU por réplica, caché fría):
+| Corrida | Peticiones | p50 | p95 | p99 | máx | no-200 | 5xx | Éxito D42 | Estabilización | Umbral |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `asr1-fichas-1r-n60-it27` (1 réplica) | 519.273 | 0,8 | 7,0 | 14,6 | 1.094,9 | 0 % | 0 % | 99,94 % (326 iteraciones descartadas) | 0 s | p95 <= 2.000 ms |
+| `asr1-fichas-2r-n60-it27` (2 réplicas) | 519.599 | 1,0 | 5,6 | 10,6 | 1.265,0 | 0 % | 0 % | 100 % | 0 s | p95 <= 2.000 ms |
+
+**ASR1, portada** (`consulta-publica-portada.js`: 1 visita = listado + familias + hasta 12 fotos de ~330 KB, 14 peticiones; N visitas/s de base, pico x60; todas "primera visita", el peor caso). Latencias de petición en ms; las fotos nunca se cachean en el servidor (D66), cada una es una lectura de `foto_publica`:
+| Corrida | Réplicas | Pico | p50 | p95 | p99 | máx | 5xx / timeouts | Éxito D42 | Visitas degradadas | Estabilización | MB/s |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `asr1-portada-1r-n1-fria-it27` | 1 | 60 visitas/s (~840 req/s) | 5,2 | 8,7 | 25,5 | 126,3 | 0 % | 100 % | 0 % | 0 s | 89,6 |
+| `asr1-portada-2r-n1-fria-it27` | 2 | 60 visitas/s (~840 req/s) | 5,2 | 8,3 | 12,4 | 592,1 | 0 % | 100 % | 0 % | 0 s | 89,6 |
+| `asr1-portada-1r-n2-fria-it27` | 1 | 120 visitas/s | 1,7 | 199,1 | 443,6 | 1.020,9 | 0 % | 99,75 % | **90,2 %** (sin `fotoId`) | 0 s | 17,6 |
+| `asr1-portada-2r-n2-fria-it27` | 2 | 120 visitas/s (~1.435 req/s) | 259,1 | 355,4 | 683,5 | 10.003,6 | 0,61 % | **95,34 %** (97,87 % solo por peticiones) | 14,2 % | 0 s | 146,1 |
+| `asr1-portada-2r-n2-caliente-it27` | 2 | 120 visitas/s (~1.544 req/s) | 169,3 | 250,9 | 8.956,7 | 10.011,4 | 1,83 % | **87,49 %** (96,25 % solo por peticiones) | 0,6 % | **195 s** (ventana peor: p95 10 s) | 158,1 |
+| `asr1-portada-2r-n2-fria-it27-repeticion2` (repetición de QA) | 2 | 120 visitas/s (~1.096 req/s) | 85,7 | 515,9 | 773,1 | 8.357,4 | 0 % | 98,62 % | 40,6 % | 0 s | 104,9 |
+| `contrafactual-portada-2r-n2-nginx-cache-fotos-it27` (no es la configuración oficial) | 2 | 120 visitas/s (~1.680 req/s) | 1,4 | 2,7 | 27,4 | 619,6 | 0 % | 99,96 % | 0 % | 0 s | 178,9 |
+
+La latencia de la visita completa (listado + fotos) en el pico de 120 visitas/s: p95 de 125 ms (1 réplica, pero 90 % sin fotos), 1,44 s (2 réplicas, fría), 10 s (caliente) y 1,73 s (repetición).
+
+**ASR4, lectura pública con y sin carga científica** (`carga-cientifica-simultanea.js`, 300 req/s públicas durante 120 s, 2 réplicas, caché fría; la carga científica son 30 eventos/s `hallazgo.registrado`/`reclasificado` por RabbitMQ):
+| Corrida | Peticiones | p50 | p95 | p99 | máx | no-200 | 5xx | Eventos publicados / procesados | Cola al final | DLQ | Umbral |
+|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---|
+| `asr4-sin-it27` (`CIENTIFICA=0`) | 36.001 | 1,3 | 6,9 | 11,7 | 17,1 | 0 % | 0 % | – | – | – | p95 <= 2.000 ms |
+| `asr4-con-it27` (`CIENTIFICA=1`) | 36.001 | 1,3 | 7,2 | 12,6 | 138,5 | 0 % | 0 % | 3.601 / 3.601 (100 % publicados bien) | 0 | 0 | p95 <= 2.000 ms, DLQ = 0 |
+
+**Descartados o fuera de la evidencia** (no cuentan, D42):
+- `descartado-asr4-sin-url-inaccesible-it27.json` (corrida mía): se lanzó con `RED_K6=biohub_default` y la URL por defecto `127.0.0.1:18080`, inalcanzable desde esa red; 100 % de fallos. Se repitió con `BASE_URL=http://nginx:8080` y `RMQ_URL=http://rabbitmq:15672`. Es un error de uso del banco, no del sistema.
+- `descartado-asr1-portada-2r-n2-fria-it27-repeticion-incompleta.json` (renombrado por QA, venía de la noche anterior): se interrumpió a los 60 s de 310 (1.675 visitas, fases pico y post en 0; sin `loadavg_despues` ni `replicas_verificadas_docker`). Su lugar lo ocupa `...-repeticion2` (completa, hecha por QA).
+- `ensayo-portada-2r-n1/n3/n4/n8.json`: exploratorios de 95 s con la máquina cargada; sirvieron para elegir N, no son evidencia.
+
+### Veredicto por ASR
+| ASR | Veredicto | Por qué |
+|---|---|---|
+| **ASR1 / RNF1** (pico x60 en la consulta pública) | **CUMPLE** para fichas, búsquedas y portada hasta 60 visitas/s; **CUMPLE CON RESERVAS** para la portada a 120 visitas/s | Fichas: 0 % de 5xx y p95 de 5,6 a 7,0 ms con 1 y 2 réplicas. Portada con N=1: 0 % de 5xx y p95 de 8 ms. Portada con N=2 y 2 réplicas, 3 corridas: sin 5xx el 99,4 %, 98,2 % y 100 % (>= 95 %), estabilización de 0, 195 y 0 s (< 300 s), p95 por petición de 251 a 516 ms (< 2 s). Pero no es estable: la visita completa llega a 10 s y, contando las iteraciones descartadas como fallo (D42), una de las tres corridas queda en 87,5 % (< 95 %). La degradación se activa y se mide (`modoDegradado`): con 1 réplica, el 90 % de las visitas de la portada pierde las fotos y el resto se sirve con p95 de 199 ms. |
+| **ASR4 / RNF5** (<= 2 s con carga científica) | **CUMPLE** | p95 de 7,2 ms con carga contra 6,9 ms sin ella; 0 % de 5xx; 3.601 de 3.601 eventos procesados; cola y DLQ en 0. La diferencia (0,3 ms) está dentro del ruido. El jar es el de 27g: el detector endurecido no hizo caer ningún evento de carga a la DLQ. |
+
+### Limitaciones de las mediciones
+1. **Equipo compartido y ruidoso.** k6, NGINX, las réplicas, MySQL, Redis y RabbitMQ comparten 16 CPU con una VM de 4 CPU y `ollama`; la carga previa varió de 4,5 a 16,5. La corrida "caliente" (peor que las "frías") es el síntoma: no se puede atribuir esa diferencia a la caché, porque los bytes de las fotos no se cachean en el servidor. Hay una sola corrida por configuración, salvo la portada 2r N=2 (3 corridas con resultados muy dispersos: p95 de 251 a 516 ms, estabilización de 0 a 195 s).
+2. **El cuello de la portada son los bytes de las fotos**, no el CPU de las réplicas: a 120 visitas/s se mueven de 105 a 158 MB/s de miniaturas leídas de `foto_publica`. La fotos de la semilla son de ~330 KB (el tope real es 600 KB; las reales suelen ser menores) y todas iguales; el volumen y el patrón de acceso reales no están medidos. El contrafactual con caché de las fotos en NGINX (p95 de 2,7 ms y 99,96 %) indica que una caché de bytes elimina el problema, pero no es la configuración oficial ni se despliega. Es una decisión de diseño pendiente para el arquitecto (D66 acepta leerlas de MySQL).
+3. **N es un supuesto.** Se probaron 1 y 2 visitas/s de base para la portada y 60 para fichas; no hay tráfico real que fije N.
+4. **ASR4 no mide el lado científico real**: son eventos sintéticos por RabbitMQ (sin cifrado AES-GCM, historial, adjuntos ni el HTTP del científico) y no incluye eventos `evidencia.*` (mensajes de hasta 1 MB, cola `consulta-publica.fotos`). Una corrida por condición, de 120 s.
+5. **Sin gateway ni red real**: va directo a NGINX (D42; el gateway limita a 120 por minuto por IP y mediría el limitador). MySQL y Redis son los del Compose raíz, sin límites de CPU ni de memoria; solo las réplicas y NGINX tienen límites (2 CPU).
+6. **Metadatos:** el commit sale `14f140c` con cambios sin confirmar (en las corridas de ASR1, "sucio, iteración 27"; en las de ASR4, `-sin-commit`). El JSON de ASR4 no trae `exito_d42_pct` ni estabilización; con 0 descartadas y 0 % de fallos equivale a 100 %.
+
+### Bugs y observaciones
+| ID | Severidad | Responsable | Descripción |
+|---|---|---|---|
+| OBS-I27-1 | Bajo | backend (registro) | `POST /api/cientifico/hallazgos/{id}/evidencias` devuelve 201 con `"creadoEn": null`; el contrato (04 §13.9) lo lista en el cuerpo y el `GET` de la lista sí lo trae (`2026-11-22T11:31:32.019Z`). Reproducir: subir cualquier JPEG nuevo a un hallazgo y mirar el cuerpo del 201. |
+| OBS-I27-2 | Bajo | arquitecto / backend (documentación) | 04 §13.10 no documenta el **409** `CONFLICTO` de `POST /admin/fotos-publicas/republicar` (SEC-I27-7), que sí está implementado y probado. Tampoco que el 202 cuenta las fotos pedidas aunque alguna falle luego en segundo plano: con un archivo de evidencia faltante respondió `{"fotos":2}` y el log registró 1 de 2 con un ERROR por la que falló; el administrador no tiene forma de saberlo por la API. |
+| OBS-I27-3 | Bajo | backend | Una ruta ya eliminada bajo `/api/cientifico/**` (`GET /api/cientifico/publico/especies/foto`, con token) responde 404 con el JSON por defecto de Spring (`timestamp/status/error/path`) en lugar de `application/problem+json`; es el hallazgo recurrente de formatos de error inconsistentes. No afecta a D66: la ruta ya no sirve nada. |
+| Confirmación | – | Hernando / grupo | El detector rechaza `long. 12 cm`, `lat 3` y `{"largo": 1.234, "ancho": 2.345}` con 400 (previsto en el plan 00, decisiones del grupo). Reproducido en vivo. |
+| Entorno | – | QA | La colección Bruno de `ubicacion/` depende de que las filas de la base local estén cifradas con la clave de la sesión; con filas de corridas anteriores `12-mapa-alto-rango-200` falla por `omitidos` 3 (ver arriba). No es un defecto del servicio. |
+
+### No ejecutado o fuera de alcance
+- WebKit del E2E de web-publica (equipo sin librerías).
+- Un E2E del navegador contra el backend real **no está automatizado**: se hizo a mano con Playwright en el scratchpad (fotos, CORS y CSP) y no queda en el repo; el E2E del proyecto simula la API con `page.route` y no habría detectado un `fotoId` falso, un CORS ausente ni una CSP sin `blob:`.
+- Prueba de integración contra las VMs (broker desplegado y `PublicadorHallazgoE2ETest`, 2 de las 3 omitidas): fuera del alcance de la iteración.
+- No se repitieron las corridas de la noche anterior; no se probó la matriz de navegadores ni el comportamiento de la caché `immutable` de una foto retirada (decisión pendiente 2 del plan 00: sigue en el navegador hasta un año).
+- Quedan en la base local los hallazgos y fichas de prueba `Qaspecies ...` (el historial es inmutable, ASR7); las fotos de prueba quedaron retiradas.
+
+### Veredicto Iteración 27 (27e y 27d): APROBADO con observaciones
+27a, 27b, 27c y 27g compilan y pasan aquí (654 + 408 + 55 pruebas, E2E 38/38 tres veces, 0 fallos), y los flujos de D66 y los tres pendientes de frontend se comprobaron contra servicios reales con un control negativo para la CSP. ASR4 cumple con holgura; ASR1 cumple en fichas y portada a 60 visitas/s y queda con reservas en la portada a 120 visitas/s, donde el límite es el ancho de banda de las fotos leídas de MySQL (decisión de diseño pendiente, no un defecto de D66). No hay bugs Críticos, Altos ni Medios.

@@ -1,0 +1,934 @@
+{
+  "parametros": {
+    "caso": "HU-06 c.3 / CG-02 (RNF5)",
+    "fase": "A",
+    "vus": 1,
+    "busquedas": 100,
+    "seed": 1,
+    "run": "1",
+    "fichas_sembradas": 10000,
+    "cache": "vaciada (biohub:publica:*) justo antes de la fase",
+    "base_url": "http://nginx:8080",
+    "replicas": "1",
+    "cpus_por_replica": "2",
+    "memoria_por_replica": "1024MiB",
+    "commit": "5ac5e67-sin-commit",
+    "red_k6": "biohub_default",
+    "fecha": "2026-11-15T21:25:25.057Z",
+    "nota": null
+  },
+  "peticiones": 100,
+  "respuestas_no_200": 0,
+  "respuestas_5xx": 0,
+  "exito_200_pct": 100,
+  "busquedas_vacias": 0,
+  "respuestas_degradadas": 0,
+  "latencia_ms": {
+    "avg": 6.773831940000001,
+    "min": 2.839125,
+    "p50": 5.7720005,
+    "p90": 8.439022800000012,
+    "p95": 13.1886209,
+    "p99": 18.37342001000015,
+    "max": 47.146781
+  },
+  "resultados_por_busqueda": {
+    "min": 9,
+    "p50": 320,
+    "max": 10000
+  },
+  "devueltos_por_busqueda": {
+    "min": 9,
+    "max": 50
+  },
+  "umbrales": {
+    "p95_menor_igual_2000_ms": true,
+    "cero_5xx": true,
+    "todas_200": true,
+    "sin_modo_degradado": true,
+    "ninguna_vacia": true
+  },
+  "umbrales_cumplidos": true,
+  "por_categoria": {
+    "q_genero": {
+      "busquedas": 10,
+      "p50": 6.5384585,
+      "p95": 7.775781299999999,
+      "max": 7.841952
+    },
+    "q_epiteto": {
+      "busquedas": 12,
+      "p50": 5.361276999999999,
+      "p95": 6.0493646,
+      "max": 6.200663
+    },
+    "q_genero_epiteto": {
+      "busquedas": 12,
+      "p50": 5.746047,
+      "p95": 6.5753027,
+      "max": 6.711354
+    },
+    "q_prefijo": {
+      "busquedas": 8,
+      "p50": 6.367877,
+      "p95": 7.0186318,
+      "max": 7.052586
+    },
+    "q_nombre_comun": {
+      "busquedas": 6,
+      "p50": 6.509103,
+      "p95": 7.805767,
+      "max": 7.904911
+    },
+    "familia": {
+      "busquedas": 8,
+      "p50": 4.444647,
+      "p95": 5.7653853,
+      "max": 5.854972
+    },
+    "departamento": {
+      "busquedas": 8,
+      "p50": 3.6433835,
+      "p95": 4.33257125,
+      "max": 4.456319
+    },
+    "q_familia": {
+      "busquedas": 8,
+      "p50": 5.7710545,
+      "p95": 7.870111049999999,
+      "max": 7.927153
+    },
+    "q_departamento": {
+      "busquedas": 8,
+      "p50": 7.4866835,
+      "p95": 9.230075699999999,
+      "max": 9.733473
+    },
+    "familia_departamento": {
+      "busquedas": 6,
+      "p50": 4.974484500000001,
+      "p95": 5.853046,
+      "max": 6.022808
+    },
+    "pagina_profunda": {
+      "busquedas": 8,
+      "p50": 13.415519,
+      "p95": 17.3461273,
+      "max": 18.08278
+    },
+    "q_numero_ficha": {
+      "busquedas": 4,
+      "p50": 6.371499,
+      "p95": 41.12208394999998,
+      "max": 47.146781
+    },
+    "q_2_letras_like": {
+      "busquedas": 2,
+      "p50": 3.486418,
+      "p95": 3.7434427,
+      "max": 3.772001
+    }
+  },
+  "busquedas": [
+    {
+      "id": "000",
+      "categoria": "familia_departamento",
+      "qs": "familia=Leptodactylidae&departamento=Cauca&page=0&size=20",
+      "ms": 5.34376,
+      "total": 15,
+      "devueltos": 15
+    },
+    {
+      "id": "001",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=tremarctos%20elegans&page=0&size=10",
+      "ms": 6.711354,
+      "total": 16,
+      "devueltos": 10
+    },
+    {
+      "id": "002",
+      "categoria": "familia_departamento",
+      "qs": "familia=Viperidae&departamento=Santander&page=0&size=10",
+      "ms": 4.171343,
+      "total": 15,
+      "devueltos": 10
+    },
+    {
+      "id": "003",
+      "categoria": "familia_departamento",
+      "qs": "familia=Viperidae&departamento=Risaralda&page=0&size=20",
+      "ms": 6.022808,
+      "total": 15,
+      "devueltos": 15
+    },
+    {
+      "id": "004",
+      "categoria": "familia",
+      "qs": "familia=Bufonidae&page=3&size=50",
+      "ms": 4.018815,
+      "total": 1000,
+      "devueltos": 50
+    },
+    {
+      "id": "005",
+      "categoria": "pagina_profunda",
+      "qs": "page=480&size=20",
+      "ms": 14.385149,
+      "total": 10000,
+      "devueltos": 20
+    },
+    {
+      "id": "006",
+      "categoria": "q_familia",
+      "qs": "q=variabilis&familia=Asteraceae&page=0&size=20",
+      "ms": 5.518799,
+      "total": 16,
+      "devueltos": 16
+    },
+    {
+      "id": "007",
+      "categoria": "q_genero",
+      "qs": "q=leptodactylus&page=0&size=10",
+      "ms": 7.841952,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "008",
+      "categoria": "q_familia",
+      "qs": "q=paramensis&familia=Thraupidae&page=0&size=10",
+      "ms": 5.957255,
+      "total": 17,
+      "devueltos": 10
+    },
+    {
+      "id": "009",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=passiflora%20paramensis&page=0&size=10",
+      "ms": 5.736619,
+      "total": 17,
+      "devueltos": 10
+    },
+    {
+      "id": "010",
+      "categoria": "q_genero",
+      "qs": "q=tremarctos&page=0&size=50",
+      "ms": 7.196267,
+      "total": 500,
+      "devueltos": 50
+    },
+    {
+      "id": "011",
+      "categoria": "departamento",
+      "qs": "departamento=94&page=0&size=30",
+      "ms": 3.653667,
+      "total": 303,
+      "devueltos": 30
+    },
+    {
+      "id": "012",
+      "categoria": "departamento",
+      "qs": "departamento=Guaviare&page=2&size=30",
+      "ms": 4.102754,
+      "total": 303,
+      "devueltos": 30
+    },
+    {
+      "id": "013",
+      "categoria": "q_numero_ficha",
+      "qs": "q=carga009&page=0&size=30",
+      "ms": 5.756366,
+      "total": 100,
+      "devueltos": 30
+    },
+    {
+      "id": "014",
+      "categoria": "q_numero_ficha",
+      "qs": "q=carga000&page=0&size=50",
+      "ms": 6.982134,
+      "total": 99,
+      "devueltos": 50
+    },
+    {
+      "id": "015",
+      "categoria": "familia",
+      "qs": "familia=Dactyloidae&page=1&size=10",
+      "ms": 4.548202,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "016",
+      "categoria": "q_departamento",
+      "qs": "q=oophaga&departamento=23&page=0&size=20",
+      "ms": 8.295195,
+      "total": 15,
+      "devueltos": 15
+    },
+    {
+      "id": "017",
+      "categoria": "q_epiteto",
+      "qs": "q=cordillerae&page=2&size=30",
+      "ms": 5.783137,
+      "total": 320,
+      "devueltos": 30
+    },
+    {
+      "id": "018",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=puya%20tropicalis&page=0&size=50",
+      "ms": 5.634958,
+      "total": 16,
+      "devueltos": 16
+    },
+    {
+      "id": "019",
+      "categoria": "q_departamento",
+      "qs": "q=sierrae&departamento=99&page=0&size=30",
+      "ms": 7.513544,
+      "total": 11,
+      "devueltos": 11
+    },
+    {
+      "id": "020",
+      "categoria": "pagina_profunda",
+      "qs": "page=165&size=50",
+      "ms": 15.978058,
+      "total": 10000,
+      "devueltos": 50
+    },
+    {
+      "id": "021",
+      "categoria": "q_prefijo",
+      "qs": "q=podoc&page=2&size=20",
+      "ms": 6.612207,
+      "total": 500,
+      "devueltos": 20
+    },
+    {
+      "id": "022",
+      "categoria": "q_epiteto",
+      "qs": "q=amazonicus&page=0&size=20",
+      "ms": 5.818043,
+      "total": 340,
+      "devueltos": 20
+    },
+    {
+      "id": "023",
+      "categoria": "departamento",
+      "qs": "departamento=Choc%C3%B3&page=1&size=20",
+      "ms": 3.534794,
+      "total": 303,
+      "devueltos": 20
+    },
+    {
+      "id": "024",
+      "categoria": "q_genero",
+      "qs": "q=pristimantis&page=2&size=10",
+      "ms": 7.694906,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "025",
+      "categoria": "q_epiteto",
+      "qs": "q=caribaeus&page=3&size=30",
+      "ms": 6.200663,
+      "total": 340,
+      "devueltos": 30
+    },
+    {
+      "id": "026",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=cattleya%20colombianus&page=0&size=10",
+      "ms": 6.347739,
+      "total": 17,
+      "devueltos": 10
+    },
+    {
+      "id": "027",
+      "categoria": "q_prefijo",
+      "qs": "q=podoc&page=2&size=50",
+      "ms": 6.955574,
+      "total": 500,
+      "devueltos": 50
+    },
+    {
+      "id": "028",
+      "categoria": "q_nombre_comun",
+      "qs": "q=oso%20anteojos&page=0&size=10",
+      "ms": 7.298088,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "029",
+      "categoria": "q_epiteto",
+      "qs": "q=nigricans&page=3&size=30",
+      "ms": 5.424371,
+      "total": 340,
+      "devueltos": 30
+    },
+    {
+      "id": "030",
+      "categoria": "pagina_profunda",
+      "qs": "page=489&size=20",
+      "ms": 18.08278,
+      "total": 10000,
+      "devueltos": 20
+    },
+    {
+      "id": "031",
+      "categoria": "familia_departamento",
+      "qs": "familia=Bufonidae&departamento=Bol%C3%ADvar&page=0&size=30",
+      "ms": 4.965989,
+      "total": 30,
+      "devueltos": 30
+    },
+    {
+      "id": "032",
+      "categoria": "q_familia",
+      "qs": "q=oophaga&familia=Dendrobatidae&page=0&size=50",
+      "ms": 7.927153,
+      "total": 500,
+      "devueltos": 50
+    },
+    {
+      "id": "033",
+      "categoria": "q_epiteto",
+      "qs": "q=riparius&page=0&size=20",
+      "ms": 5.925575,
+      "total": 320,
+      "devueltos": 20
+    },
+    {
+      "id": "034",
+      "categoria": "pagina_profunda",
+      "qs": "page=188&size=50",
+      "ms": 13.16341,
+      "total": 10000,
+      "devueltos": 50
+    },
+    {
+      "id": "035",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=panthera%20viridis&page=0&size=20",
+      "ms": 6.147432,
+      "total": 17,
+      "devueltos": 17
+    },
+    {
+      "id": "036",
+      "categoria": "q_numero_ficha",
+      "qs": "q=carga002&page=0&size=30",
+      "ms": 5.760864,
+      "total": 100,
+      "devueltos": 30
+    },
+    {
+      "id": "037",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=anolis%20santanderi&page=0&size=50",
+      "ms": 5.858548,
+      "total": 16,
+      "devueltos": 16
+    },
+    {
+      "id": "038",
+      "categoria": "q_departamento",
+      "qs": "q=montanus&departamento=50&page=0&size=10",
+      "ms": 9.733473,
+      "total": 10,
+      "devueltos": 10
+    },
+    {
+      "id": "039",
+      "categoria": "q_prefijo",
+      "qs": "q=bothr&page=1&size=10",
+      "ms": 7.052586,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "040",
+      "categoria": "familia",
+      "qs": "familia=Fagaceae&page=2&size=20",
+      "ms": 3.907024,
+      "total": 500,
+      "devueltos": 20
+    },
+    {
+      "id": "041",
+      "categoria": "familia",
+      "qs": "familia=Elapidae&page=0&size=10",
+      "ms": 5.854972,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "042",
+      "categoria": "departamento",
+      "qs": "departamento=Boyac%C3%A1&page=0&size=10",
+      "ms": 3.6331,
+      "total": 303,
+      "devueltos": 10
+    },
+    {
+      "id": "043",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=quercus%20nigricans&page=0&size=50",
+      "ms": 4.899594,
+      "total": 17,
+      "devueltos": 17
+    },
+    {
+      "id": "044",
+      "categoria": "q_epiteto",
+      "qs": "q=paramensis&page=0&size=30",
+      "ms": 5.051269,
+      "total": 340,
+      "devueltos": 30
+    },
+    {
+      "id": "045",
+      "categoria": "q_nombre_comun",
+      "qs": "q=pino%20colombiano%20dorado&page=0&size=30",
+      "ms": 5.720118,
+      "total": 17,
+      "devueltos": 17
+    },
+    {
+      "id": "046",
+      "categoria": "pagina_profunda",
+      "qs": "page=486&size=20",
+      "ms": 12.070092,
+      "total": 10000,
+      "devueltos": 20
+    },
+    {
+      "id": "047",
+      "categoria": "q_familia",
+      "qs": "q=dendropsophus&familia=Hylidae&page=0&size=50",
+      "ms": 7.764176,
+      "total": 500,
+      "devueltos": 50
+    },
+    {
+      "id": "048",
+      "categoria": "familia",
+      "qs": "familia=Viperidae&page=2&size=10",
+      "ms": 5.59901,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "049",
+      "categoria": "q_departamento",
+      "qs": "q=lacustris&departamento=91&page=0&size=20",
+      "ms": 6.120532,
+      "total": 9,
+      "devueltos": 9
+    },
+    {
+      "id": "050",
+      "categoria": "q_epiteto",
+      "qs": "q=tropicalis&page=2&size=20",
+      "ms": 5.114738,
+      "total": 320,
+      "devueltos": 20
+    },
+    {
+      "id": "051",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=quercus%20santanderi&page=0&size=50",
+      "ms": 4.646256,
+      "total": 16,
+      "devueltos": 16
+    },
+    {
+      "id": "052",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=podocarpus%20lacustris&page=0&size=10",
+      "ms": 4.928137,
+      "total": 16,
+      "devueltos": 10
+    },
+    {
+      "id": "053",
+      "categoria": "q_familia",
+      "qs": "q=orinocensis&familia=Ursidae&page=0&size=50",
+      "ms": 6.194932,
+      "total": 17,
+      "devueltos": 17
+    },
+    {
+      "id": "054",
+      "categoria": "departamento",
+      "qs": "departamento=19&page=1&size=20",
+      "ms": 3.907055,
+      "total": 303,
+      "devueltos": 20
+    },
+    {
+      "id": "055",
+      "categoria": "q_departamento",
+      "qs": "q=aureus&departamento=27&page=0&size=10",
+      "ms": 7.744138,
+      "total": 11,
+      "devueltos": 10
+    },
+    {
+      "id": "056",
+      "categoria": "q_epiteto",
+      "qs": "q=tropicalis&page=2&size=50",
+      "ms": 5.294036,
+      "total": 320,
+      "devueltos": 50
+    },
+    {
+      "id": "057",
+      "categoria": "q_2_letras_like",
+      "qs": "q=rh&page=1&size=10",
+      "ms": 3.200835,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "058",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=panthera%20montanus&page=0&size=20",
+      "ms": 4.663638,
+      "total": 17,
+      "devueltos": 17
+    },
+    {
+      "id": "059",
+      "categoria": "q_genero",
+      "qs": "q=espeletia&page=1&size=30",
+      "ms": 5.956653,
+      "total": 500,
+      "devueltos": 30
+    },
+    {
+      "id": "060",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=atelopus%20albus&page=0&size=50",
+      "ms": 5.755475,
+      "total": 17,
+      "devueltos": 17
+    },
+    {
+      "id": "061",
+      "categoria": "q_numero_ficha",
+      "qs": "q=carga0&page=2&size=30",
+      "ms": 47.146781,
+      "total": 9999,
+      "devueltos": 30
+    },
+    {
+      "id": "062",
+      "categoria": "departamento",
+      "qs": "departamento=Bol%C3%ADvar&page=3&size=50",
+      "ms": 4.456319,
+      "total": 303,
+      "devueltos": 50
+    },
+    {
+      "id": "063",
+      "categoria": "q_prefijo",
+      "qs": "q=quer&page=2&size=10",
+      "ms": 5.67877,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "064",
+      "categoria": "q_nombre_comun",
+      "qs": "q=tangar%C3%A1%20gigante&page=0&size=10",
+      "ms": 4.566056,
+      "total": 17,
+      "devueltos": 10
+    },
+    {
+      "id": "065",
+      "categoria": "pagina_profunda",
+      "qs": "page=181&size=50",
+      "ms": 11.210754,
+      "total": 10000,
+      "devueltos": 50
+    },
+    {
+      "id": "066",
+      "categoria": "q_genero",
+      "qs": "q=tangara&page=2&size=50",
+      "ms": 7.497945,
+      "total": 500,
+      "devueltos": 50
+    },
+    {
+      "id": "067",
+      "categoria": "q_departamento",
+      "qs": "q=oophaga&departamento=19&page=0&size=30",
+      "ms": 7.459823,
+      "total": 16,
+      "devueltos": 16
+    },
+    {
+      "id": "068",
+      "categoria": "q_genero",
+      "qs": "q=pristimantis&page=0&size=30",
+      "ms": 5.803104,
+      "total": 500,
+      "devueltos": 30
+    },
+    {
+      "id": "069",
+      "categoria": "familia",
+      "qs": "familia=Passifloraceae&page=2&size=20",
+      "ms": 3.762513,
+      "total": 500,
+      "devueltos": 20
+    },
+    {
+      "id": "070",
+      "categoria": "q_prefijo",
+      "qs": "q=atel&page=1&size=50",
+      "ms": 6.123547,
+      "total": 500,
+      "devueltos": 50
+    },
+    {
+      "id": "071",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=podocarpus%20riparius&page=0&size=20",
+      "ms": 6.463988,
+      "total": 16,
+      "devueltos": 16
+    },
+    {
+      "id": "072",
+      "categoria": "q_nombre_comun",
+      "qs": "q=ranita%20andino&page=0&size=50",
+      "ms": 5.220127,
+      "total": 17,
+      "devueltos": 17
+    },
+    {
+      "id": "073",
+      "categoria": "q_departamento",
+      "qs": "q=panthera&departamento=11&page=0&size=50",
+      "ms": 7.219641,
+      "total": 15,
+      "devueltos": 15
+    },
+    {
+      "id": "074",
+      "categoria": "pagina_profunda",
+      "qs": "page=494&size=20",
+      "ms": 12.955969,
+      "total": 10000,
+      "devueltos": 20
+    },
+    {
+      "id": "075",
+      "categoria": "departamento",
+      "qs": "departamento=Tolima&page=2&size=20",
+      "ms": 3.064038,
+      "total": 303,
+      "devueltos": 20
+    },
+    {
+      "id": "076",
+      "categoria": "q_epiteto",
+      "qs": "q=gigas&page=1&size=30",
+      "ms": 5.298183,
+      "total": 340,
+      "devueltos": 30
+    },
+    {
+      "id": "077",
+      "categoria": "q_genero",
+      "qs": "q=atelopus&page=3&size=10",
+      "ms": 6.372145,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "078",
+      "categoria": "q_prefijo",
+      "qs": "q=passi&page=1&size=20",
+      "ms": 6.765576,
+      "total": 500,
+      "devueltos": 20
+    },
+    {
+      "id": "079",
+      "categoria": "familia_departamento",
+      "qs": "familia=Leptodactylidae&departamento=Vaup%C3%A9s&page=0&size=30",
+      "ms": 4.98298,
+      "total": 15,
+      "devueltos": 15
+    },
+    {
+      "id": "080",
+      "categoria": "familia",
+      "qs": "familia=Podocarpaceae&page=2&size=10",
+      "ms": 4.38747,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "081",
+      "categoria": "q_nombre_comun",
+      "qs": "q=rana%20dardo%20gigante&page=0&size=10",
+      "ms": 7.508335,
+      "total": 17,
+      "devueltos": 10
+    },
+    {
+      "id": "082",
+      "categoria": "q_prefijo",
+      "qs": "q=lept&page=2&size=10",
+      "ms": 5.602296,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "083",
+      "categoria": "q_familia",
+      "qs": "q=sierrae&familia=Asteraceae&page=0&size=10",
+      "ms": 5.520843,
+      "total": 17,
+      "devueltos": 10
+    },
+    {
+      "id": "084",
+      "categoria": "familia",
+      "qs": "familia=Strabomantidae&page=3&size=50",
+      "ms": 4.501824,
+      "total": 500,
+      "devueltos": 50
+    },
+    {
+      "id": "085",
+      "categoria": "q_epiteto",
+      "qs": "q=magdalenae&page=0&size=20",
+      "ms": 4.882731,
+      "total": 340,
+      "devueltos": 20
+    },
+    {
+      "id": "086",
+      "categoria": "q_epiteto",
+      "qs": "q=minimus&page=2&size=50",
+      "ms": 5.245925,
+      "total": 340,
+      "devueltos": 50
+    },
+    {
+      "id": "087",
+      "categoria": "q_departamento",
+      "qs": "q=amazonicus&departamento=81&page=0&size=30",
+      "ms": 5.787515,
+      "total": 10,
+      "devueltos": 10
+    },
+    {
+      "id": "088",
+      "categoria": "pagina_profunda",
+      "qs": "page=479&size=20",
+      "ms": 13.667628,
+      "total": 10000,
+      "devueltos": 20
+    },
+    {
+      "id": "089",
+      "categoria": "q_familia",
+      "qs": "q=paramensis&familia=Elapidae&page=0&size=30",
+      "ms": 5.584854,
+      "total": 17,
+      "devueltos": 17
+    },
+    {
+      "id": "090",
+      "categoria": "q_genero",
+      "qs": "q=hyloxalus&page=2&size=10",
+      "ms": 5.335013,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "091",
+      "categoria": "departamento",
+      "qs": "departamento=63&page=2&size=10",
+      "ms": 2.839125,
+      "total": 303,
+      "devueltos": 10
+    },
+    {
+      "id": "092",
+      "categoria": "q_familia",
+      "qs": "q=magdalenae&familia=Dactyloidae&page=0&size=10",
+      "ms": 5.419342,
+      "total": 17,
+      "devueltos": 10
+    },
+    {
+      "id": "093",
+      "categoria": "q_2_letras_like",
+      "qs": "q=le&page=2&size=20",
+      "ms": 3.772001,
+      "total": 500,
+      "devueltos": 20
+    },
+    {
+      "id": "094",
+      "categoria": "q_epiteto",
+      "qs": "q=variabilis&page=2&size=50",
+      "ms": 5.554366,
+      "total": 321,
+      "devueltos": 50
+    },
+    {
+      "id": "095",
+      "categoria": "q_genero",
+      "qs": "q=passiflora&page=2&size=50",
+      "ms": 6.704772,
+      "total": 500,
+      "devueltos": 50
+    },
+    {
+      "id": "096",
+      "categoria": "familia_departamento",
+      "qs": "familia=Viperidae&departamento=C%C3%B3rdoba&page=0&size=10",
+      "ms": 3.679095,
+      "total": 15,
+      "devueltos": 10
+    },
+    {
+      "id": "097",
+      "categoria": "q_nombre_comun",
+      "qs": "q=rana%20criolla%20blanco&page=0&size=20",
+      "ms": 7.904911,
+      "total": 17,
+      "devueltos": 17
+    },
+    {
+      "id": "098",
+      "categoria": "q_prefijo",
+      "qs": "q=ate&page=0&size=10",
+      "ms": 6.025723,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "099",
+      "categoria": "q_genero",
+      "qs": "q=podocarpus&page=1&size=20",
+      "ms": 5.729055,
+      "total": 500,
+      "devueltos": 20
+    }
+  ]
+}

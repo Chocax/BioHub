@@ -1,0 +1,23 @@
+package co.edu.unbosque.biohub.cientifico.ubicacion.domain;
+
+import java.time.LocalDate;
+import java.util.UUID;
+
+/** Fila leída de ubicacion_hallazgo + catálogo. {@code cifradas} solo viene si la consulta lo pidió. */
+public record FilaHallazgo(
+        UUID id,
+        String nombreCientifico,
+        LocalDate fechaRecoleccion,
+        String investigador,
+        EstadoConservacion estado,
+        String departamento,
+        String departamentoCodigo,
+        String region,
+        boolean tieneCoordenadas,
+        CoordenadasCifradas cifradas) {
+
+    @Override
+    public String toString() {
+        return "FilaHallazgo[id=" + id + ", coordenadas=***]";
+    }
+}

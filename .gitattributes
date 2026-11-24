@@ -1,0 +1,3 @@
+# Los scripts de shell se ejecutan en Linux o dentro de contenedores: siempre con fin de línea LF, aunque se
+# editen en Windows (con CRLF bash falla con "bad interpreter" o "$'\r': command not found").
+*.sh text eol=lf

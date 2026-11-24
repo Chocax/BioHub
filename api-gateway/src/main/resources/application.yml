@@ -2,19 +2,45 @@ spring:
   application:
     name: api-gateway
   config:
-    # Lee el .env de la raíz del monorepo (al ejecutar desde la carpeta del servicio)
-    import: optional:file:../.env[.properties]
+    # Lee el .env de la raíz del monorepo y el .env propio del servicio (el último gana), al ejecutar
+    # desde la carpeta del servicio. Ver api-gateway/.env.example.
+    import: optional:file:../.env[.properties],optional:file:./.env[.properties]
   datasource:
-    url: jdbc:mysql://${MYSQL_GATEWAY_HOST:localhost}:${MYSQL_GATEWAY_PORT:3310}/gateway
-    username: ${MYSQL_GATEWAY_USER}
-    password: ${MYSQL_GATEWAY_PASSWORD}
+    # Sin valores por defecto: la URL, el usuario y la contraseña salen del entorno.
+    # Los perfiles "local" y "aiven" (application-local.yml / application-aiven.yml) arman la URL.
+    # Sin perfil, hay que definir GATEWAY_DB_URL completa (jdbc:mysql://host:puerto/gateway?...).
+    url: ${GATEWAY_DB_URL}
+    username: ${GATEWAY_DB_USER}
+    password: ${GATEWAY_DB_PASSWORD}
   jpa:
     open-in-view: false
     hibernate:
       ddl-auto: validate   # el esquema lo maneja Flyway, nunca Hibernate
+    properties:
+      hibernate.jdbc.time_zone: UTC   # DATETIME(3) siempre en UTC (D36)
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      # Si Redis tarda, el gateway usa su respaldo en memoria (D25, RNF5).
+      timeout: 300ms
+      connect-timeout: 300ms
+      repositories:
+        enabled: false   # Redis se usa con StringRedisTemplate, sin repositorios
+  servlet:
+    multipart:
+      # El proxy reenvía el cuerpo tal cual. Si Spring interpretara el multipart, consumiría el cuerpo
+      # y los adjuntos llegarían vacíos al servicio destino.
+      enabled: false
   flyway:
     enabled: true
     locations: classpath:db/migration
+    # Versiones con fecha (V20261022_1430__...): acepta migraciones que llegan "tarde" al fusionar ramas
+    out-of-order: true
+    # Opcional (SEC-11): usuario de migración distinto del de ejecución. Si no se define, usa el del datasource.
+    user: ${GATEWAY_MIGR_USER:${spring.datasource.username}}
+    password: ${GATEWAY_MIGR_PASSWORD:${spring.datasource.password}}
   security:
     oauth2:
       resourceserver:
@@ -31,6 +57,9 @@ server:
     include-message: never
 
 management:
+  health:
+    redis:
+      enabled: false   # Redis caído NO marca el gateway como no sano (hay respaldo en memoria)
   endpoints:
     web:
       exposure:
@@ -49,10 +78,50 @@ biohub:
       equipos: ${SERVICIO_EQUIPOS_URL:http://localhost:8082}
       publica: ${SERVICIO_CONSULTA_PUBLICA_URL:http://localhost:8083}
       reportes: ${SERVICIO_REPORTES_URL:http://localhost:8084}
-    # Prefijos sin JWT (solo GET). Se protegerán con API Key + rate limiting.
+    # Prefijos sin JWT ni API Key (solo GET): el portal público (D16). Se limitan por IP.
     rutas-publicas:
       - publica
     origenes-permitidos: ${CORS_ORIGENES:http://localhost:5173,http://localhost:5174}
     timeout-conexion: 2s
     timeout-lectura: 30s
     tamano-maximo-cuerpo: 10MB
+    limites:
+      # RNF11: límite por defecto de un consumidor externo. Cada consumidor puede tener el suyo en la BD.
+      por-consumidor: ${GATEWAY_LIMITE_CONSUMIDOR_POR_MINUTO:60}
+      # Portal público (D16), por IP.
+      por-ip-portal: ${GATEWAY_LIMITE_IP_PORTAL_POR_MINUTO:120}
+      # Intentos con API Key inválida, por IP: evita saturar la BD con keys inventadas.
+      fallos-key-por-ip: ${GATEWAY_LIMITE_FALLOS_KEY_POR_MINUTO:20}
+      ventana: 60s
+    circuito:
+      # ARQ-20: tras estos fallos de conexión seguidos, el servicio recibe 503 inmediato durante tiempo-abierto.
+      fallos-para-abrir: ${GATEWAY_CIRCUITO_FALLOS:5}
+      tiempo-abierto: ${GATEWAY_CIRCUITO_TIEMPO_ABIERTO:10s}
+    teselas:
+      # SEC-J-04: el mapa de web-interna pide las teselas al gateway y el gateway a OSM. OSM solo ve al gateway.
+      url-origen: ${GATEWAY_TESELAS_URL:https://tile.openstreetmap.org/{z}/{x}/{y}.png}
+      # La política de uso de OSM exige un User-Agent que identifique a la aplicación (sin datos personales).
+      agente-usuario: ${GATEWAY_TESELAS_AGENTE:BioHub-api-gateway/0.1 (+https://github.com/JuaniMP/BioHub)}
+      # Igual a ZOOM_MAXIMO de web-interna/src/ubicacion/componentes/MapaHallazgos.jsx.
+      zoom-maximo: 12
+      por-usuario: ${GATEWAY_TESELAS_POR_USUARIO:600}
+      cache-maximo: ${GATEWAY_TESELAS_CACHE:64MB}
+      vida-cache: 7d
+      vida-navegador: 1d
+      descargas-simultaneas: 2
+      tamano-maximo: 512KB
+      timeout-conexion: 3s
+      timeout-lectura: 10s
+    identidad:
+      # Cuenta de servicio del gateway ante Keycloak (HU-10). Sin secreto, /api/gateway/usuarios responde 503.
+      keycloak-url: ${KEYCLOAK_ADMIN_URL:http://localhost:${KEYCLOAK_PORT:8180}}
+      realm: ${KEYCLOAK_REALM:biohub}
+      client-id: ${KEYCLOAK_GATEWAY_CLIENT_ID:biohub-gateway}
+      client-secret: ${KEYCLOAK_GATEWAY_CLIENT_SECRET:}
+      # Igual a accessTokenLifespan del realm: cuánto hay que recordar que un usuario cambió de rol.
+      vida-token: 5m
+
+logging:
+  level:
+    # Caffeine avisa con traza completa cada descarga de tesela fallida; el gateway ya lo registra en una línea.
+    com.github.benmanes.caffeine.cache.LocalAsyncCache: ERROR

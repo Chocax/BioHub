@@ -1,0 +1,40 @@
+meta {
+  name: catalogo-especies-con-fotoid
+  type: http
+  seq: 19
+}
+
+get {
+  url: {{baseConsulta}}/api/publica/especies
+  body: none
+  auth: none
+}
+
+tests {
+  test("200, una fila por especie y fotoId siempre presente (UUID o null, D66)", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("cache-control")).to.equal("public, max-age=30");
+    const c = res.getBody().content;
+    expect(c.length).to.be.at.least(1);
+    const nombres = c.map(function (e) { return e.nombreCientifico; });
+    expect(new Set(nombres).size).to.equal(nombres.length);
+    c.forEach(function (e) {
+      expect(e).to.have.property("fotoId");
+      if (e.fotoId !== null) {
+        expect(e.fotoId).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+      }
+    });
+  });
+  test("nunca trae coordenadas ni investigador", function () {
+    const crudo = JSON.stringify(res.getBody()).toLowerCase();
+    ["latitud", "longitud", "coordenadas", "investigador", "5.1234567", "-73.1234567"].forEach(function (p) {
+      expect(crudo).to.not.contain(p);
+    });
+  });
+}
+
+docs {
+  Catálogo por especie (D65). fotoId es la foto pública más reciente de la especie (evento evidencia.publicada, D66) o null;
+  el portal solo pide /api/publica/especies/fotos/{fotoId} cuando no es null.
+  Requisito: contrato 04 §4.4.
+}

@@ -433,3 +433,2358 @@ Verificado tras recrear la infraestructura desde cero (`docker compose down -v` 
 | SEC-19 | **Corregido**: caché Redis serializa en JSON con TTL y prefijo `biohub:publica:` | compila |
 
 **Estado final: APROBADO CON OBSERVACIONES** (sin Críticos/Altos; pendientes asignados a historias).
+
+# Iteración despliegue (D11-D13) e iteración 14
+
+Sección retirada en la iteración 15 (VPN de malla eliminada; ver 09-despliegue.md). Se conservan solo los hallazgos que no dependían de la VPN y que otras secciones citan (SEC-D-03 y SEC-D-07).
+
+## Hallazgos que siguen vigentes
+
+### SEC-D-03 · Medio · A01 / A08 (integridad de los eventos)
+**Los usuarios consumidores pueden publicar en `biohub.eventos` y los consumidores creen el campo `origen` del cuerpo: se pueden falsificar eventos.**
+
+- **Archivos:** las definitions de RabbitMQ del despliegue anterior (retiradas en la iteración 15) (`write` incluye `biohub.eventos` y `biohub.eventos.dlx` para `consulta_mq` y `reportes_mq`), `servicio-*/.../eventos/service/ConsumidorEventos.java:57-67` (consulta-pública y reportes; valida `origen` no vacío pero no quién publicó), `servicio-cientifico/.../eventos/service/PublicadorEventos.java:50-55`.
+- **Problema:** para declarar bindings, un consumidor necesita `write` sobre **su cola** y `read` sobre el exchange; no necesita `write` sobre los exchanges. Con el permiso actual, `reportes_mq` (o cualquiera que robe su contraseña desde el contenedor de reportes) puede publicar `hallazgo.registrado` con `"origen":"servicio-cientifico"`. Consulta-pública lo aceptaría y lo mostraría como dato público. El sobre no tiene nada que identifique al publicador de forma verificable.
+- **Por qué importa:** hoy solo existe `prueba.ping`, por eso queda en Medio. Con el evento real, comprometer el servicio de reportes (el menos crítico) permitiría inyectar hallazgos en la consulta pública. Así se rompe el aislamiento por servicio que buscaba SEC-04.
+- **Cómo corregirlo:**
+  1. Mínimo privilegio en `generar-definitions.sh`:
+     ```python
+     ("consulta_mq", "RABBITMQ_CONSULTA_PASSWORD", "",
+      (r"^(biohub\.eventos|biohub\.eventos\.dlx|consulta-publica\.eventos(\.dlq)?)$",   # configure
+       r"^consulta-publica\.eventos(\.dlq)?$",                                         # write: solo sus colas (bindings)
+       r"^(biohub\.eventos|biohub\.eventos\.dlx|consulta-publica\.eventos(\.dlq)?)$")), # read
+     # igual para reportes_mq con reportes\.eventos
+     ```
+     (El dead-lettering lo hace el broker y no necesita `write` del usuario sobre el DLX.) Volver a correr el E2E de 13b para confirmar.
+  2. Autenticar al publicador con `user_id`, que RabbitMQ **valida** contra el usuario de la conexión:
+     ```java
+     // PublicadorEventos, dentro del MessagePostProcessor
+     mensaje.getMessageProperties().setUserId(usuarioRabbit); // ${spring.rabbitmq.username}
+
+     // ConsumidorEventos.interpretar(), después de validar el sobre
+     static final Map<String, String> PUBLICADORES = Map.of("servicio-cientifico", "cientifico_mq");
+     String userId = mensaje.getMessageProperties().getReceivedUserId();
+     if (userId == null || !userId.equals(PUBLICADORES.get(evento.origen()))) {
+         throw new EventoInvalidoException("Publicador no autorizado para el origen declarado");
+     }
+     ```
+  3. Al implementar `hallazgo.registrado`: tipar `datos` con un DTO validado (no `Map<String,Object>` libre) y lista blanca de tipos **por publicador**.
+- **Esfuerzo:** S · **Responsable:** devops (permisos) + backend-senior (user_id).
+
+
+### SEC-D-07 · Bajo · A04 / A09 (DLQ sin límites; retención de datos)
+- **Archivos:** `servicio-consulta-publica/.../config/RabbitConfig.java:56-59` y `servicio-reportes/.../config/RabbitConfig.java:56-59`.
+- **Problema:** las colas `.dlq` no tienen `x-max-length` ni `x-message-ttl`. Un publicador con errores (o malicioso, ver SEC-D-03) puede llenar el disco de RabbitMQ con mensajes de hasta 64 KB. Además, los cuerpos rechazados (que con `hallazgo.registrado` pueden llevar coordenadas) se guardan indefinidamente y se ven en el panel.
+- **Cómo corregirlo:**
+  ```java
+  return QueueBuilder.durable(cola + ".dlq").maxLength(10_000).overflow(QueueBuilder.Overflow.dropHead)
+          .ttl((int) Duration.ofDays(7).toMillis()).build();
+  ```
+  (Cambiar argumentos de una cola existente exige borrarla y declararla de nuevo. Como alternativa, usar una *policy* en `definitions.json`, que no exige recrear la cola.) Además, alarma de disco o de longitud de la DLQ.
+- **Esfuerzo:** S · **Responsable:** backend-senior.
+
+
+---
+
+# Parte de Juanita – ubicación y consulta pública
+
+**Revisor:** ciberseguridad · **Fecha:** 2026-10-26 · **Rama:** `feature/ubicacion-consulta-publica` (worktree `biohub-ubicacion`), commits `65c8860..e186843` sobre `0cb19df` · **Alcance:** módulo `ubicacion` de `servicio-cientifico` (cifrado, llaves, política de acceso, búsqueda interna, mapa, re-cifrado), `servicio-consulta-publica` (consumidor `hallazgo.*`, búsqueda y ficha pública, caché Redis), `web-publica` y `web-interna/src/ubicacion/`, y dependencias nuevas (`react-router`, `leaflet`, `react-leaflet`, `org.testcontainers:mysql`).
+
+## Resumen
+
+| Severidad | Cantidad |
+|---|---|
+| Crítico | 0 |
+| Alto | 0 |
+| Medio | 3 |
+| Bajo | 6 |
+| Informativo | 6 |
+
+**Veredicto: APROBADO CON OBSERVACIONES.** No encontré ninguna ruta, log, excepción, `toString()`, caché, evento ni respuesta por la que las coordenadas lleguen a un rol distinto de `cientifico_alto_rango`. El cifrado AES-256-GCM está bien hecho. Los 3 Medios no son explotables hoy, porque todavía no hay publicador real de `hallazgo.*` ni datos reales, pero condicionan el despliegue:
+- **SEC-J-01** (integridad de eventos; incluye SEC-D-03) pasa a **Alto** si el publicador de Hernando se despliega en las VMs sin corregirlo.
+- **SEC-J-02** y **SEC-J-03** (coordenadas en texto libre y en la DLQ) se deben resolver antes de cargar datos reales.
+
+### Cómo se revisó
+- **Documentación:**
+  - `03-arquitectura.md`: D14-D33 y §J1-J14.
+  - `04-contrato-api.md`: parte de Juanita.
+  - `01-requisitos.md` §9.
+  - `srs-biohub.md`: RF11-RF13, RF19, RNF9, ASR5, ASR6.
+  - Hallazgos SEC-*, SEC-D-* y SEC-T-* de este reporte.
+- **Código (estático):** todo `servicio-cientifico/.../ubicacion/**` (dominio, infraestructura, servicios, controladores y migraciones), `SecurityConfig` y el conversor JWT de ambos servicios, todo lo nuevo o modificado de `servicio-consulta-publica`, los dos `application.yml`, `.env.example`, `deploy/**` (Redis y variables), CORS del gateway, `web-publica/src/**`, `web-interna/src/ubicacion/**` y los tests de no filtración (`AuditoriaYSinFiltracionesTest` captura los logs en DEBUG, incluido el SQL).
+- **Búsquedas dirigidas:**
+  - Frontend: `dangerouslySetInnerHTML`, `innerHTML`, `bindPopup`, `localStorage`/`sessionStorage`, `console.*`, `target=`, `href=`, `eval`, `window.location`, `history.*`.
+  - Backend: `activateDefaultTyping`, `JsonTypeInfo`, `TrustedPackages` y `__TypeId__`.
+  - Consultas: SQL/JPQL construido con valores del cliente. Solo se concatenan fragmentos fijos y todos los valores van enlazados.
+- **Pruebas:**
+  - `mvn -B -pl servicio-cientifico,servicio-consulta-publica -am verify`: **BUILD SUCCESS**, 157 tests en científico (1 omitido) y 128 en consulta-pública. Una primera ejecución falló en `EventosPruebaControllerTest` por un `.class` ausente, causado por otra compilación que corría en paralelo en el mismo worktree; al repetirla pasó.
+  - `vitest`: web-publica 32/32 y web-interna 45/45.
+  - Contenedores Testcontainers: se eliminaron solos. Los que quedaron activos pertenecen a otra sesión que estaba ejecutando pruebas; no se tocaron las VMs ni el Compose local.
+- **Dependencias:**
+  - `npm audit` (todas las dependencias y solo producción): **0 vulnerabilidades** en las dos webs.
+  - Versiones: `leaflet` 1.9.4, `react-leaflet` 5.0.0 (`@react-leaflet/core` 3.0.0) y `react-router` 8.5.0. Todas las entradas de los `package-lock.json` tienen `integrity`.
+  - `org.testcontainers:mysql` tiene `scope test`, así que no llega al JAR.
+  - Maven: no hay escáner de CVE instalado (`dependency-check`, `trivy`, `grype` y `osv-scanner` no están disponibles). SEC-15 sigue abierto.
+- **Secretos:** se buscaron cadenas con forma de llave (`vN:` seguido de base64 de 32 bytes) en el árbol y en el historial de la rama, sin imprimir valores. Solo aparecen los hashes `integrity` de los lockfiles. No hay `application-test.yml` con llaves: los tests generan las suyas. `.env` y `dist/` están ignorados.
+
+---
+
+## Hallazgos
+
+### SEC-J-01 · Medio · A08 Integridad / A01 (SEC-D-03 sigue abierto y ahora tiene impacto real)
+**Un `hallazgo.*` falsificado se acepta como dato público y además puede "congelar" una ficha para siempre.**
+
+- **Archivos:**
+  - `servicio-consulta-publica/src/main/resources/application.yml:85` (`verificar-publicador: ${BIOHUB_EVENTOS_VERIFICAR_PUBLICADOR:false}`).
+  - `.env.example:72` (`=false`).
+  - `.../eventos/service/ConsumidorEventos.java:64-74`.
+  - `.../eventos/domain/DatosHallazgo.java:18` (`@Min(1) Integer version`, sin tope).
+  - `.../infrastructure/EscrituraFichasJdbc.java:24` (`WHERE ... version < ?`).
+  - Del lado de Santiago: las definitions de RabbitMQ (retiradas con `deploy/`) (write de los consumidores sobre `biohub.eventos`) y `PublicadorEventos` sin `setUserId`.
+- **Problema:** el consumidor ya implementa D24, pero con la verificación del `user_id` AMQP **desactivada por defecto**, y SEC-D-03 sigue abierto: `reportes_mq` y `consulta_mq` pueden publicar en `biohub.eventos`. El campo `origen` es texto del propio cuerpo y se falsifica trivialmente. Como "gana la versión mayor", un evento con `"version": 2147483647` deja la ficha con contenido del atacante, y **ningún evento legítimo posterior puede corregirla**: todos tienen una versión menor y se ignoran en silencio con un log DEBUG.
+- **Por qué importa:** quien comprometa el servicio menos crítico (reportes) o robe su contraseña de RabbitMQ puede inyectar o desfigurar fichas del portal público. Por ejemplo, puede poner en `descripcion` coordenadas inventadas o reales de otra fuente y presentarlas como dato de BioHub, o bloquear la reclasificación de una especie a `EN_PELIGRO`. El daño persiste hasta una intervención manual en `mysql-lectura`. El reporte anterior pedía corregir SEC-D-03 "antes de implementar el evento real".
+- **Cómo corregirlo:**
+  1. **Santiago:** aplicar el punto 1 y el punto 2 de SEC-D-03 (permisos `write` mínimos y `setUserId(usuarioRabbit)` en `PublicadorEventos`).
+  2. **consulta-pública: fallar cerrado.** Cambiar el valor por defecto a `true` y poner `false` solo de forma explícita en el entorno local o de pruebas:
+     ```yaml
+     verificar-publicador: ${BIOHUB_EVENTOS_VERIFICAR_PUBLICADOR:true}
+     ```
+     Así, en las VMs la verificación queda activa sin depender de que alguien recuerde activarla. Si hoy rompe el E2E porque el publicador aún no pone `user_id`, mejor: obliga a cerrar el punto 1.
+  3. **consulta-pública: tope de cordura en `version`** y alerta en lugar de DEBUG cuando el salto es anómalo:
+     ```java
+     @NotNull @Min(1) @Max(1_000_000) Integer version,   // DatosHallazgo
+     ```
+     Documentar el procedimiento de reparación (borrar la fila en `mysql-lectura` y reenviar el último snapshot legítimo).
+  4. Al activar la verificación, añadir un test de integración: publicar con un usuario AMQP distinto debe acabar en la DLQ y no crear ficha.
+- **Esfuerzo:** S (consulta-pública), S (Santiago).
+- **Responsable:** consulta-pública (puntos 2-4) y Santiago (punto 1, recomendación).
+- **Condición:** **antes** de desplegar en las VMs el publicador real de Hernando. Si no se cumple, pasa a **Alto**.
+
+### SEC-J-02 · Medio · A04 Insecure Design / A01 (fuga por texto libre)
+**El consumidor solo bloquea claves con nombre de coordenada, pero publica tal cual el texto libre (`descripcion` hasta 5.000 caracteres, `nombreComun`, `tipoEspecimen`).**
+
+- **Archivos:** `servicio-consulta-publica/.../eventos/service/ValidadorDatosHallazgo.java:74` (solo `contieneClaveProhibida` sobre las **claves**) y `:99` (`d.descripcion()` pasa directo a `FichaPublica`). Se ve en `web-publica/src/paginas/Ficha.jsx` (sección "Descripción").
+- **Problema:** las claves extra se descartan (lector tolerante), así que el nombre de una clave nunca llega a `mysql-lectura`. Lo que sí llega es el **valor** de los campos de texto. Un investigador que escribe en la descripción "colectado en 5.53214, -73.36712" o "5°31'55\"N 73°22'02\"W" (algo habitual en fichas de campo) publica la coordenada exacta en el portal, en Redis y en la API pública, aunque todo lo demás de D14 esté bien.
+- **Por qué importa:** es la vía más probable de fuga de una ubicación protegida. No requiere atacante, solo un error humano. Una vez publicada, queda en cachés HTTP de terceros (`Cache-Control: public`).
+- **Cómo corregirlo:**
+  1. **Hernando (fuente):** validar en el formulario y en la API de registro que `descripcion`, `nombreComun` y `tipoEspecimen` no contengan coordenadas, y avisar al usuario.
+  2. **consulta-pública (defensa en profundidad):** detector de patrones en todos los campos de texto. Si encuentra coordenadas, el evento se descarta según SEC-J-03 (no a la DLQ con el texto en claro):
+     ```java
+     private static final Pattern COORD_DECIMAL = Pattern.compile(
+             "[-+]?\\d{1,2}[.,]\\d{3,}\\s*[,;/ ]\\s*[-+]?\\d{1,3}[.,]\\d{3,}");
+     private static final Pattern COORD_DMS = Pattern.compile(
+             "\\d{1,3}\\s*[°º]\\s*\\d{1,2}\\s*['′]\\s*(\\d{1,2}([.,]\\d+)?\\s*[\"″])?\\s*[NSEOW]",
+             Pattern.CASE_INSENSITIVE);
+     static boolean pareceCoordenada(String t) {
+         return t != null && (COORD_DECIMAL.matcher(t).find() || COORD_DMS.matcher(t).find());
+     }
+     ```
+     Probarlo con los ejemplos de arriba y con falsos positivos razonables (fechas, medidas como "12,5 cm").
+  3. Documentar la regla en `04` §7.3: "ningún campo de texto puede contener coordenadas".
+- **Esfuerzo:** S (consulta-pública), S-M (Hernando).
+- **Responsable:** consulta-pública y Hernando (recomendación).
+
+### SEC-J-03 · Medio · A04 / A09 (coordenadas en claro retenidas en la DLQ)
+**D24 manda a la DLQ precisamente los eventos que traen coordenadas. Así quedan en claro, sin TTL, en disco y en el panel de RabbitMQ.**
+
+- **Archivos:**
+  - `servicio-consulta-publica/.../eventos/service/ValidadorDatosHallazgo.java:74-77` (lanza `EventoInvalidoException`, que termina en la DLQ).
+  - `.../config/RabbitConfig.java:58` (`QueueBuilder.durable(cola + ".dlq").build()`, sin `x-message-ttl` ni `x-max-length`; ver SEC-D-07).
+  - `04-contrato-api.md` §7.5 ("`datos` con una clave de coordenadas → DLQ").
+- **Problema:** si el publicador de Hernando incluye por error `latitud`/`longitud`, el mensaje persistente (`delivery_mode=2`) queda guardado indefinidamente en `consulta-publica.eventos.dlq` con las coordenadas exactas en claro. Cualquiera con acceso al panel o al volumen de RabbitMQ en la VM backend puede leerlo. El mismo mensaje llega también a `reportes.eventos` (Nicolás), que podría guardarlo o registrarlo. El procedimiento documentado de "Move messages" lo reinyectaría.
+- **Por qué importa:** RNF9/ASR6 exigen que las coordenadas no existan en claro en ningún almacén persistente. La DLQ es un almacén persistente fuera del cifrado y fuera de la auditoría (D28).
+- **Cómo corregirlo:**
+  1. **consulta-pública:** tratar "trae coordenadas" (claves o texto, SEC-J-02) como **descartar con ack** y registrar un incidente sin valores, nunca DLQ:
+     ```java
+     // ConsumidorEventos.recibir()
+     try {
+         procesador.procesar(evento);
+     } catch (EventoConCoordenadasException e) {   // subclase nueva, lanzada por ValidadorDatosHallazgo
+         log.error("INCIDENTE: evento hallazgo.* con coordenadas descartado id={} tipo={}", evento.id(), evento.tipo());
+         return; // ack: el mensaje desaparece del broker
+     }
+     ```
+     Actualizar `04` §7.5, la fila correspondiente de §J5 y los tests de rechazo.
+  2. **Hernando:** validar `datos` contra el JSON Schema de `04` §7.3 **antes** de publicar (fallar cerrado). Así el mensaje con coordenadas nunca llega a crearse en el broker; es la única barrera que evita que exista.
+  3. **Santiago:** SEC-D-07 (TTL y `max-length` en las DLQ) y restringir el panel de RabbitMQ a administración.
+  4. **Nicolás (reportes):** la misma regla en su consumidor.
+- **Esfuerzo:** S.
+- **Responsable:** consulta-pública. Recomendación para Hernando, Santiago y Nicolás.
+
+### SEC-J-04 · Bajo · A04 (privacidad: fuga del área a las teselas OSM)
+**Con "Ver en el mapa" de un solo hallazgo, el mapa se centra en la coordenada exacta a zoom 12 y pide a `tile.openstreetmap.org` las teselas alrededor del punto.**
+
+- **Archivos:** `web-interna/src/ubicacion/componentes/MapaHallazgos.jsx:12` (`URL_TESELAS`) y `:27` (`fitBounds(..., { maxZoom: ZOOM_MAXIMO })`).
+- **Problema:** las teselas de zoom 12 miden unos 10 km de lado. El conjunto de teselas pedido, centrado en el punto, permite a OSMF y a su CDN deducir el área (unos pocos km) de un hallazgo protegido, junto con la IP del científico y la hora. TLS oculta la ruta a terceros en la red, pero no al proveedor. R6 lo acepta para la vista general, pero el caso de un único punto es el peor.
+- **Cómo corregirlo:**
+  - Rápido: en el ajuste automático usar un zoom menor cuando hay pocos puntos, por ejemplo `fitBounds(pos, { maxZoom: puntos.length === 1 ? 8 : 10, padding: [32, 32] })`. El usuario puede acercar manualmente, lo que sigue revelando el área, pero ya por decisión propia.
+  - Definitivo: servir las teselas desde un servidor propio o un proxy con caché en la VM backend, y no enviar `Referer` (`referrerPolicy: 'no-referrer'` en `TileLayer`).
+- **Esfuerzo:** S (rápido), M (proxy).
+- **Responsable:** web-interna-ubicacion. El proxy de teselas sería de Santiago.
+
+### SEC-J-05 · Bajo · A04 (DoS de caché; Redis compartido sin límite de memoria)
+**La caché `busquedas` tiene una clave por cada `q` distinto que mande el cliente, y Redis no tiene `maxmemory`.**
+
+- **Archivos:** `servicio-consulta-publica/.../service/CriterioBusquedaPublica.java` (`claveCache()`), `.../service/ConsultaFichasService.java` (`@Cacheable` de `busquedas`), `deploy/backend/docker-compose.yml:166` y `docker-compose.yml:94` (solo `appendonly yes` y `requirepass`).
+- **Problema:** con miles de `q` únicos por segundo, cada uno con una página de hasta 50 resúmenes, Redis crece sin límite durante el TTL de 60 s. Es el mismo Redis del rate limit del gateway, así que el efecto alcanza también al limitador. El rate limit por IP (pendiente de Santiago, R5) es lo único que lo acota.
+- **Cómo corregirlo:**
+  - Santiago: `maxmemory 256mb` y `maxmemory-policy volatile-lru` en el `redis.conf` generado (todas las claves de caché tienen TTL).
+  - Opcional en consulta-pública: cachear las búsquedas solo para `page <= 2`, o con `q` ya visto (evita guardar consultas que nadie repite).
+- **Esfuerzo:** S.
+- **Responsable:** Santiago (recomendación) y consulta-pública (opcional).
+
+### SEC-J-06 · Bajo · A05 / A04 (configuración de llaves: `.env.example` incompleto y modo efímero)
+**`UBICACION_CLAVES` y `UBICACION_CLAVE_ACTIVA` no están en `.env.example` (lo exige §J3.3) ni en `deploy/`. La única vía documentada para arrancar sin ellas es la llave efímera.**
+
+- **Archivos:** `.env.example:68-74` (solo variables de consulta-pública), `servicio-cientifico/src/main/resources/application.yml:62-66`, `.../ubicacion/infrastructure/ConfiguracionUbicacion.java:24-27` y `ProveedorDeLlavesEntorno.java:39-43`.
+- **Problema:**
+  - El modo efímero está bien protegido: exige `UBICACION_LLAVE_EFIMERA_DEV=true` **y** el perfil `dev`, y ningún archivo de `deploy/` activa perfiles (comprobado). Aun así, quien levante el servicio tras el merge encuentra un fallo de arranque sin plantilla de variables y tiene a mano la "solución rápida". Si esa combinación llega a una VM, las coordenadas reales se cifran con una llave que desaparece al reiniciar: pérdida irreversible (R1).
+  - La llave efímera usa el id `v1`, el mismo que la primera llave real, así que las filas cifradas con ella aparecen después como fallos de `INTEGRIDAD` y no como llave desconocida, lo que confunde el diagnóstico.
+- **Cómo corregirlo:**
+  1. Añadir a `.env.example` (vacías):
+     ```
+     # Llaves AES-256 de ubicación (D20). Generar cada una con: openssl rand -base64 32
+     # Formato: v1:<base64>,v2:<base64>  · Sin ellas servicio-cientifico NO arranca
+     UBICACION_CLAVES=
+     UBICACION_CLAVE_ACTIVA=
+     ```
+     Santiago debe añadirlas también a `deploy/generar-env.sh` (generación idempotente) y al compose del backend (J12.6).
+  2. En el modo efímero, registrar un ERROR en lugar de WARN y negarse si el datasource no es local:
+     ```java
+     String url = entorno.getProperty("spring.datasource.url", "");
+     if (!url.contains("//localhost") && !url.contains("//127.0.0.1")) {
+         throw new IllegalStateException("UBICACION_LLAVE_EFIMERA_DEV solo se permite con una BD local");
+     }
+     ```
+     Usar un id que no pueda coincidir con una llave real, por ejemplo `v9999`.
+- **Esfuerzo:** S.
+- **Responsable:** ubicación (`.env.example`, modo efímero) y Santiago (`deploy/`).
+
+### SEC-J-07 · Bajo · A05 (sin CSP ni cabeceras de seguridad en las webs; SEC-16 sigue abierto)
+- **Archivos:** `web-publica/index.html` (sin CSP), `web-publica/` sin `vercel.json`, y el mismo caso en web-interna.
+- **Problema:** el portal ahora muestra texto que viene de la BD (fichas). React lo escapa y no hay `dangerouslySetInnerHTML` (comprobado), pero no hay una segunda barrera ante una regresión o ante una dependencia comprometida. Tampoco hay `frame-ancestors` (clickjacking) ni `Referrer-Policy`.
+- **Cómo corregirlo:** `vercel.json` en cada web. Para web-publica:
+  ```json
+  { "headers": [{ "source": "/(.*)", "headers": [
+    { "key": "Content-Security-Policy", "value": "default-src 'self'; connect-src 'self' https://<gateway>; img-src 'self' data:; style-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" },
+    { "key": "X-Content-Type-Options", "value": "nosniff" },
+    { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+    { "key": "Strict-Transport-Security", "value": "max-age=31536000" } ]}],
+    "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }] }
+  ```
+  En web-interna (Leaflet), además: `img-src 'self' data: blob:` (desde la iteración 20 las teselas llegan por el gateway como blob; ya no se permite `tile.openstreetmap.org`, SEC-J-I24), `style-src 'self' 'unsafe-inline'` (Leaflet usa estilos en línea) y `Referrer-Policy: no-referrer`.
+- **Esfuerzo:** S.
+- **Responsable:** web-publica, y Santiago para web-interna y Vercel.
+
+### SEC-J-08 · Bajo · A09 (huecos en la auditoría D28)
+- **Archivos:** `servicio-cientifico/.../ubicacion/controller/UbicacionExceptionHandler.java:170-172` y `.../service/AuditoriaAccesoUbicacion.java:14-17`.
+- **Problema:**
+  1. Los 403 de `POST /recifrado` no se auditan, por la excepción explícita `!endsWith("/recifrado")`. Un intento de un no administrador sobre la operación criptográfica es justo lo que conviene ver.
+  2. El campo `endpoint` (que sale de `getRequestURI()`) no pasa por `limpiar()`, a diferencia de `usuario` y `filtros`. Hoy no es explotable porque Tomcat no admite CR/LF en la línea de petición y la URI queda codificada, pero es inconsistente.
+  3. La auditoría es solo un log. Se puede apagar con `logging.level.biohub.auditoria.ubicacion=OFF` y se pierde con la rotación.
+- **Cómo corregirlo:** auditar también el 403 de re-cifrado con `permitido=false`, aplicar `limpiar(endpoint, 200)` y enviar el logger `biohub.auditoria.ubicacion` a un appender propio, persistente y de solo anexado. Más adelante, la tabla `ubicacion_acceso_log` (Could).
+- **Esfuerzo:** S.
+- **Responsable:** ubicación.
+
+### SEC-J-09 · Bajo · A07 (identidad: revocación de rol y MFA; lado de Santiago)
+- **Problema:**
+  - RF19 pide que una revocación de rol se refleje "de inmediato", pero un token de `cientifico_alto_rango` revocado sigue sirviendo hasta 5 minutos (R4).
+  - Sigue sin MFA para `cientifico_alto_rango`, que es el único rol que ve coordenadas.
+- **Cómo corregirlo (Santiago):** bajar el `accessTokenLifespan` a 1-2 minutos, o introspección o lista de revocación en el gateway solo para `/api/cientifico/ubicacion/mapa` y `/hallazgos`. Para MFA, OTP condicional por rol en Keycloak.
+- **Esfuerzo:** M.
+- **Responsable:** Santiago (recomendación).
+
+### Informativos
+- **SEC-J-I1:** J3.1 dice que una colisión del `UNIQUE (clave_version, coord_nonce)` "se reintenta una vez con otro nonce", pero no está implementado: el registro fallaría y se revertiría. La probabilidad con nonces aleatorios de 96 bits es despreciable y el fallo es seguro (nunca reutiliza un nonce). Basta con ajustar el texto de J3.1.
+- **SEC-J-I2:** las llaves viven en el heap (el `String` de `PropiedadesCifrado` y los bytes decodificados no se borran). No se debe activar `-XX:+HeapDumpOnOutOfMemoryError` hacia disco compartido ni exponer `heapdump`/`env`/`configprops` en actuator (hoy solo `health,info`, correcto).
+- **SEC-J-I3:** la ficha pública muestra `fechaRecoleccion` exacta y el departamento también para `EN_PELIGRO`. Combinado con expediciones conocidas puede ayudar a acotar la zona. Propuesta de producto: para especies en peligro, publicar solo mes y año (práctica de datos sensibles de GBIF).
+- **SEC-J-I4:** la búsqueda interna muestra `investigador` (`preferred_username`) a los 5 roles internos y permite filtrar por él. Es coherente con el contrato. Conviene confirmar con la dueña del producto que `analista_ambiental` lo necesita (minimización).
+- **SEC-J-I5 (Hernando):** los campos personalizados de ASR5 (columnas JSON/EAV) no deben admitir coordenadas en claro. Si no, se salta RNF9 por fuera del módulo de ubicación. Sus DTOs de entrada con latitud/longitud deben enmascarar `toString()` (`04` §6, obligación 2), porque con `logging.level.org.springframework.web=DEBUG` Spring registra el cuerpo leído usando `toString()`.
+- **SEC-J-I6:** con dos instancias, el `AtomicBoolean` del re-cifrado es por instancia. `FOR UPDATE SKIP LOCKED` evita el doble procesamiento (correcto). Las filas bloqueadas por un registro en curso se saltan y quedan en `pendientesPorVersion`, así que hay que repetir el re-cifrado hasta que llegue a 0 antes de retirar la llave vieja (ya está en J3.5, paso 3).
+
+---
+
+## Bien hecho
+- **Cifrado:**
+  - AES/GCM/NoPadding con tag de 128 bits, nonce de 12 B de `SecureRandom` nuevo en **cada** cifrado (también al re-cifrar) y AAD = UUID canónico.
+  - Se valida la longitud del nonce y del texto plano. `AEADBadTagException` y cualquier `GeneralSecurityException` se convierten en `INTEGRIDAD` sin propagar la causa.
+  - Se borra el texto plano (`Arrays.fill`).
+  - El texto plano de `recifrar` no sale del cifrador.
+  - Hay `CHECK` de longitud y `UNIQUE (clave_version, coord_nonce)` en la BD.
+  - No existen columnas en claro.
+- **Llaves:**
+  - Se validan al arrancar (32 bytes, id `^v[1-9][0-9]{0,3}$`, sin repetidos y con la activa presente).
+  - Los mensajes nombran la variable, nunca el valor (con test).
+  - `toString()` enmascarado.
+  - Se usan en todos los perfiles.
+  - El modo efímero exige perfil y bandera a la vez (con test).
+- **Autorización centralizada:**
+  - `PoliticaAccesoUbicacion` excluye explícitamente `AnonymousAuthenticationToken`.
+  - El mapa tiene `@PreAuthorize` más `exigirCoordenadas` en el servicio.
+  - `ServicioDescifrado` vuelve a exigir el rol antes de tocar el cifrador.
+  - Para roles sin permiso, la consulta **ni siquiera selecciona** `coord_*` (minimización).
+  - `bbox` responde 403 o 400 según el rol.
+  - El re-cifrado es solo para `administrador` y nunca devuelve coordenadas.
+  - No hay forma de llegar a las coordenadas por `hallazgoId`, parámetros o re-cifrado sin el rol.
+- **Sin filtraciones:**
+  - `toString()` enmascarado en `Coordenadas`, `CoordenadasCifradas`, `UbicacionHallazgo`, `FilaHallazgo`, `RegistroUbicacionComando` y los DTOs de respuesta (también en el `toString` anidado de los records contenedores). Por eso el log DEBUG "Writing [...]" de Spring MVC no las muestra.
+  - Un test captura los logs en DEBUG, incluido el SQL.
+  - Los errores son `problem+json` sin trazas.
+  - Todas las respuestas internas, incluidos los errores, llevan `Cache-Control: no-store`.
+  - Actuator expone solo `health,info`.
+- **Inyección:**
+  - JPQL y SQL con parámetros enlazados. Solo se añaden fragmentos fijos según los filtros.
+  - `LIKE` escapado (`!` en la búsqueda interna y `\` en la pública).
+  - En el FULLTEXT se eliminan todos los caracteres que no son letra ni número, así que no quedan operadores.
+  - Orden fijo, sin ordenamiento controlado por el cliente.
+  - Las claves de caché se codifican por componente (sin colisiones por `|`/`=`).
+  - Probado con `' OR '1'='1`.
+- **Eventos:**
+  - Límite de 64 KB y `datos` como `Map` sin tipado polimórfico.
+  - `__TypeId__` ignorado.
+  - Mapeo estricto (sin coerción de escalares) y Bean Validation.
+  - Búsqueda recursiva de claves prohibidas, sin distinguir mayúsculas.
+  - Valor de estado desconocido → `EN_PELIGRO`.
+  - `usuario` del sobre nunca guardado.
+  - UPSERT atómico `WHERE version < ?`.
+  - Invalidación de caché después del commit.
+- **Caché:** `Jackson2JsonRedisSerializer` tipado a los DTOs públicos (sin `activateDefaultTyping`), prefijo `biohub:publica:`, Redis caído tratado como miss y probado con el contenedor detenido. No se cachean 404 ni errores.
+- **Disponibilidad:**
+  - `size` ≤ 50 en la pública y ≤ 100 en la interna; `(page+1)*size ≤ 10.000`.
+  - Mapa limitado a 1.000 elementos, con `truncado`.
+  - Descifrado limitado a la página.
+  - Hikari a 2 s y Redis a 300 ms.
+- **Frontend:**
+  - Listas blancas en los dos adaptadores: `aHallazgo` descarta latitud y longitud si el rol no es alto rango, aunque lleguen.
+  - El mapa no llama a la API sin el rol.
+  - Las coordenadas viven solo en el estado del componente y se descartan con 401/403.
+  - `credentials: 'omit'` y `cache: 'no-store'`.
+  - Sin storage, sin `console.*` y sin `dangerouslySetInnerHTML`.
+  - El `title` del marcador se asigna como atributo, sin HTML.
+  - `state.volver` se valida (`startsWith('?')`): no hay redirección abierta.
+  - Un 404 y un 400 se muestran igual en la ficha.
+- **Pruebas:** con Testcontainers efímeros. No se tocaron las VMs (D30).
+
+## Condicionado a otros integrantes (recomendaciones)
+| Quién | Qué | Antes de |
+|---|---|---|
+| Santiago | SEC-D-03 (permisos `write` y `setUserId`) → SEC-J-01 | Desplegar el publicador real en las VMs |
+| Santiago | `UBICACION_CLAVES`/`UBICACION_CLAVE_ACTIVA` en `generar-env.sh` y en el compose, con copia de custodia fuera de la VM (R1) y nunca junto a los respaldos de la BD (SEC-D-06) → SEC-J-06 | Desplegar el módulo `ubicacion` |
+| Santiago | Rate limit por IP en `/api/publica/**` y `maxmemory` en Redis → SEC-J-05; SEC-D-07 (TTL en las DLQ) → SEC-J-03 | Exponer el portal a internet |
+| Santiago | CSP en web-interna, montar `rutasUbicacion` sin exponer el mapa a otros roles, MFA y vida del token → SEC-J-07, SEC-J-09 | Datos reales |
+| Hernando | Validar el JSON Schema antes de publicar, sin coordenadas en texto libre ni en campos ASR5, outbox y `version` creciente → SEC-J-02, SEC-J-03, SEC-J-I5 | Su primera publicación de `hallazgo.*` |
+| Nicolás | Misma regla de descarte de eventos con coordenadas en `reportes` → SEC-J-03 | Consumir `hallazgo.*` |
+
+## Veredicto (parte de Juanita)
+**APROBADO CON OBSERVACIONES.** No hay Críticos ni Altos. La confidencialidad de las coordenadas dentro del alcance revisado es sólida: el cifrado es correcto, el control de rol está centralizado y tiene doble barrera, y no hay fugas por logs, errores, caché ni eventos salientes. Condiciones:
+1. **Antes de desplegar el publicador de `hallazgo.*` en las VMs:** SEC-J-01 (cambiar el valor por defecto a `true` y poner el tope de versión, más SEC-D-03 de Santiago). Si no se cumple, SEC-J-01 pasa a **Alto**.
+2. **Antes de datos reales:** SEC-J-02 y SEC-J-03.
+3. Los Bajos (SEC-J-04 a SEC-J-09), en la siguiente iteración de cada responsable.
+
+---
+
+# Iteración 15h – auditoría final (2026-11-04)
+
+**Revisor:** ciberseguridad · **Rama:** `feature/ubicacion-consulta-publica` (HEAD `8cab133`) **más el working tree sin commit** · **Alcance:** `servicio-cientifico` paquete `co.edu.unbosque.biohub.cientifico.ubicacion` (y los eventos de dominio nuevos de `cientifico.eventos.domain` que escucha), `servicio-consulta-publica` completo, `.env.example`, `application.yml`, CI, Bruno y `pruebas-carga/`.
+
+> **Numeración:** `SEC-J-09` ya existía (identidad, lado de Santiago). Los hallazgos nuevos empiezan en **SEC-J-10** para no pisar el anterior.
+
+## Resumen
+
+| Severidad | Cantidad (nuevos) |
+|---|---|
+| Crítico | 0 |
+| Alto | 0 |
+| Medio | 2 (SEC-J-10, SEC-J-11) |
+| Bajo | 3 (SEC-J-12, SEC-J-13, SEC-J-14) |
+| Informativo | 3 (SEC-J-I7 a SEC-J-I9) |
+
+**Veredicto: APROBADO CON OBSERVACIONES.** La refactorización (Decorator, Strategy, Adapter de keystore, Observer y `service/vista`) **no rompió** ningún control de SEC-J-01 a SEC-J-08: las coordenadas siguen saliendo solo hacia `cientifico_alto_rango`, se cifran antes de llegar a JPA, el re-cifrado no expone texto plano, cada descifrado y cada 403 quedan auditados y la llave efímera sigue limitada a una BD local. Los dos Medios son de **diseño y configuración**, no se pueden explotar desde fuera hoy y se corrigen con poco esfuerzo (S).
+
+### Cómo se revisó
+- **Documentación:** 03-arquitectura (D34 a D41), 04-contrato-api y los hallazgos SEC-J-*, SEC-D-03 y SEC-D-07 de este reporte.
+- **Código (estático):** `git status`, `git diff` y todos los archivos nuevos sin seguimiento de los dos servicios. Se leyeron completos `ConfiguracionUbicacion`, los tres decoradores y `RepositorioUbicacionesJpa`, `ProveedorDeLlavesKeyStore`/`Entorno`, `PropiedadesCifrado`, `PoliticaAccesoUbicacion`, `VisibilidadExacta`/`Generalizada`, `ServicioDescifrado`, `BusquedaHallazgosService`, `MapaService`, `RecifradoService`, `UbicacionServiceImpl`, `ObservadorUbicacion`, `HallazgoRegistrado`/`Reclasificado`, los controladores y `UbicacionExceptionHandler`, los DTO de `service/vista`, `ConsumidorEventos`, `DetectorCoordenadas`, `MonitorCarga`, `MonitorCargaFilter`, `ConfiguracionDegradacion`, `ElectorEstrategiaBusqueda`, `BusquedaCompleta`/`Degradada` y `CriterioBusquedaPublica.claveCache()`.
+- **Búsquedas dirigidas:**
+  - Quién inyecta `CifradorCoordenadas`, `UbicacionHallazgoRepository`, `ServicioDescifrado` y `RepositorioUbicaciones`.
+  - Quién publica `HallazgoRegistrado` (hoy nadie: `registro` está vacío).
+  - Cadenas con forma de llave (`vN:` + base64 de 32 bytes) en todo el árbol: sin coincidencias reales.
+  - `.env` ignorado (`!! .env`, permisos 600). No hay `.p12`/`.jks` en el árbol.
+- **Pruebas:** `mvn -B -pl servicio-cientifico -am verify`: **229 tests, 0 fallos, 1 omitido** (incluye `ArquitecturaUbicacionTest`, `DecoradoresRepositorioUbicacionesTest`, `DecoradorAuditoriaIntegracionTest`, `ProveedorDeLlavesKeyStoreTest`, `ObservadorUbicacion*Test` y los QA de JWT, cifrado e inyección). **No** se ejecutó la suite de consulta-pública porque otro agente estaba editando `servicio-consulta-publica/src/test/**`. Esos cambios en curso no se revisaron.
+- **Dependencias:** `archunit-junit5` 1.4.1 (con `archunit` 1.4.1 y `archunit-junit5-engine` 1.4.1 como transitivas) queda **solo en `scope test`** en los dos `pom.xml` (confirmado con `dependency:tree`) y no llega al JAR. No hay escáner de CVE disponible (`osv-scanner`, `trivy`, `grype` y `dependency-check` no están instalados). SEC-15 sigue abierto.
+- **Cambios concurrentes:** durante la auditoría, `ConsumidorEventos.java:43` y el comentario de `servicio-consulta-publica/src/main/resources/application.yml:91` cambiaron en el working tree (otro agente). Se reporta el estado **al cierre de la revisión**.
+
+---
+
+## Estado de los hallazgos previos
+
+| ID | Estado | Evidencia |
+|---|---|---|
+| SEC-J-01 | **Parcial**: cerrado en código, abierto en configuración y en el publicador | Cerrado: `consulta-publica/.../application.yml:92` (`verificar-publicador: ...:true`), `ConsumidorEventos.java:43` (valor por defecto `true` al cierre), `:46` (`STRICT_DUPLICATE_DETECTION`), `:125-129` (rechazo si `receivedUserId` ≠ esperado), `DatosHallazgo.java:19,33` (`@Max(1_000_000)`) y `ProcesadorHallazgos.java:27,49-55` (alertas de salto anómalo). Abierto: `.env.example:72` de la raíz sigue en `false` (SEC-J-11); `cientifico/.../PublicadorEventos.java:50-56` no fija `user_id`; SEC-D-03 y SEC-04 (usuario de RabbitMQ compartido) siguen abiertos |
+| SEC-J-02 | **Cerrado** (lado de Juanita) | `DetectorCoordenadas.java:57-66` (decimal, hemisferio, grados-minutos y palabra clave), aplicado de forma recursiva a claves y valores en `ConsumidorEventos.java:67,77-89`. Del lado de científico: `DetectorCoordenadasEnTexto` y `UbicacionServiceImpl.java:93-95` (`nombreCientifico`). La validación en origen (Hernando) sigue pendiente |
+| SEC-J-03 | **Cerrado** (lado de Juanita) | `ConsumidorEventos.java:62-74,91-106`: el evento con coordenadas se descarta con ack, se registra el incidente sin valores y no pasa por la DLQ. Sigue abierto SEC-D-07 (`RabbitConfig.java:58`, DLQ sin TTL ni `max-length`) para los demás rechazos |
+| SEC-J-04 | **Abierto** → **Iteración 16: Parcial** (zoom 8/10 y `no-referrer` hechos; falta el proxy de Santiago) | `web-interna/src/ubicacion/componentes/MapaHallazgos.jsx:10,27` (`maxZoom` 12 también con un solo punto) y `:45` (`TileLayer` sin `referrerPolicy`) |
+| SEC-J-05 | **Abierto** | `docker-compose.yml:94`: el `redis.conf` generado solo tiene `appendonly` y `requirepass`, sin `maxmemory` |
+| SEC-J-06 | **Cerrado** | `servicio-cientifico/.env.example:58-62` (variables y aviso). `ConfiguracionUbicacion.java:47-58` exige el perfil `dev`, la bandera **y** una BD local. `:63-70` (`esBaseLocal` con regex anclada: rechaza `localhost.evil`, multi-host `localhost:3306,otro` y `loadbalance`). `ProveedorDeLlavesEntorno.java:26` (id `v9999`). Con el proveedor `keystore` la llave efímera no se puede activar (`ConfiguracionUbicacion.java:34-42` retorna antes) |
+| SEC-J-07 | **Parcial** | `web-publica/index.html:9-12`: CSP en `<meta>` y `referrer`. `frame-ancestors` y HSTS no se pueden fijar por `<meta>` y siguen faltando como cabeceras. `web-interna/index.html` sigue sin CSP |
+| SEC-J-08 | **Parcial** (puntos 1 y 2 cerrados, 3 abierto) → **Iteración 16: Parcial** (appender propio hecho; falla abierto, SEC-J-18) | (1) `UbicacionExceptionHandler.java:62-65` audita todos los 403, también `POST /recifrado`. (2) `AuditoriaAccesoUbicacion.java:17` pasa `endpoint` por `limpiar(..., 200)`. (3) No hay appender dedicado ni de solo anexado: no existe `logback-spring.xml` en `servicio-cientifico/src/main/resources/`, así que la auditoría se apaga con el nivel de log |
+| SEC-J-09 | **Abierto** (Santiago, fuera de alcance) | `infra/keycloak/realm-biohub.json:18` (`accessTokenLifespan: 300`), sin OTP condicional |
+| SEC-D-03 / SEC-D-07 | **Abiertos** | Ver SEC-J-11 y SEC-J-03 |
+
+### Verificación específica de la refactorización
+- **Coordenadas nunca en claro fuera del permiso:** los DTO movidos a `service/vista` conservan el `toString()` enmascarado (`FeatureResponse.java:14-17,31-34`, `HallazgoUbicacionResponse.java:23-26`), igual que `FilaHallazgo.java:21-24`, `UbicacionResuelta.java:31-34` y `HallazgoRegistrado.java:41-44`. `VisibilidadGeneralizada` no recibe `ServicioDescifrado` y devuelve latitud y longitud `null` (`VisibilidadGeneralizada.java:14-19`). Con ella, `necesitaCoordenadasCifradas()` es `false` y el texto cifrado ni se selecciona (`RepositorioUbicacionesJpa.java:72`).
+- **Doble barrera de rol:** `@PreAuthorize` en el mapa (`MapaUbicacionController.java:27`), `exigirCoordenadas` en `MapaService.java:39`, `estrategiaPara` en `PoliticaAccesoUbicacion.java:38-51` y otra vez `exigirCoordenadas` en `ServicioDescifrado.java:39`. El constructor sin argumentos de la política falla cerrado (`:44-46`).
+- **Cifrado en reposo con versión:** `DecoradorCifradoCoordenadas.java:30-37` cifra y llama a `asignarCifrado` antes de delegar, y le pasa `null` al componente JPA. Como red de seguridad, `RepositorioUbicacionesJpa.java:53-58` rechaza coordenadas en claro. Hay test que comprueba el orden de la cadena (`DecoradoresRepositorioUbicacionesTest.java:176-185`).
+- **Re-cifrado:** `RecifradoService.java:95-121` no cambió de comportamiento: el texto plano no sale de `cifrador.recifrar`, se mantiene `FOR UPDATE SKIP LOCKED` con parámetros enlazados y se audita el agregado (`:87`).
+- **Orden de decoradores:** auditoría → cifrado → JPA (`ConfiguracionUbicacion.java:82-90`). El único bean `RepositorioUbicaciones` es la cadena completa; los decoradores y `RepositorioUbicacionesJpa` **no** son beans. Ver SEC-J-10 para los caminos que aun así esquivan la auditoría.
+
+---
+
+## Hallazgos nuevos
+
+### SEC-J-10 · Medio · A01 / A09 (la "segunda barrera" y la auditoría se pueden esquivar desde código del mismo servicio)
+**Tras la refactorización, la capacidad de descifrar está en dos interfaces que inyecta cualquier bean, y ArchUnit no lo restringe.**
+
+- **Archivos:**
+  - `servicio-cientifico/.../ubicacion/domain/RepositorioUbicaciones.java:43,48`: `obtenerUbicacionExacta` es pública en el puerto general y el javadoc dice "La autorización por rol NO se decide aquí".
+  - `.../infrastructure/ConfiguracionUbicacion.java:72-75`: `CifradorCoordenadas` es un bean inyectable con `descifrar` público (`domain/CifradorCoordenadas.java:12`).
+  - `.../infrastructure/DecoradorCifradoCoordenadas.java:23` y `RepositorioUbicacionesJpa.java:37`: constructores públicos, así que se puede armar una cadena sin auditoría.
+  - `.../infrastructure/DecoradorAuditoriaAcceso.java:29-37`: solo audita el éxito y `CoordenadasNoDescifrablesException`; cualquier otra `RuntimeException` sale sin línea de auditoría.
+  - `src/test/.../ArquitecturaUbicacionTest.java:40-47`: la regla de `ServicioDescifrado` solo mira `..ubicacion..` y no hay regla para `CifradorCoordenadas` ni para quién llama a `obtenerUbicacionExacta`.
+- **Problema:** `RepositorioUbicaciones` lo reciben `BusquedaHallazgosService`, `MapaService`, `UbicacionServiceImpl` y `ServicioDescifrado`, y lo puede recibir cualquier bean futuro del contexto, incluido el módulo `registro` de Hernando, que convive en el mismo `ApplicationContext`. Cualquiera de ellos puede llamar a `repositorio.obtenerUbicacionExacta(...)` **sin pasar por `PoliticaAccesoUbicacion`**: la llamada se audita como `PERMITIDO`, pero no se controla el rol. Inyectando `CifradorCoordenadas` directamente, se descifra **sin rol y sin auditoría**. Antes de la refactorización el descifrado estaba concentrado en `ServicioDescifrado`. Ahora la documentación (`RepositorioUbicaciones.java:10-11`, README, D40) afirma que "no pueden saltarse el cifrado ni la auditoría", pero solo lo impide la convención.
+- **Por qué importa:** RF13/D21 y D28 son los controles centrales del activo más sensible. Basta un error de un desarrollador (por ejemplo, un endpoint de detalle de hallazgo en `registro` que reutilice el repositorio) para que un `investigador_campo` reciba coordenadas, y nada en CI lo detectaría. No es explotable desde fuera hoy: no existe ese código.
+- **Corrección:**
+  1. Poner el rol **dentro** de la cadena: que el decorador de auditoría reciba la `Authentication` y vuelva a exigir el rol antes de delegar, así la barrera viaja con el repositorio:
+     ```java
+     // RepositorioUbicaciones
+     Coordenadas obtenerUbicacionExacta(Authentication quien, UUID hallazgoId, CoordenadasCifradas cifradas);
+
+     // DecoradorAuditoriaAcceso
+     @Override
+     public Coordenadas obtenerUbicacionExacta(Authentication quien, UUID id, CoordenadasCifradas c) {
+         if (!politica.puedeVerCoordenadas(quien)) {
+             auditoria.registrar(nombre(quien), ACCION, false, "hallazgoId=" + id, 0, 0);
+             throw new AccessDeniedException("Sin permiso para ver coordenadas");
+         }
+         try {
+             Coordenadas r = envuelto.obtenerUbicacionExacta(quien, id, c);
+             auditoria.registrar(quien.getName(), ACCION, true, "hallazgoId=" + id, 1, 0);
+             return r;
+         } catch (RuntimeException e) {                      // cualquier fallo queda auditado
+             auditoria.registrar(quien.getName(), ACCION, true, "hallazgoId=" + id, 0, 1);
+             throw e;
+         }
+     }
+     ```
+  2. Reglas ArchUnit sobre **todo** `co.edu.unbosque.biohub.cientifico`:
+     ```java
+     @Test void soloServicioDescifradoPideCoordenadasExactas() {
+         noClasses().that().doNotHaveSimpleName("ServicioDescifrado")
+             .and().resideOutsideOfPackage("..ubicacion.infrastructure..")
+             .should().callMethodWhere(target(name("obtenerUbicacionExacta"))
+                 .and(target(owner(assignableTo(RepositorioUbicaciones.class)))))
+             .check(CLASES);
+     }
+     @Test void cifradorSoloEnInfraestructuraYRecifrado() {
+         noClasses().that().resideOutsideOfPackage("..ubicacion.infrastructure..")
+             .and().doNotHaveSimpleName("RecifradoService")
+             .should().dependOnClassesThat().areAssignableTo(CifradorCoordenadas.class).check(CLASES);
+     }
+     @Test void decoradoresSoloLosConstruyeLaConfiguracion() {
+         noClasses().that().doNotHaveSimpleName("ConfiguracionUbicacion")
+             .should().callConstructor(DecoradorCifradoCoordenadas.class, RepositorioUbicaciones.class,
+                                       CifradorCoordenadas.class, Clock.class)
+             .check(CLASES);   // ídem para RepositorioUbicacionesJpa y DecoradorAuditoriaAcceso
+     }
+     ```
+     y ampliar `soloLaEstrategiaExactaUsaElServicioDeDescifrado` a todo el servicio (quitar `resideInAPackage("..ubicacion..")`).
+  3. Hacer *package-private* los constructores de los decoradores y de `RepositorioUbicacionesJpa` (los construye `ConfiguracionUbicacion`, que está en el mismo paquete).
+- **Esfuerzo:** S · **Responsable sugerido:** ubicación (Juanita).
+
+### SEC-J-11 · Medio · A05 / A08 (ARQ-13 queda anulado por la plantilla de la raíz; SEC-J-01 sigue abierto en la práctica)
+**La verificación del publicador AMQP es `true` por defecto en el servicio, pero el `.env.example` de la raíz (el `.env` que cargan todos los servicios) la pone en `false`.**
+
+- **Archivos:**
+  - `.env.example:71-72` (raíz): `# ... (false). Activar cuando el publicador lo ponga` y `BIOHUB_EVENTOS_VERIFICAR_PUBLICADOR=false`. No cambió en esta iteración.
+  - `servicio-consulta-publica/src/main/resources/application.yml:7`: `import: optional:file:../.env[.properties],optional:file:./.env[.properties]`. Se lee **primero el `.env` de la raíz**; el `.env` del servicio solo gana si existe.
+  - `servicio-consulta-publica/.env.example:71` (`true`) contradice a la raíz.
+  - `servicio-cientifico/.../eventos/service/PublicadorEventos.java:50-56`: no hace `setUserId(...)`.
+  - `docker-compose.yml:111-112`: un único usuario de RabbitMQ, administrador, para todos los servicios (SEC-04 pendiente).
+- **Problema:** con D34 ya no hay un despliegue distinto del Compose local, así que la configuración real es la de las plantillas. Quien siga el README y copie `.env.example` → `.env` en la raíz deja la verificación **apagada**: el WARN de `ConsumidorEventos.java:51-54` aparece, pero el servicio arranca igual. Aun con la verificación activa, mientras todos los servicios usen el mismo usuario `biohub` (administrador), el `user_id` no distingue a cientifico de reportes. Además, cuando Hernando publique `hallazgo.*` reales con `PublicadorEventos`, sin `user_id` irán todos a la DLQ (falla cerrado, que es lo correcto, pero empujará a alguien a "arreglarlo" poniendo `false`).
+- **Por qué importa:** es la integridad del portal público (SEC-J-01): un evento falsificado crea o desfigura fichas. ARQ-13 se presenta como cerrado y en la práctica no lo está.
+- **Corrección:**
+  1. `.env.example` (raíz):
+     ```properties
+     # Verificar el user_id AMQP del publicador de hallazgo.* (ARQ-13, SEC-J-01). true por defecto.
+     # false SOLO en local sin publicador real; el servicio avisa con un WARN.
+     BIOHUB_EVENTOS_VERIFICAR_PUBLICADOR=true
+     # Usuario AMQP con el que publica servicio-cientifico (biohub en el compose local mientras no exista cientifico_mq)
+     BIOHUB_EVENTOS_PUBLICADOR_CIENTIFICO=cientifico_mq
+     ```
+  2. Hernando/Santiago: SEC-D-03 punto 2 en `PublicadorEventos`:
+     ```java
+     mensaje.getMessageProperties().setUserId(usuarioRabbit);   // @Value("${spring.rabbitmq.username}")
+     ```
+  3. Santiago: SEC-04/SEC-D-03 punto 1 (usuarios por servicio; los consumidores sin `write` sobre `biohub.eventos`) también en el `docker-compose.yml` de la raíz (por ejemplo con `definitions.json`). Sin esto, la verificación no aísla.
+  4. Opcional: con `verificar-publicador=false` y un perfil distinto de `local`/`test`, negarse a arrancar (mismo patrón que SEC-J-06).
+- **Esfuerzo:** S (plantilla y `setUserId`), M (usuarios por servicio) · **Responsable sugerido:** consulta-pública (plantilla), Hernando (`setUserId`), Santiago (usuarios de RabbitMQ).
+
+### SEC-J-12 · Bajo · A02 / A05 (gestión de la contraseña del keystore PKCS12)
+- **Archivos:** `servicio-cientifico/.../infrastructure/ConfiguracionUbicacion.java:36,41` (`clave.toCharArray()` nunca se borra), `PropiedadesCifrado.java:17-18` (la contraseña queda como `String` en el bean y en el `Environment`), `ProveedorDeLlavesKeyStore.java:40-47` (no revisa los permisos del archivo) y `:70` (usa la misma contraseña para el almacén y las entradas).
+- **Problema:** el adaptador está bien: falla cerrado si falta la ruta, la contraseña o la llave activa, no tiene fallback inseguro, no hace fallback a `entorno`, el mensaje de error no incluye ni la ruta ni la causa y exige alias `vN` y AES de 32 bytes, con tests. Pero:
+  - La contraseña vive en el heap durante toda la vida del proceso (como en SEC-J-I2).
+  - Un `.p12` con permisos `644` se acepta sin aviso.
+  - Contraseña y ruta están en el mismo `.env` que todo lo demás, así que el keystore solo añade protección si la contraseña llega por otro canal (variable del sistema o secreto del orquestador).
+- **Corrección:**
+  ```java
+  // ConfiguracionUbicacion
+  char[] pwd = clave == null ? null : clave.toCharArray();
+  try {
+      return new ProveedorDeLlavesKeyStore(Path.of(ruta.trim()), pwd, propiedades.claveActiva());
+  } finally {
+      if (pwd != null) java.util.Arrays.fill(pwd, '\0');
+  }
+  // ProveedorDeLlavesKeyStore, al validar la ruta
+  try {
+      var permisos = Files.getPosixFilePermissions(ruta);
+      if (permisos.contains(PosixFilePermission.OTHERS_READ) || permisos.contains(PosixFilePermission.GROUP_READ)) {
+          throw new IllegalStateException("UBICACION_KEYSTORE_RUTA: el keystore no debe ser legible por grupo u otros (chmod 600)");
+      }
+  } catch (UnsupportedOperationException noPosix) { /* Windows: no aplica */ }
+  ```
+  En el README, recomendar `UBICACION_KEYSTORE_PASSWORD` como variable del sistema o secreto, no en el `.env` junto a la ruta.
+- **Esfuerzo:** S · **Responsable sugerido:** ubicación.
+
+### SEC-J-13 · Bajo · A04 (el evento de dominio con coordenadas se puede serializar hacia el broker)
+- **Archivos:** `servicio-cientifico/.../eventos/domain/HallazgoRegistrado.java:37-38` (`latitud`/`longitud` como componentes del record, que Jackson serializa) y `.../eventos/service/PublicadorEventos.java:46` (`publicar(..., Map<String,Object> datos)` acepta cualquier mapa, sin guarda de coordenadas).
+- **Problema:** el javadoc pide no copiar las coordenadas al `EventoSobre`, y `toString()` las enmascara, pero el `@TransactionalEventListener(AFTER_COMMIT)` de registro armará `datos` a partir de este mismo record. Un `objectMapper.convertValue(evento, Map.class)` las enviaría a `biohub.eventos`. Consulta-pública las descartaría (SEC-J-03), pero llegarían a `reportes.eventos` y quedarían en el broker. El publicador es la única barrera que impide que el mensaje exista.
+- **Corrección:**
+  ```java
+  // HallazgoRegistrado
+  @JsonIgnore Double latitud,
+  @JsonIgnore Double longitud,
+  // PublicadorEventos.publicar, antes de construir el sobre
+  if (tipo.startsWith("hallazgo.") && DetectorCoordenadasEnTexto.contieneEnMapa(datos)) {   // claves + texto, como en consulta-pública
+      throw new IllegalArgumentException("hallazgo.* no puede llevar coordenadas (D14)");
+  }
+  ```
+  y un test que serialice un `HallazgoRegistrado` y compruebe que no aparecen `latitud`/`longitud`.
+- **Esfuerzo:** S · **Responsable sugerido:** ubicación (`@JsonIgnore` y test) y Hernando (guarda del publicador).
+
+### SEC-J-14 · Bajo · A05 (pruebas de carga: credenciales en la línea de comandos y eventos incompatibles con ARQ-13)
+- **Archivos:** `pruebas-carga/correr-k6.sh:11-12,20` (`-e RMQ_PASS=<contraseña>` como argumento de `docker run`/`k6`), `pruebas-carga/datos/limpiar.sh:12` (`curl -u "$RABBITMQ_USER:$RABBITMQ_PASSWORD"`), `k6/registro-hallazgo.js:5` (`-e TOKEN=<JWT>`), `correr-k6.sh:20` (`grafana/k6:latest` sin versión fija), `k6/carga-cientifica-simultanea.js:91,104` (`version` hasta ~2·10⁷ y sin `user_id`).
+- **Problema:**
+  - **No hay secretos ni credenciales reales versionados**: todo sale del `.env` en tiempo de ejecución, `resultados/*.json` solo tiene métricas, la semilla es sintética y sin coordenadas, NGINX y las réplicas solo escuchan en `127.0.0.1`/la red de Docker y el compose es efímero (D30).
+  - En cambio, la contraseña del usuario **administrador** de RabbitMQ y el JWT quedan visibles con `ps` para cualquier usuario local mientras corre la prueba (el mismo patrón que SEC-10).
+  - `latest` puede cambiar de imagen sin aviso.
+  - Los `hallazgo.*` de la carga científica no llevan `user_id` y su `version` supera `VERSION_MAXIMA`. Con ARQ-13 todos se rechazan hacia la DLQ, de modo que ASR4 deja de medir lo que dice medir y es tentador "arreglarlo" apagando la verificación.
+- **Corrección:**
+  ```bash
+  # correr-k6.sh: pasar por entorno, no por argumento
+  export RMQ_USER RMQ_PASS
+  exec docker run --rm -e RMQ_USER -e RMQ_PASS ... grafana/k6:1.3.0 run ...
+  # limpiar.sh
+  curl -s -o /dev/null --netrc-file <(printf 'machine 127.0.0.1 login %s password %s\n' "$RABBITMQ_USER" "$RABBITMQ_PASSWORD") -X DELETE ...
+  ```
+  En `carga-cientifica-simultanea.js`: `properties: { ..., user_id: __ENV.RMQ_USER }`, `version` acotada (por ejemplo, `2 + (i % 900000)`), y en el compose de carga `BIOHUB_EVENTOS_PUBLICADOR_CIENTIFICO: ${RABBITMQ_USER}` (sin desactivar la verificación).
+- **Esfuerzo:** S · **Responsable sugerido:** consulta-pública (pruebas de carga).
+
+### Informativos
+- **SEC-J-I7 (CI):** `.github/workflows/ci.yml:93` usa una llave AES **fija y pública** (`CI_UBICACION_CLAVE`, texto ASCII legible en base64) desde el commit `5b168b2`. Es ficticia y solo vive en el job, pero D38 dice "las llaves de cifrado de CI se generan en el job". Recomendación: `CI_UBICACION_CLAVE=$(openssl rand -base64 32)` en un paso previo (con `echo "CI_UBICACION_CLAVE=..." >> "$GITHUB_ENV"`), y no reutilizar nunca ese valor fuera de CI. Los cambios de esta iteración en CI y Bruno (`user_id` = `rabbitUser`; `rabbitPassword`/`passwordUsuarios` como `vars:secret`, `bruno/environments/*.bru:14-16`) no introducen secretos.
+- **SEC-J-I8 (degradación automática, ARQ-06):** con unas 100 peticiones concurrentes cualquier anónimo puede forzar el modo degradado (`MonitorCarga.java:78-83`). Es el comportamiento buscado, solo reduce filtros, la clave de caché distingue el modo (`CriterioBusquedaPublica.java:65-66`) y el filtro no toca la respuesta. Su acotación depende del rate limit por IP del gateway (SEC-J-05, Santiago). `/actuator/info` muestra `enCurso`/`p95Ms` a cualquier usuario autenticado. No es sensible.
+- **SEC-J-I9 (volumen de auditoría):** `DecoradorAuditoriaAcceso` escribe una línea por hallazgo descifrado, hasta 1.000 por petición de mapa (`MapaService.java:21`). Es correcto para D28, pero conviene incluirlo al dimensionar el appender dedicado de SEC-J-08 (3) para no perder líneas por rotación.
+
+---
+
+## Bien hecho (esta iteración)
+- **Decorator bien armado:**
+  - Un único bean `RepositorioUbicaciones` con el orden auditoría → cifrado → JPA, verificado por test.
+  - El componente JPA **se niega** a guardar coordenadas en claro.
+  - `UbicacionHallazgoRepository` extiende `Repository` (sin `delete*`/`findAll`) y ArchUnit impide usarlo fuera de `infrastructure`/`domain`.
+- **Strategy con falla segura:** cualquier caso que no sea alto rango recibe `VisibilidadGeneralizada`, que ni siquiera tiene acceso al descifrado. La exacta conserva la segunda barrera en `ServicioDescifrado`.
+- **Keystore:**
+  - Falla cerrado ante cualquier problema, sin fallback a otro proveedor ni a la llave efímera.
+  - Los mensajes no incluyen ruta, causa ni contraseña.
+  - Exige alias `vN` y AES de 32 bytes.
+  - `toString()` enmascarado en el proveedor y en `PropiedadesCifrado`.
+  - `*.p12`/`*.jks`/`*.keystore` en `.gitignore:34-37`.
+  - El README indica `chmod 700/600` y que `keytool` pida la contraseña de forma interactiva (no queda en el historial).
+- **Observer:** síncrono, en la transacción de registro y con `MANDATORY`. Un fallo de cifrado revierte todo el registro (sin hallazgos con coordenadas sin guardar ni guardadas en claro). `HallazgoRegistrado.toString()` enmascara las coordenadas y el evento de reclasificación no las lleva.
+- **SEC-J-02/03/06/08 corregidos con tests** (`QaBarridoCoordenadas*`, `QaCifradoYReposoTest`, `QaSeguridadJwtTest`, `RecifradoApiTest`).
+- **Dependencias:** ArchUnit 1.4.1 con versión fija y solo en test.
+- **CI y Bruno:** la verificación AMQP **sigue activa** en CI (solo cambia el usuario esperado, `ci.yml:168-171`). Bruno pone `user_id` y las contraseñas son `vars:secret`.
+
+## Veredicto (iteración 15h)
+**APROBADO CON OBSERVACIONES.** No hay Críticos ni Altos. La refactorización conserva los controles de SEC-J-01 a SEC-J-08. Condiciones:
+1. **Antes de que registro (Hernando) integre su código en `servicio-cientifico`:** SEC-J-10 (rol dentro de la cadena y reglas ArchUnit). Si entra código de registro que use `RepositorioUbicaciones` o `CifradorCoordenadas` sin estas reglas, SEC-J-10 pasa a **Alto**.
+2. **Antes de publicar `hallazgo.*` reales:** SEC-J-11 (plantilla de la raíz en `true` y `setUserId` en el publicador) y SEC-J-13 (`@JsonIgnore` y guarda en el publicador). Si se publica con la verificación apagada, SEC-J-11 pasa a **Alto**.
+3. SEC-J-12, SEC-J-14 y los pendientes parciales (SEC-J-04, 05, 07, 08.3 y 09) en la siguiente iteración de cada responsable.
+
+---
+
+## Re-verificación ciclo 1 (2026-11-04)
+
+**Revisor:** ciberseguridad · **Rama:** `feature/ubicacion-consulta-publica` (HEAD `8cab133`) más el working tree sin commit · **Alcance:** solo las correcciones de SEC-J-10, SEC-J-11 y SEC-J-14 (y ARQ-26/ARQ-27, D43, D44, contrato §7.1) y posibles regresiones. No se repite la auditoría 15h.
+
+### Cómo se verificó
+- **Lectura:** D43 y D44 (`03-arquitectura.md:94-95`), contrato §7.1 (`04-contrato-api.md:502-509`), `git diff` de `PublicadorEventos`, sus dos tests, `.env.example` (raíz y consulta-pública) y `ci.yml`. Lectura completa de los cuatro eslabones de la cadena, `ConfiguracionUbicacion`, `ServicioDescifrado`, `ArquitecturaUbicacionTest` y todo `pruebas-carga/` (scripts, compose, k6, `resultados/`).
+- **Pruebas:** `mvn -o test -Dtest='Arquitectura*,Publicador*,Decorador*'` en servicio-cientifico. Resultado: `ArquitecturaUbicacionTest` 11/11, `PublicadorEventosTest` 7/7, `PublicadorEventosIntegracionTest` 2/2 (RabbitMQ real: el broker acepta el `user_id`), `DecoradoresRepositorioUbicacionesTest` 11/11 y `DecoradorAuditoriaIntegracionTest` 2/2. Sin fallos.
+- **Prueba de evasión de las reglas ArchUnit (solo en el scratchpad, fuera del repositorio):**
+  - Se compilaron seis clases "intrusas" en `co.edu.unbosque.biohub.cientifico.registro..` contra `target/classes` y se ejecutaron sobre ellas las 11 reglas reales de `ArquitecturaUbicacionTest`.
+  - **Solo una se detectó**: la llamada directa a `obtenerUbicacionExacta`. Las otras cinco pasaron el build (ver SEC-J-15 y SEC-J-16).
+  - Después se probaron las reglas corregidas que se proponen abajo: detectan los seis casos y **no** dan falsos positivos sobre el código real.
+- **Secretos:** revisión de las líneas añadidas en el `git diff` y de los archivos nuevos de `pruebas-carga/`. No hay credenciales nuevas versionadas: `resultados/*.json` solo tiene métricas, y la contraseña de `PublicadorNoPermitidoIntegracionTest` es de un contenedor efímero de Testcontainers.
+
+### Estado por ID
+
+| ID | Estado | Evidencia |
+|---|---|---|
+| **SEC-J-11** (ARQ-26) | **Cerrado** (riesgo residual en SEC-04 / SEC-D-03 punto 1, que es de Santiago) | `PublicadorEventos.java:42,50-57`: `user_id` sale de `rabbitTemplate.getConnectionFactory().getUsername()` y falla al construir si no se puede determinar. `:74`: `setUserId(usuarioAmqp)` en cada mensaje. Tests: `PublicadorEventosTest.java:85` (fija el `user_id`), `:98` (no es constante) y `:116` (falla cerrado). `PublicadorEventosIntegracionTest.java:90`: el broker real lo acepta y lo entrega como `receivedUserId`. `.env.example:74` (raíz) `BIOHUB_EVENTOS_VERIFICAR_PUBLICADOR=true`. `:78` `BIOHUB_EVENTOS_PUBLICADOR_CIENTIFICO=biohub`, igual al `RABBITMQ_USER` del Compose. Consumidor: `application.yml:92-93` y `ConsumidorEventos.java:43-44,125-126`, ambos con `true` por defecto. CI conserva la verificación (`ci.yml:168-171`). **Residual:** mientras todos los servicios compartan el usuario administrador `biohub` (SEC-04), el `user_id` prueba que "quien publica tiene las credenciales del broker", no que sea servicio-cientifico. Ver también SEC-J-I10 |
+| **SEC-J-10** (ARQ-27, D43, D44) | **Parcial**: los puntos 2 y 3 y la auditoría de cualquier excepción están cerrados; las reglas ArchUnit se pueden esquivar (SEC-J-15 y SEC-J-16, Bajos) | **Cerrado:** (3) eslabones *package-private*: `DecoradorAuditoriaAcceso.java:17,23`, `DecoradorCifradoCoordenadas.java:19,24`, `DecoradorRepositorioUbicaciones.java:18,22` (constructor `protected` en una clase privada del paquete) y `RepositorioUbicacionesJpa.java:25,38`. Solo los construye `ConfiguracionUbicacion.java:86-89`. (Auditoría) `DecoradorAuditoriaAcceso.java:34-38` audita toda `RuntimeException` solo con usuario y `hallazgoId`, sin excepción ni valores. Lo prueba `DecoradoresRepositorioUbicacionesTest.java:164`. (2) Reglas sobre todo `cientifico`: `ArquitecturaUbicacionTest.java:31-33` y `:51-128`. (1) Lo sustituye D44 (ver la evaluación abajo). **Pendiente:** `ArquitecturaUbicacionTest.java:70-71,79-80` (exclusiones por patrón de paquete y por nombre simple), `:81` (`callMethodWhere` no ve las referencias a método) y falta una regla para `ProveedorDeLlaves`/`PropiedadesCifrado` |
+| **SEC-J-14** | **Cerrado** (queda un comentario desactualizado, ver SEC-J-I11) | `correr-k6.sh:14`: `grafana/k6:2.3.0` fija, presente en local con digest `sha256:2dd4756e…`. `:17-22,30,37-38`: `RMQ_USER`/`RMQ_PASS`/`TOKEN` se pasan con `-e NOMBRE`, sin valor en `argv`. `limpiar.sh:13,16`: `MYSQL_PWD`/`REDISCLI_AUTH` por entorno. `:18-23`: credenciales de curl por stdin (`-K -`), escapando `\` y `"`. `sembrar.sh:7`: `MYSQL_PWD` por entorno. `compose-carga.yml:31-32` mantiene la verificación **activa** con el publicador esperado igual a `RABBITMQ_USER`, y `:35` usa una cola propia de carga. `carga-cientifica-simultanea.js:123`: `user_id: __ENV.RMQ_USER`. `:40,105,110`: `version` acotada a `VERSION_MAXIMA = 1000000` |
+| SEC-J-12 | **Abierto** (fuera de este ciclo) → **Iteración 16: Cerrado** | `ConfiguracionUbicacion.java:40-41` sigue sin borrar el `char[]`. Sigue sin comprobarse el permiso del `.p12` |
+| SEC-J-13 | **Abierto** (fuera de este ciclo) → **Iteración 16: Parcial** (`@JsonIgnore` y guarda hechos; guarda eludible, SEC-J-17) | `HallazgoRegistrado.java:37-38` sin `@JsonIgnore`. `PublicadorEventos.publicar` (`:64`) sigue sin guarda de coordenadas. Ahora es **más urgente**: con `user_id` correcto, un `hallazgo.*` con coordenadas que salga de cientifico ya no se rechaza por publicador (consulta-pública lo descarta por SEC-J-03, pero reportes no) |
+| SEC-J-04, 05, 07, 08 (3), 09 | Sin cambios (en la iteración 16, SEC-J-04 y SEC-J-08 (3) pasan a Parcial; ver esa sección) | Ver la tabla de la iteración 15h |
+
+### Evaluación de D44 (decisión tomada; opinión de ciberseguridad)
+- **La garantía es suficiente para la amenaza que motivó SEC-J-10.** Esa amenaza es un **error de un desarrollador** del mismo servicio, por ejemplo registro reutilizando el repositorio. En ese caso una regla de build que falla es igual de efectiva que una comprobación en tiempo de ejecución, y además avisa antes.
+- **Ninguna de las dos opciones protege contra código malicioso dentro de la JVM.** Pasar `Authentication` a la cadena tampoco lo detendría: ese código puede fabricar una `Authentication`, leer las llaves desde `Environment` o usar reflexión, y la prueba con `setAccessible` sobre `DecoradorCifradoCoordenadas` no la detecta ninguna regla. Esa amenaza se cubre con la revisión de código y con D35/D38, no con este control.
+- **Condición:** la equivalencia solo se cumple si las reglas no se pueden esquivar por accidente. Hoy sí se puede (SEC-J-15 y SEC-J-16). La forma más probable es una referencia a método `repositorio::obtenerUbicacionExacta`, que es un patrón habitual al mapear listas.
+- **Diferencia que queda:** `servicioDescifradoExigeElRol` (`:86-92`) solo comprueba que **exista** una llamada a `exigirCoordenadas`, no que vaya **antes** de descifrar. El orden lo cubre `ServicioDescifradoTest.java:20` (`verifyNoInteractions(repositorio)`). Es aceptable si ese test se mantiene.
+- **Conclusión:** D44 es aceptable con SEC-J-15 y SEC-J-16 corregidos **antes de que registro integre código** en servicio-cientifico.
+
+### Hallazgos nuevos
+
+#### SEC-J-15 · Bajo · A01 / A04 (las reglas ArchUnit de D43/D44 se esquivan con nombres homónimos, con un subpaquete `ubicacion.infrastructure` o con referencias a método)
+- **Archivos:** `servicio-cientifico/src/test/java/co/edu/unbosque/biohub/cientifico/ubicacion/ArquitecturaUbicacionTest.java`, con estas líneas:
+  - `:70`: `resideOutsideOfPackage("..ubicacion.infrastructure..")`.
+  - `:71`: `doNotHaveSimpleName("RecifradoService")`.
+  - `:79`: el mismo patrón de paquete.
+  - `:80`: `doNotHaveSimpleName("ServicioDescifrado")`.
+  - `:81`: `callMethodWhere(...)`.
+  - `:54` y `:62`: mismo patrón con `..ubicacion..`.
+  - `:125-126`: exclusiones por nombre simple.
+- **Problema (comprobado, no teórico):** estas tres clases compilan, se inyectan y **pasan las 11 reglas**:
+  1. `co.edu.unbosque.biohub.cientifico.registro.ubicacion.infrastructure.Fuga`: el patrón `..ubicacion.infrastructure..` coincide con **cualquier** paquete que contenga ese tramo. La clase inyecta `CifradorCoordenadas` y llama a `descifrar` y a `obtenerUbicacionExacta`.
+  2. `co.edu.unbosque.biohub.cientifico.registro.RecifradoService`: la excepción va por nombre simple, no por nombre completo. Inyecta `CifradorCoordenadas` y descifra.
+  3. `registro.FugaReferencia`: devuelve `repositorio::obtenerUbicacionExacta`. ArchUnit modela las referencias a método como `JavaMethodReference`, no como `JavaMethodCall`, y `callMethodWhere` no las ve.
+
+  En los casos 1 y 2 se descifra **sin rol y sin auditoría**. En el 3, sin rol y con auditoría a nombre de quien diga el llamador.
+- **Riesgo:** bajo. Hace falta código nuevo dentro del servicio y los casos 1 y 2 son poco probables por accidente. El caso 3 sí es un patrón común. Basta uno para que la garantía de D44 sea falsa sin que CI lo note.
+- **Corrección** (probada en el scratchpad: detecta los tres casos y pasa sobre el código actual):
+  ```java
+  private static final String INFRA = "co.edu.unbosque.biohub.cientifico.ubicacion.infrastructure";   // exacto, sin ".."
+
+  @Test void soloServicioDescifradoPideCoordenadasExactas() {
+      noClasses().that().resideOutsideOfPackage(INFRA)
+          .and().doNotBelongToAnyOf(ServicioDescifrado.class)                 // por clase, no por nombre simple
+          .should().accessTargetWhere(target(name("obtenerUbicacionExacta"))  // JavaAccess.Predicates.target: llamadas Y referencias
+              .and(target(owner(assignableTo(RepositorioUbicaciones.class)))))
+          .check(CLASES);
+  }
+  ```
+  Aplicar lo mismo en las demás reglas:
+  - `doNotBelongToAnyOf(RecifradoService.class)` o `doNotHaveFullyQualifiedName(...)` en lugar de `doNotHaveSimpleName(...)`.
+  - Paquete exacto (`INFRA`) en lugar de `..ubicacion.infrastructure..`.
+  - En `:54` y `:62`, `"co.edu.unbosque.biohub.cientifico.ubicacion.."` en lugar de `"..ubicacion.."`.
+- **Responsable sugerido:** ubicación (Juanita). **Esfuerzo:** S.
+
+#### SEC-J-16 · Bajo · A01 / A02 (las llaves AES crudas no tienen regla: `ProveedorDeLlaves` y `PropiedadesCifrado` se inyectan desde cualquier módulo)
+- **Archivos:** `servicio-cientifico/src/main/java/co/edu/unbosque/biohub/cientifico/ubicacion/domain/ProveedorDeLlaves.java:9,13`: interfaz pública con `Optional<SecretKey> llave(String version)`, expuesta como bean en `ConfiguracionUbicacion.java:32-33`. `.../infrastructure/PropiedadesCifrado.java:17`: `record` público con `claves()` en texto, registrado por `@EnableConfigurationProperties`. En `ArquitecturaUbicacionTest.java` no hay ninguna regla sobre ninguno de los dos.
+- **Problema:** D43 cerró el acceso a `CifradorCoordenadas`, pero cualquier bean de `registro` (u otro módulo) puede inyectar `ProveedorDeLlaves`, obtener la `SecretKey` activa y descifrar con AES-GCM (AAD = UUID del hallazgo, que es público). No pasa ni por el rol ni por la auditoría. Se comprobó con la clase `registro.FugaLlaves`, que pasa todas las reglas. Es un camino **más grave** que el de `CifradorCoordenadas`, porque expone la llave y no solo un dato.
+- **Riesgo:** bajo. Exige código nuevo y es poco probable por accidente, pero es exactamente el hueco que D43 quiere cerrar.
+- **Corrección** (probada: detecta el caso y pasa sobre el código actual; `RecifradoService.java:41,49,67` es el único usuario legítimo fuera de `infrastructure`):
+  ```java
+  @Test void llavesYCifradorSoloEnInfraestructuraYRecifrado() {
+      noClasses().that().resideOutsideOfPackage(INFRA)
+          .and().doNotBelongToAnyOf(RecifradoService.class, CifradorCoordenadas.class, ProveedorDeLlaves.class)
+          .should().dependOnClassesThat().areAssignableTo(CifradorCoordenadas.class)
+          .orShould().dependOnClassesThat().areAssignableTo(ProveedorDeLlaves.class)
+          .orShould().dependOnClassesThat().areAssignableTo(PropiedadesCifrado.class)
+          .check(CLASES);
+  }
+  ```
+  Si `RecifradoService` solo necesita `versionActiva()`/`versiones()`, conviene separar en el puerto una vista sin `llave(...)` (por ejemplo, `VersionesDeLlave`) y dejar `ProveedorDeLlaves` solo para `infrastructure`.
+- **Responsable sugerido:** ubicación (Juanita). **Esfuerzo:** S.
+
+#### Informativos
+- **SEC-J-I10 (plantillas incoherentes):** `servicio-consulta-publica/.env.example:72` tiene `BIOHUB_EVENTOS_PUBLICADOR_CIENTIFICO=cientifico_mq`, mientras que la raíz (`.env.example:78`) tiene `biohub`. Como `application.yml:7` importa `./.env` después de `../.env`, quien copie también la plantilla del servicio verá que **todos** los `hallazgo.*` del Compose local van a la DLQ. Eso falla cerrado, que es seguro, pero es el mismo incentivo a "arreglarlo" con `VERIFICAR_PUBLICADOR=false` que SEC-J-11 quería evitar. El comentario de `:69-70` lo explica. Recomendación: en esa plantilla, dejar la línea comentada o con `biohub` y una nota que diga "cientifico_mq cuando exista SEC-04".
+- **SEC-J-I11 (comentario desactualizado):** `pruebas-carga/k6/registro-hallazgo.js:5` todavía documenta `./correr-k6.sh ... -e TOKEN=<JWT>`, que deja el JWT en `argv`. Contradice `correr-k6.sh:9` y el README (`:74-75`). Cambiar por `TOKEN=<jwt> ./correr-k6.sh k6/registro-hallazgo.js -e BASE_URL=...`.
+- **SEC-J-I12 (scripts de carga):**
+  - `limpiar.sh:10` y `sembrar.sh:5` hacen `set -a; . ./.env`, así que el `.env` se **ejecuta** como shell. Es el archivo propio del desarrollador y no es explotable, pero un valor con `$(...)` o con espacios sin comillas se interpreta. `correr-k6.sh:18` ya usa un lector sin evaluar (`valor_env`); conviene reutilizarlo.
+  - `docker run -e RMQ_PASS` deja la contraseña en la configuración del contenedor (`docker inspect`) mientras corre. Solo la ve quien ya tiene acceso a Docker (equivale a root), y el contenedor es `--rm`. Aceptable.
+
+### Regresiones
+- **No se encontraron regresiones de seguridad.**
+- `EventosPruebaController.java:33,38` también publica con el `user_id` del servicio, pero está restringido a `administrador` y su tipo es fijo (`prueba.ping`), así que no puede publicar `hallazgo.*`.
+- `PublicadorEventos` ya no puede arrancar sin usuario AMQP (falla cerrado).
+- Las reglas ArchUnit nuevas no quitaron ninguna de las anteriores.
+- No hay credenciales nuevas en archivos versionados.
+
+### Veredicto (re-verificación ciclo 1)
+**APROBADO CON OBSERVACIONES.** No hay Críticos ni Altos.
+- **SEC-J-11** y **SEC-J-14** quedan **cerrados**.
+- **SEC-J-10** queda **parcial**, con un riesgo residual que baja de Medio a **Bajo** (SEC-J-15 y SEC-J-16).
+- D44 es aceptable con esta condición: **SEC-J-15 y SEC-J-16 deben estar corregidos antes de que registro (Hernando) integre código en servicio-cientifico**. Si entra código de registro sin esas reglas, SEC-J-10 vuelve a **Medio**.
+- **SEC-J-13** pasa a ser **condición previa a publicar `hallazgo.*` reales**, porque con el `user_id` correcto el publicador ya no actúa como filtro.
+
+---
+
+# Iteración 16 – re-auditoría (2026-11-04)
+
+**Revisor:** ciberseguridad · **Rama:** `feature/ubicacion-consulta-publica` (HEAD `aeb67d8`) · **Alcance:** `git diff 9c8982b..HEAD` (commits `81f4e28` a `aeb67d8`): SEC-J-13 (D54), SEC-J-12, SEC-J-08.3, SEC-J-04, el refactor ARQ-28, la regla ARQ-29 (D53) y los secretos del diff. No se repiten las auditorías anteriores.
+
+## Resumen
+
+| Severidad | Cantidad (nuevos) |
+|---|---|
+| Crítico | 0 |
+| Alto | 0 |
+| Medio | 0 |
+| Bajo | 2 (SEC-J-17, SEC-J-18) |
+| Informativo | 3 (SEC-J-I13 a SEC-J-I15) |
+
+**Veredicto: APROBADO CON OBSERVACIONES.** No hay Críticos ni Altos. Las cuatro correcciones están bien hechas y probadas. El refactor ARQ-28 y la regla ARQ-29 **no** rompen D44: cada descifrado y cada 403 siguen auditados. No se versionó ningún secreto. Quedan dos Bajos:
+- **SEC-J-17:** la guarda del publicador se puede eludir con valores numéricos, objetos o arrays.
+- **SEC-J-18:** la auditoría D28 todavía falla abierta si se baja el nivel del logger o si el archivo no se puede escribir.
+
+## Cómo se revisó
+- **Documentación:** D44, D53 y D54 (`03-arquitectura.md`, Decisiones), contrato §6 (nota D53) y §7.3, plan de la iteración 16 (`00-plan.md:124-135`) y las fichas SEC-J-04, 08, 12 y 13 de este reporte.
+- **Código (estático):** el diff completo, más una lectura completa de:
+  - eventos: `DetectorCoordenadas` (cientifico y consulta-pública), `PublicadorEventos`, `HallazgoRegistrado`, `RabbitConfig` (`Jackson2JsonMessageConverter`);
+  - ubicación: `ProveedorDeLlavesKeyStore`, `ConfiguracionUbicacion`, `AuditoriaAccesoUbicacion` (puerto), `AuditoriaAccesoUbicacionLog`, `DecoradorAuditoriaAcceso`;
+  - configuración, pruebas y web: `logback-spring.xml`, `Dockerfile`, `ArquitecturaUbicacionTest`, `ModuloRegistroNoDependeDeUbicacionInternaTest`, `UmbralesDegradacion`/`MonitorCarga` y `MapaHallazgos.jsx`.
+- **Prueba del detector (solo en el scratchpad, fuera del repositorio):** se copió `eventos/service/DetectorCoordenadas.java` sin cambios y se le pasaron 33 casos: 21 de evasión y 12 de posibles falsos positivos. Resultados en SEC-J-17. Los patrones son **idénticos** a los del consumidor de consulta-pública (comparados con `diff`). La única diferencia es `CLAVE_JSON_PROHIBIDA` del análisis en bruto, que el publicador no necesita.
+- **Pruebas:** sobre una copia de `HEAD` (`git archive`) en el scratchpad, para no chocar con el build de QA, se ejecutó `mvn -o -pl servicio-cientifico -am test` con `Arquitectura*`, `ModuloRegistro*`, `Publicador*Test`, `DetectorCoordenadas*`, `HallazgoRegistrado*`, `ProveedorDeLlavesKeyStore*`, `AuditoriaLogback*`, `AuditoriaAccesoUbicacionLog*`, `Decorador*` y `AuditoriaYSinFiltraciones*`. Resultado: **75 tests, 0 fallos, 2 omitidos**, los que necesitan un broker desplegado. `PublicadorEventosIntegracionTest` corrió con un RabbitMQ real (Testcontainers).
+- **Secretos:**
+  - Se buscaron patrones de contraseña, token, llave y base64 largo en las líneas añadidas del diff: solo aparecen nombres de variables y texto de documentación, ningún valor.
+  - `git ls-files` no contiene `.env`, `*.p12`, `*.jks`, `*.log` ni `logs/`.
+  - `servicio-cientifico/logs/` existe en local y Git lo ignora (`.gitignore:5`, `!!` en `git status --ignored`).
+  - No se abrió ningún `.env`.
+
+## Estado de los hallazgos
+
+| ID | Estado | Evidencia |
+|---|---|---|
+| **SEC-J-13** (D54) | **Parcial**: punto 1 cerrado; punto 2 implementado pero eludible (SEC-J-17) | (1) `HallazgoRegistrado.java:42-43`: `@JsonIgnore` en `latitud`/`longitud`, probado por `HallazgoRegistradoSerializacionTest` (4/4, incluye `convertValue(evento, Map.class)`). `toString()` sigue enmascarado (`:47-49`). (2) `PublicadorEventos.java:70-73`: rechaza el `hallazgo.*` **antes** de construir el sobre, con un mensaje que no incluye ni la clave ni el valor. `DetectorCoordenadas.java:74-99` recorre mapas y colecciones a cualquier profundidad, revisa claves (sin distinguir mayúsculas) y texto, y trata como sospechosa una estructura de más de 64 niveles. Detecta pares decimales con coma o punto, hemisferio, DMS con símbolos, `lat:`/`lng=` y GeoJSON anidado. **No** inspecciona `Number`, records/POJO ni arrays, y le faltan variantes de clave como `decimalLatitude` (ver SEC-J-17) |
+| **SEC-J-12** | **Cerrado** (residual aceptado: SEC-J-I2) | `ConfiguracionUbicacion.java:41-49`: el `char[]` se borra en `finally`, también cuando falla. `ProveedorDeLlavesKeyStore.java:48,64-81`: falla cerrado ante **cualquier** bit de grupo u otros, no solo lectura. Si no puede leer los permisos (`IOException`) tampoco arranca. Los mensajes no incluyen la ruta y no hay `cause` (`ProveedorDeLlavesKeyStoreTest`: 644, 640, 604 y 660 rechazados con `hasMessageNotContaining(ruta)` y `hasNoCause`; 600 aceptado; `ConfiguracionUbicacion` propaga el rechazo). `.env.example:71-72` y el README recomiendan pasar la contraseña por otro canal. Ver la nota sobre el `String` más abajo |
+| **SEC-J-08** | **Parcial**: puntos 1 y 2 cerrados (15h); punto 3 casi cerrado, queda el fallo abierto (SEC-J-18) | `logback-spring.xml:24-41`: `RollingFileAppender` propio con `append=true`, rotación diaria y por tamaño (50 MB), retención de 365 días con tope de 10 GB, nivel `INFO` fijo y `additivity=true` (también sale por consola). `Dockerfile:11`: `/app/logs` pertenece a `app:app` (UID 10001, no root). `AuditoriaLogbackTest` (3/3) comprueba que la línea llega al archivo y no al log general. **Pendiente:** `logging.level.biohub.auditoria.ubicacion` (o `LOGGING_LEVEL_BIOHUB_AUDITORIA_UBICACION`) sigue apagándola en silencio. Si `logs/` no se puede escribir, Logback solo avisa y la auditoría sale solo por consola. No hay ningún compose de despliegue de servicio-cientifico en el repositorio que monte un volumen en `/app/logs`, así que, tal como está, el archivo se pierde al recrear el contenedor |
+| **SEC-J-04** | **Parcial**: la parte de web-interna está cerrada; el proxy de teselas (Santiago) sigue abierto | `MapaHallazgos.jsx:12-13,30`: `fitBounds` con `maxZoom` 8 (un punto) o 10 (varios). `:48`: `referrerPolicy="no-referrer"` en `TileLayer`, opción que Leaflet 1.9.4 admite (`node_modules/leaflet` 1.9.4). Probado en `PaginaMapa.test.jsx:92-101`. No hay otros `setView`/`flyTo`/`panTo` en `web-interna/src`. Riesgo residual: OSMF sigue viendo la IP, la hora y teselas de unos 150 km alrededor del punto. El usuario puede acercar a mano hasta 12 (R6, aceptado). Ver SEC-J-I14 |
+
+**¿Es aceptable que la contraseña del keystore siga como `String` (SEC-J-I2)?** Sí, como riesgo residual. El valor ya está en el entorno del proceso (`/proc/<pid>/environ`, legible por el mismo UID y por root) y en el `Environment` de Spring. Quien puede volcar el heap o leer el entorno del proceso también puede leer el `.p12`, porque son el mismo usuario. Borrar el `char[]` reduce las copias, pero no cambia esa frontera. Condiciones que siguen vigentes:
+- actuator solo con `health,info` (`application.yml:58-59`, sin cambios);
+- sin `-XX:+HeapDumpOnOutOfMemoryError` hacia un disco compartido;
+- la contraseña fuera del `.env` de la ruta.
+
+Si en el futuro se quiere quitar también el `String`, la opción es leer la contraseña de un archivo de secreto (`UBICACION_KEYSTORE_PASSWORD_FILE`) directamente a `char[]` y no enlazarla en `PropiedadesCifrado`.
+
+### Verificación de ARQ-28, ARQ-29 y D44
+
+**Auditoría como puerto** (`ubicacion/domain/AuditoriaAccesoUbicacion.java:8-19`, implementado por `infrastructure/AuditoriaAccesoUbicacionLog.java:20-41`):
+- Hay una sola implementación en `src/main`.
+- El cuerpo de `registrar` y `limpiar` es igual al de antes: `endpoint`, `usuario` y `filtros` se sanean y se truncan.
+- La cadena sigue siendo auditoría → cifrado → JPA (`ConfiguracionUbicacion.java:91-97`).
+- `DecoradorAuditoriaAcceso.java:29-39` audita el éxito y **cualquier** `RuntimeException`.
+- El manejador de 403 solo cambió el import.
+- `DecoradorAuditoriaIntegracionTest` (2/2) y `AuditoriaYSinFiltracionesTest` (5/5) pasan.
+- Si `registrar` lanzara, el decorador no devuelve las coordenadas: falla cerrado en el camino de descifrado.
+
+**`EstadoConservacion` movido a `domain`:** es un enum sin lógica de seguridad. Lo cambiado fueron imports.
+
+**Reglas de D44:** se conservan las seis, sin relajar ninguna:
+- `cifradorSoloEnInfraestructuraYRecifrado`;
+- `soloServicioDescifradoPideCoordenadasExactas`, con `accessTargetWhere` y nombre completo;
+- `llavesSoloEnInfraestructuraYRecifrado`;
+- `servicioDescifradoExigeElRol`;
+- eslabones *package-private*;
+- `soloLaConfiguracionArmaLaCadena`.
+
+Las tres reglas nuevas de ARQ-28 (`layeredArchitecture`, `domain` sin dependencias externas, `infrastructure` sin depender de `service`) solo añaden restricciones.
+
+**ARQ-29 (D53):** `ModuloRegistroNoDependeDeUbicacionInternaTest` ahora prohíbe **todo** `co.edu.unbosque.biohub.cientifico.ubicacion` en `registro`, tanto en las fuentes como en el bytecode (con `allowEmptyShould`, porque hoy `registro` solo tiene `package-info`). Es **más estricta** que antes y refuerza D44: registro ya no puede ni siquiera nombrar `RepositorioUbicaciones` ni `ProveedorDeLlaves`.
+
+**consulta-pública:** `UmbralesDegradacion` conserva todas las validaciones del record anterior (`:42-57`). `MonitorCarga` lee `biohub.publica.modo-degradado` con la misma clave. No cambia nada de seguridad.
+
+**Conclusión:** D44 y la garantía "cada descifrado y cada 403 quedan auditados" siguen en pie **en el código**. El hueco que queda es operativo: el nivel del logger y el destino del archivo (SEC-J-18).
+
+## Hallazgos nuevos
+
+### SEC-J-17 · Bajo · A04 (la guarda de coordenadas del publicador se elude con números, objetos o arrays)
+**`DetectorCoordenadas` solo recorre `Map`, `Collection` y `String`. Cualquier otro valor se considera limpio, aunque `Jackson2JsonMessageConverter` lo serialice al broker.**
+
+- **Archivos:**
+  - `servicio-cientifico/src/main/java/co/edu/unbosque/biohub/cientifico/eventos/service/DetectorCoordenadas.java:78-98`: `contiene(...)` devuelve `false` para `Double`, `BigDecimal`, records/POJO/entidades y `Object[]`/`double[]`.
+  - `:28-29`: lista de claves cerrada, sin `decimalLatitude`, `decimalLongitude`, `verbatimCoordinates`, `verbatimLatitude`/`verbatimLongitude` (Darwin Core, el estándar habitual en biodiversidad), ni `lat_dec`, `x`/`y`, `punto`, `location`.
+  - `PublicadorEventos.java:70`: la guarda solo se aplica si `tipo.startsWith("hallazgo.")`, que distingue mayúsculas.
+  - `config/RabbitConfig.java:30-31`: `Jackson2JsonMessageConverter` serializa cualquier objeto que haya en `datos`.
+- **Problema (comprobado en el scratchpad):** estas cargas **pasan** la guarda y llegarían a `biohub.eventos`:
+
+  | Carga `datos` | Resultado |
+  |---|---|
+  | `{"punto": [4.6097, -74.0817]}` (Double) | pasa |
+  | `{"x": -74.0817, "y": 4.6097}` | pasa |
+  | `{"decimalLatitude": 4.6097, "decimalLongitude": -74.0817}` | pasa |
+  | `{"decimalLatitude": "4.6097"}` (un solo valor como texto) | pasa |
+  | `{"ubicacion": <record con latitud/longitud>}` | pasa (Jackson lo serializa con `latitud`/`longitud`) |
+  | `{"p": new Object[]{"4.6097, -74.0817"}}` | pasa |
+  | `"4.6097° -74.0817°"` (grados sin hemisferio) | pasa |
+  | `"POINT(-74.081 4.609)"`, `"-74.081, 4.609"` (orden lon,lat, 3 decimales ≈ 110 m) | pasa |
+  | `"4.6097 n, 74.0817 w"` (hemisferio en minúscula) | pasa |
+  | `"4 36 35 N 74 04 54 W"` (DMS sin símbolos) | pasa |
+
+  Lo que más probablemente se escape por error es poner una entidad u objeto en `datos` (`Map.of("hallazgo", hallazgo)`) o usar nombres Darwin Core. El consumidor de consulta-pública lo detecta en parte, porque parsea el JSON a mapas y ve `latitud` en el objeto anidado. Pero **no** detecta números bajo claves neutras, y `reportes.eventos` no tiene ninguna barrera. Además, el mensaje ya existe en el broker.
+
+  **Falsos positivos** (iguales en el consumidor, porque los patrones son los mismos), que rompen eventos legítimos:
+  - `"segmento lat. 3 con setas"` (abreviatura de *lateral*) y `"antenas long 2 mm"` (`CLAVE_Y_NUMERO`);
+  - `"pendiente 5° 30'"` (`GRADOS_MINUTOS`);
+  - `"25° N"`;
+  - `"peso 1.2345 2.3456 g"`;
+  - `"entre 1.200 -3.400 msnm"`.
+
+  No son frecuentes. Con la guarda en `PublicadorEventos`, un falso positivo hace fallar `publicar`. Si registro publica en un `@TransactionalEventListener(AFTER_COMMIT)`, el hallazgo ya quedó guardado y la ficha pública no se crea. Esa inconsistencia es silenciosa: el publicador no registra el incidente.
+- **Por qué importa:** D54 presenta la guarda como "la única barrera que impide que el mensaje exista". Hoy cubre el error de serializar `HallazgoRegistrado`, gracias a `@JsonIgnore`, pero no otros errores igual de probables. No es explotable desde fuera hoy: registro no existe todavía.
+- **Corrección** (ubicación, S): normalizar `datos` con el mismo `ObjectMapper` que usa el conversor, para que POJO, records y arrays se conviertan en `Map`/`List`/`Number`. Después, aplicar una **lista permitida** de §7.3 en lugar de solo una lista negra:
+  ```java
+  // PublicadorEventos
+  private static final Set<String> CAMPOS_HALLAZGO = Set.of("hallazgoId", "version", "nombreCientifico", "nombreComun",
+          "familia", "tipoEspecimen", "fechaRecoleccion", "estadoConservacion", "departamento", "descripcion");
+
+  if (tipo != null && tipo.toLowerCase(Locale.ROOT).startsWith(PREFIJO_HALLAZGO)) {
+      Object normalizado = objectMapper.convertValue(datos, Object.class);   // POJO/record/array -> Map/List/Number
+      if (!(normalizado instanceof Map<?, ?> m) || !CAMPOS_HALLAZGO.containsAll(m.keySet())
+              || DetectorCoordenadas.contiene(normalizado)) {
+          log.warn("INCIDENTE: hallazgo.* rechazado antes de publicar (D14) tipo={}", tipo);   // sin valores ni claves
+          throw new IllegalArgumentException("hallazgo.* no puede llevar coordenadas ni campos fuera de 04 §7.3 (D14)");
+      }
+  }
+
+  // DetectorCoordenadas.contiene: un número no entero en cualquier nivel es sospechoso (en §7.3 solo `version` es numérico)
+  } else if (nodo instanceof Double || nodo instanceof Float || nodo instanceof java.math.BigDecimal) {
+      return true;
+  }
+  ```
+  La lista permitida evita tener que adivinar nombres de clave (Darwin Core, `x`/`y`...) y cumple el contrato, que ya es cerrado. Para los falsos positivos: dejar documentado en `04` §7.3 que `lat.`/`long` seguidos de un número se rechazan, y pedir a registro (Hernando) que ejecute el **mismo** detector **antes del commit** y devuelva un 422 con el campo. Así el usuario reescribe el texto y no se llega a la inconsistencia posterior al commit. Opcional: rechazar en `publicar` cualquier `tipo` que no esté en la lista de §7.1.
+- **Responsable sugerido:** ubicación (Juanita), por D54. La validación antes del commit es de Hernando. **Esfuerzo:** S.
+
+### SEC-J-18 · Bajo · A09 (la auditoría D28 sigue fallando abierta ante un nivel de log bajado o un archivo que no se puede escribir)
+- **Archivos:**
+  - `servicio-cientifico/src/main/resources/logback-spring.xml:14-16,39-41`: el nivel `INFO` está fijado, pero Spring Boot aplica después `logging.level.*`.
+  - `AuditoriaAccesoUbicacionLog.java:46-50`: escribe con `info(...)` sin comprobar nada.
+  - `Dockerfile:10-11`: `/app/logs` sin volumen declarado.
+  - En el repositorio no hay ningún compose de despliegue de servicio-cientifico que monte `/app/logs`. `deploy/` solo tiene `aiven/`.
+- **Problema:**
+  1. `LOGGING_LEVEL_BIOHUB_AUDITORIA_UBICACION=OFF` en el entorno (o en el `.env`), o un `logging.level.root=WARN` sin excepción explícita, apagan la auditoría sin ningún error. La limitación está documentada en el README y en `.env.example`, pero solo se controla por convención.
+  2. Si la carpeta del archivo no se puede escribir, Logback deja el appender sin iniciar y solo emite un aviso de estado. La auditoría sigue saliendo solo por consola, y el servicio arranca igual.
+  3. Sin volumen, el archivo vive en la capa escribible del contenedor y se pierde al recrearlo.
+  4. "Solo anexado" es `append=true`. El proceso (`app`) puede truncar o borrar el archivo, y la retención (365 días / 10 GB) también borra. Esto es aceptable para el alcance actual. La inmutabilidad real queda para `ubicacion_acceso_log` (Could) o para enviar el log a un colector externo.
+- **Por qué importa:** D28/RF11 exigen que **cada** descifrado y cada 403 dejen rastro. El código lo garantiza, pero un único ajuste de configuración lo anula sin que nadie lo note, y la auditoría es justo lo que debe sobrevivir a un operador descuidado.
+- **Corrección** (ubicación, S): fallar cerrado al arrancar si la auditoría no está activa. Opcionalmente, también en cada llamada: el decorador ya convierte ese fallo en "no se entregan coordenadas".
+  ```java
+  // ubicacion/infrastructure/VerificadorAuditoria.java
+  @Component
+  class VerificadorAuditoria implements ApplicationListener<ApplicationReadyEvent> {
+      @Override
+      public void onApplicationEvent(ApplicationReadyEvent e) {
+          var logger = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger("biohub.auditoria.ubicacion");
+          var archivo = logger.getAppender("AUDITORIA_UBICACION");
+          if (!logger.isInfoEnabled() || archivo == null || !archivo.isStarted()) {
+              throw new IllegalStateException("Auditoría D28 inactiva (nivel o archivo): el servicio no arranca");
+          }
+      }
+  }
+  // AuditoriaAccesoUbicacionLog.registrar, al inicio (defensa ante un cambio de nivel en caliente)
+  if (!auditoria.isInfoEnabled()) {
+      throw new IllegalStateException("Auditoría D28 inactiva");
+  }
+  ```
+  Con un test que arranque con `logging.level.biohub.auditoria.ubicacion=OFF` y espere el fallo. Para Santiago: al crear el compose del backend, montar un volumen nombrado en `/app/logs` (propietario 10001) y, si es posible, enviar ese archivo a un colector fuera de la VM.
+- **Responsable sugerido:** ubicación (Juanita); el volumen es de Santiago. **Esfuerzo:** S.
+
+### Informativos
+- **SEC-J-I13 (puerto de auditoría sustituible):** con `AuditoriaAccesoUbicacion` como interfaz, un bean nuevo `@Primary` que la implemente (por ejemplo, un no-op "para pruebas" que termine en `src/main`) reemplazaría la auditoría en la cadena sin que falle ninguna regla. Conviene añadir a `ArquitecturaUbicacionTest`:
+  ```java
+  classes().that().implement(AuditoriaAccesoUbicacion.class)
+      .should().haveFullyQualifiedName(INFRA + ".AuditoriaAccesoUbicacionLog").check(CLASES);   // CLASES excluye tests
+  ```
+- **SEC-J-I14 (Referer y política de teselas de OSM):** con la política por defecto del navegador (`strict-origin-when-cross-origin`), una petición entre orígenes ya enviaba solo el **origen** de web-interna, no la ruta. Por eso `no-referrer` aporta poco a la privacidad del punto (oculta que la IP es de un científico de BioHub). La política de uso de `tile.openstreetmap.org` pide un `Referer` válido a las aplicaciones web y puede bloquear teselas sin él. Hay que verificarlo en el navegador. Si OSM las bloquea, `onTeselasFallidas` dejaría el mapa sin fondo. En ese caso, usar `referrerPolicy="strict-origin"` (solo el origen, sin la ruta), que mantiene la protección de SEC-J-04. La solución definitiva sigue siendo el proxy de Santiago.
+- **SEC-J-I15 (exclusiones por nombre simple que quedan):** `ArquitecturaUbicacionTest.java:161` (`doNotHaveSimpleName("ConfiguracionUbicacion")`, junto con `haveSimpleNameNotStartingWith("Decorador")`) y `:177-178` (`VisibilidadExacta`, `PoliticaAccesoUbicacion` y `ServicioDescifrado` por nombre simple) todavía permiten un homónimo en otro paquete, el mismo patrón que SEC-J-15. Con D53 (registro no puede nombrar nada de `ubicacion`), el riesgo práctico es despreciable. Si se toca el archivo, cambiarlo a `doNotHaveFullyQualifiedName(...)`.
+
+### Regresiones
+- **No se encontraron regresiones de seguridad.**
+- Los mensajes de error nuevos no incluyen ni rutas, ni valores, ni causas.
+- El Dockerfile sigue con `USER app` (UID 10001).
+- Los comentarios de `application-aiven.yml` (ARQ-33) ahora coinciden con el valor por defecto `VERIFY_IDENTITY`.
+- `.gitignore` añade `logs/`.
+
+## Veredicto (iteración 16)
+**APROBADO CON OBSERVACIONES.** No hay Críticos ni Altos.
+- **SEC-J-12:** **cerrado**.
+- **SEC-J-13:** **parcial**, porque la guarda existe pero se elude (SEC-J-17).
+- **SEC-J-08:** **parcial**, porque el punto 3 falla abierto (SEC-J-18).
+- **SEC-J-04:** **parcial**, porque falta el proxy de teselas de Santiago.
+- **D44:** se mantiene tras ARQ-28 y ARQ-29.
+- **Condición previa a publicar `hallazgo.*` reales (registro):** SEC-J-17, como mínimo la normalización con `ObjectMapper` y la lista permitida de §7.3.
+- **SEC-J-18:** en la siguiente iteración de ubicación, y antes del primer despliegue con datos reales (el volumen es de Santiago).
+
+---
+
+# Seguimiento de la parte de Santiago (2026-11-05)
+
+| ID | Estado | Verificación |
+|---|---|---|
+| SEC-02 | **Corregido en el gateway.** `denyAll` por defecto y roles por prefijo. Falta `denyAll` en los 4 servicios (lista en `11-seguridad-y-acceso.md`) | `MatrizAccesoGatewayTest` |
+| SEC-04, SEC-D-03 | **Infraestructura lista.** Permisos mínimos por usuario. Corrige SEC-D-03: los consumidores necesitan `write` sobre `biohub.eventos.dlx` para declarar su cola. Falta que cada servicio migre su `.env` | Corrida completa con `cientifico_mq` y `consulta_mq`; un consumidor recibe `ACCESS_REFUSED` al publicar en `biohub.eventos` |
+| SEC-05 | **Corregido.** Fallar cerrado con `ROLE_API_CLIENT` y mismos `RequestMatcher` en el filtro y en SecurityConfig. La rama de portal queda por IP (D16) | `ApiKeyRateLimitFilterTest` |
+| SEC-J-04 | **Corregido en el gateway (2026-11-14, D56).** `GET /api/gateway/teselas/{z}/{x}/{y}.png`: JWT con rol, zoom ≤ 12, cupo por usuario, caché compartida en memoria y petición al origen solo con `User-Agent`, sin redirecciones ni z/x/y en el log. **Falta** que `MapaHallazgos.jsx` use la capa con `fetch` de `11-seguridad-y-acceso.md` §7 (Juanita) | `TeselasControllerTest` (401, 403, los 5 roles, 400, 429, 502, solo GET), `OrigenTeselasHttpTest` (servidor HTTP real: no llegan Referer, Authorization, Cookie ni X-Forwarded-For; no sigue redirecciones; rechaza lo que no es imagen o pesa más del máximo), `ServicioTeselasTest` (caché, descarga compartida, circuito, sin coordenadas en el log). De punta a punta contra `tile.openstreetmap.org`: 200 `image/png` de 30.932 bytes en 816 ms; la segunda, desde la caché, en 12 ms |
+| SEC-J-05 | **Corregido.** Rate limit por IP y `maxmemory` en Redis | `GatewayIntegracionTest` |
+| SEC-J-09 | **Corregido en parte.** Revocación de rol inmediata (D49). MFA sigue fuera del alcance del SRS | `GatewayIntegracionTest` |
+| ARQ-03, ARQ-21 | **Corregidos.** API Keys, límites y bloqueo a los 3 intentos | `KeycloakAdminAdapterIntegracionTest` |
+| ARQ-20 | **Corregido.** Circuit breaker por servicio destino (D52) | `CircuitoServiciosTest`, `ProxyServiceTest`, `GatewayIntegracionTest` |
+
+---
+
+# Iteración 17 – auditoría (2026-11-08)
+
+**Revisor:** ciberseguridad · **Rama:** `feature/ubicacion-consulta-publica` (HEAD `124d516`) · **Alcance:** `git diff 9643411..HEAD` (commits `d0be1be`, `a0e0d32`, `6e9d2dc`, `b4053c3`, `d9a9031`, `124d516`): `denyAll` y `@PreAuthorize` en servicio-consulta-publica y servicio-cientifico, decisión D55, pruebas de seguridad, `Clock` en `ValidadorDatosHallazgo`, alteración determinista del cifrado en pruebas. Búsqueda de secretos en el árbol y en todo el historial. Efecto del realm y del compose del PR #7 sobre los servicios de Juanita. Tarea 17g de `00-plan.md`.
+
+## Resumen
+
+| Severidad | Cantidad (nuevos) |
+|---|---|
+| Crítico | 0 |
+| Alto | 0 |
+| Medio | 0 |
+| Bajo | 3 (SEC-J-19 a SEC-J-21) |
+| Informativo | 4 (SEC-J-I16 a SEC-J-I19) |
+
+**Veredicto: APROBADO CON OBSERVACIONES.** No hay Críticos ni Altos.
+- El `denyAll` de los dos servicios está bien hecho: no hay matchers amplios y `/actuator/**` solo deja pasar `health`.
+- Los cinco endpoints de servicio-cientifico y los cuatro de consulta-pública cumplen la matriz §2.
+- El cifrado de producción no cambió, y la nueva alteración XOR sí prueba la detección de manipulación.
+- El `Clock` no abre ninguna vía de inyección en producción.
+- No hay secretos ni en el árbol ni en el historial.
+- **D55 se acepta con condiciones** (ver abajo). Los tres Bajos son las condiciones: la prueba de arquitectura se puede eludir (SEC-J-19), el 403 de los endpoints fuera de `ubicacion` no es `ROL_INSUFICIENTE` (SEC-J-20) y el cuerpo se valida antes de comprobar el rol (SEC-J-21).
+
+## Cómo se revisó
+- **Documentación:** `11-seguridad-y-acceso.md` (§2 matriz, §3 plantilla, §4 RabbitMQ), D21, D48, D53, D54 y D55 (`03-arquitectura.md:72,98,104-106`), contrato §5.1 y §5.2 (`04-contrato-api.md:252-373`, `ROL_INSUFICIENTE` en `:131`), y las secciones "Iteración 16" y "Seguimiento de la parte de Santiago" de este reporte.
+- **Código (estático):** el diff completo y una lectura completa de:
+  - los dos `SecurityConfig`, `KeycloakJwtAuthenticationConverter` y todos los `@RestController` y `@RestControllerAdvice` de los dos servicios (`grep` de `@Controller`, `@RequestMapping`, `RouterFunction`, `@Endpoint`, `ServletRegistrationBean`: no hay otros puntos de entrada HTTP);
+  - `PoliticaAccesoUbicacion`, `UbicacionExceptionHandler`, `EventosExceptionHandler` y `CifradorAesGcm`;
+  - `application.yml` (actuator, `server.address`), los `Dockerfile`, `SecurityConfig` del gateway (`:58-69`), `infra/keycloak/realm-biohub.json`, `infra/rabbitmq/crear-usuarios.sh` y el servicio `rabbitmq-usuarios` de `docker-compose.yml`.
+- **Pruebas:** en una copia de `HEAD` (`git archive`) en el scratchpad, para no chocar con el build de QA, se ejecutó `mvn -o -pl servicio-consulta-publica,servicio-cientifico -am test` con `SeguridadEndpointsTest`, `ArquitecturaSeguridadTest`, `ValidadorDatosHallazgoTest`, `CifradorAesGcmTest`, `RecifradoServiceTest`, `UbicacionServiceIntegracionTest`, `BusquedaHallazgosApiTest` y `AuditoriaYSinFiltracionesTest`. Resultado: **172 tests, 0 fallos, 0 omitidos** (las de MySQL con Testcontainers). Sin perfil `aiven` y sin conexión a Aiven.
+- **Sondas (solo en la copia, nunca en el repositorio):**
+  - `EvasionReglaSeguridadTest`: aplica la regla de `ArquitecturaSeguridadTest` a seis controladores de prueba (resultado en SEC-J-19);
+  - `OrdenValidacionTest`: con el `SecurityConfig` real, llama a `POST /api/cientifico/eventos/prueba` y `GET /api/cientifico/ping` con un JWT sin roles y con `investigador_campo` (resultado en SEC-J-20 y SEC-J-21).
+- **Secretos:** script propio sobre `git log -p HEAD` (89 commits) y `git log -p --all` (93) que solo imprime commit, archivo, tipo y el valor **enmascarado**. Patrones: asignaciones `*_PASSWORD=`, `*_SECRET=`, `*_TOKEN=`, `*LLAVE*=`, `KEYCLOAK_GATEWAY_CLIENT_SECRET=`, llaves `vN:` + base64 de 32 bytes, cualquier base64 de 32 bytes, URL con usuario:contraseña, hosts `aivencloud.com` con credenciales y prefijo `avns_`, JWT (`eyJ…`), PEM con clave privada, claves AWS y tokens de GitHub. Además: `git ls-files`, `git log --all --diff-filter=A --name-only` y `git check-ignore`. No se abrió ningún `.env`, `certs/`, `*.pem` ni `*.p12`: solo se comprobó que existen y que Git los ignora.
+
+## 1. `denyAll` en los dos servicios
+
+**servicio-consulta-publica** (`config/SecurityConfig.java:29-39`):
+
+| Regla | Evaluación |
+|---|---|
+| `ERROR` dispatcher `permitAll` (`:30`) | Correcto: no expone nada, solo deja llegar los 400/500 ya autorizados |
+| `GET /actuator/health`, `/actuator/health/**` (`:31`) | Correcto. `/actuator/info` y el resto de `/actuator/**` caen en `denyAll` (probado con `/actuator/env`). Ver SEC-J-I17 |
+| `GET /api/publica/eventos/recibidos` → `hasRole('administrador')` (`:33`) | Correcto y más estrecho que antes (`/api/publica/eventos/**` sin método). Doble barrera: URL y `@PreAuthorize` |
+| `GET /api/publica/ping`, `/api/publica/fichas`, `/api/publica/fichas/*` → `permitAll` (`:35-36`) | Correcto. `*` es **un solo segmento**: `/fichas/{id}/extra` se deniega (probado). El `id` se valida además como UUID canónico en el controlador |
+| `anyRequest().denyAll()` (`:39`) | Correcto. `POST`/`PUT`/`PATCH`/`DELETE`, `HEAD`, otras rutas de `/api/publica/**`, `/api/cientifico/**`, `/api/v1/externa/**` y `/` se rechazan: 401 sin token y 403 con token, aunque sea de administrador |
+
+**servicio-cientifico** (`config/SecurityConfig.java:29-38`): `ERROR` y `health` como arriba, `/api/cientifico/**` → `authenticated()` (`:36`) y `anyRequest().denyAll()` (`:38`). Todo lo que está fuera del prefijo se rechaza aunque el usuario tenga los 5 roles (probado con 10 rutas y 3 métodos, entre ellas `/api/cientificoX/ping`, `/actuator/env` y `/actuator`). No hay matchers demasiado amplios: el único comodín es el prefijo propio del servicio, y D55 lo justifica.
+
+### Decisión sobre D55: **aceptada, con condiciones**
+
+D55 no exige el rol en la URL (`.authenticated()`), sino en el `@PreAuthorize` de cada método. **No exijo cambiar a `hasAnyRole` + `AccessDeniedHandler`**, por estas razones:
+1. **Defensa en profundidad real.** El gateway exige uno de los 5 roles para `/api/cientifico/**` (`api-gateway/.../SecurityConfig.java:68`, D48). El servicio escucha en `127.0.0.1` (`application.yml:50`). El JWT debe llevar `aud=biohub-api`, y ese claim solo lo emiten `web-interna` y `biohub-pruebas`: el token de la cuenta de servicio `biohub-gateway` no lo lleva (realm comprobado) y el servicio lo rechaza con 401. Así, un JWT "autenticado sin rol" solo llega al método si alguien se salta el gateway desde el propio host.
+2. **`hasAnyRole` de los 5 roles en la URL aporta poco frente a eso.** Solo frena a cuentas sin ningún rol (como `sinrol1`, que es una cuenta de desarrollo). No ayuda en el caso que de verdad importa: un rol válido (por ejemplo `analista_ambiental`) que entra a un endpoint que no le corresponde. Ese caso lo controla solo el `@PreAuthorize`, con o sin D55.
+3. **Lo que D55 consigue es concreto.** En `ubicacion`, el 403 sin roles llega a `UbicacionExceptionHandler` y sale como problem+json `ROL_INSUFICIENTE`, con `no-store` y auditoría D28 (probado por `elRol403SinRolesConservaElProblemJsonDelContrato`). Con `hasAnyRole` habría que reproducir todo eso en un `AccessDeniedHandler`.
+
+**Condiciones** (D55 pasa a ser la única barrera de rol dentro del servicio, así que su red de seguridad debe ser fuerte):
+- **Antes de que registro (Hernando) integre controladores en servicio-cientifico:** corregir SEC-J-19 (endurecer `ArquitecturaSeguridadTest`) y SEC-J-20 (403 uniforme). Si registro entra sin SEC-J-19, la alternativa de D55 (`hasAnyRole` en la URL) pasa a ser **obligatoria**.
+- **Para el despliegue en contenedores (Santiago):** el `Dockerfile` pone `SERVER_ADDRESS=0.0.0.0` (`servicio-cientifico/Dockerfile:14`), así que el supuesto "solo `127.0.0.1`" se convierte en "solo una red interna". Los puertos 8081 y 8083 no se publican en el host y solo el gateway comparte red con ellos (SEC-J-I19).
+- Matiz para el texto de D55: la ventaja del problem+json solo existe hoy en `ubicacion`. En `/api/cientifico/ping` y `/api/cientifico/eventos/prueba`, el 403 sin rol **sigue saliendo vacío** (comprobado; SEC-J-20).
+
+## 2. `@PreAuthorize` y coherencia con la matriz §2
+
+| Endpoint | `@PreAuthorize` | Matriz §2 / contrato | ¿Coincide? |
+|---|---|---|---|
+| `GET /api/cientifico/ubicacion/hallazgos` (`BusquedaHallazgosController.java:27`) | `hasAnyRole` de los 5 | 5 roles; solo alto rango recibe lat/lon (lo decide `PoliticaAccesoUbicacion.estrategiaPara`) | Sí |
+| `GET /api/cientifico/ubicacion/mapa` (`MapaUbicacionController.java:27`) | `@politicaUbicacion.puedeVerCoordenadas(authentication)` | Solo `cientifico_alto_rango` | Sí |
+| `POST /api/cientifico/ubicacion/recifrado` (`RecifradoController.java:26`) | `hasRole('administrador')` | Solo `administrador` | Sí |
+| `GET /api/cientifico/ping` (`PingController.java:21`) | `hasAnyRole` de los 5 | Fuera de la matriz (diagnóstico) | Aceptable |
+| `POST /api/cientifico/eventos/prueba` (`EventosPruebaController.java:33`) | `hasRole('administrador')` | Fuera de la matriz (diagnóstico) | Aceptable |
+| `GET /api/publica/ping`, `/fichas`, `/fichas/{id}` | `permitAll()` explícito | Públicos | Sí |
+| `GET /api/publica/eventos/recibidos` (`EventosRecibidosController.java:29`) | `hasRole('administrador')` | Solo administrador | Sí |
+
+- **`puedeVerCoordenadas`** (`PoliticaAccesoUbicacion.java:53-58`) compara la authority **exacta** `ROLE_cientifico_alto_rango`, rechaza la autenticación anónima y no cambió en este diff. La prueba rechaza las variantes `ADMINISTRADOR`, `Cientifico_Alto_Rango`, `administrador ` y `ROLE_administrador`, y el converter descarta `offline_access`, `uma_authorization` y `default-roles-*`.
+- **RF12:** `administrador` recibe 403 en `/mapa` (`administradorNoRecibeElMapaYAltoRangoNoRecifra`) y, en `/hallazgos`, la vista generalizada sin lat/lon (`AuditoriaYSinFiltracionesTest.java:77`, que incluye `administrador`). Caso límite: un usuario con **los dos** roles (ver SEC-J-I16).
+- **`SeguridadEndpointsTest`** es sólido:
+  - servicio-cientifico (56 casos): endpoint × 5 roles, 401 sin token, 403 con JWT sin roles, 403 con roles técnicos, variantes de mayúsculas o espacios, denyAll fuera del prefijo y 404 (no 403) para rutas futuras del prefijo;
+  - servicio-consulta-publica (40 casos): públicos con y sin token, eventos solo para administrador y 15 combinaciones no listadas con 401 y 403.
+
+  Dos huecos menores: en servicio-cientifico solo se comprueba el cuerpo `ROL_INSUFICIENTE` en `/hallazgos` (con SEC-J-20 conviene parametrizarlo para todos los endpoints), y la prueba usa `jwt().authorities(...)`, que no pasa por `KeycloakJwtAuthenticationConverter` (el converter sí se ejerce en `BaseUbicacionMySqlTest` y en `EventosPruebaControllerTest`).
+- **`ArquitecturaSeguridadTest`:** la regla es correcta para el caso típico, y su prueba de control (`laReglaFallaSiFaltaElRol`) evita que quede vacía sin que nadie lo note. Pero se puede eludir: ver SEC-J-19.
+
+## 3. Recifrado y cifrado (d9a9031, 124d516)
+
+- **Solo tocan pruebas.** `git show --stat`: `RecifradoServiceTest`, `UbicacionServiceIntegracionTest`, `BaseUbicacionMySqlTest`, `AuditoriaYSinFiltracionesTest` y `BusquedaHallazgosApiTest`, todas en `src/test`. `git diff 9643411..HEAD -- '*/src/main/*'` no incluye ningún archivo de `ubicacion`. `CifradorAesGcm.java` se modificó por última vez en `900ed86`.
+- **Producción sin cambios** (`CifradorAesGcm.java`): `AES/GCM/NoPadding` con llave de 256 bits del proveedor, `BITS_TAG = 128` (`:27`), `BYTES_NONCE = 12` (`:28`), un `SecureRandom` por instancia con `nextBytes` en **cada** cifrado y recifrado (`:32,85-86`), AAD = UUID canónico en minúsculas (`:88,106,117-119`), y fallo cerrado ante un nonce de otra longitud, un texto nulo o un plano que no mide 16 bytes (`:99-111`).
+- **La alteración XOR sí prueba la detección:**
+  - `CHAR(ASCII(coord_cifrada) ^ 0x01 USING binary)` invierte un bit del primer byte del texto cifrado, que va en una columna distinta del nonce;
+  - `alterarPrimerByteDelCifrado` comprueba, fila por fila, que el valor **cambió**, que conserva el tamaño y que `ahora[0] == previo[0] ^ 0x01`, y exige que haya filas (`isNotEmpty`);
+  - así desaparece la variante anterior, que fallaba en silencio 1 de cada 256 veces (sobrescribir con `0xFF` un byte que ya valía `0xFF` no alteraba nada).
+
+  Las tres consecuencias se siguen comprobando: `CoordenadasNoDescifrablesException` por integridad, `NO_DISPONIBLES`/`omitidos` solo para alto rango, y que el log no lleve datos. `CifradorAesGcmTest` cubre aparte la alteración del texto (byte 3), del nonce, de la longitud del nonce, del AAD (otro hallazgo) y de la versión de llave. Las 52 pruebas de cifrado y ubicación ejecutadas pasan.
+
+## 4. `Clock` en `ValidadorDatosHallazgo` (b4053c3)
+
+- **Ningún reloj arbitrario en producción.** Spring usa el constructor público con `@Autowired` (`:60-63`), que fija `Clock.system(ZONA_BOGOTA)`. El constructor que recibe un `Clock` es *package-private*: ni un bean `Clock` del contexto ni una propiedad pueden llegar a él. El único otro `Clock` del servicio es el de `MonitorCarga`, que tampoco se inyecta como bean.
+- **La validación de fechas futuras no cambia:** `LocalDate.ofInstant(reloj.instant(), ZONA_BOGOTA)` (`:123`) equivale a `LocalDate.now(ZONA_BOGOTA)` con el reloj del sistema, y la regla sigue igual (`isAfter(hoy.plusDays(1))` o año < 1800, `:124`). El día se calcula siempre en Bogotá, aunque el reloj venga en otra zona.
+- Las pruebas nuevas cubren justo el borde que antes hacía fallar la de SEC-J-01: medianoche de Bogotá, 05:00Z. Los 20 casos pasan.
+
+## 5. Secretos
+
+- **Árbol actual:**
+  - `git ls-files` no contiene `.env`, `certs/`, `*.pem`, `*.p12`, `*.jks`, `*.pfx` ni `*.key`.
+  - Solo están rastreados `*.env.example`, en los que **todas** las variables `*PASSWORD*`, `*SECRET*` y `*TOKEN*` son marcadores `CAMBIAR…` o están vacías (comprobado sin imprimir valores), y `web-*/.env.development`, que solo tiene URL locales y el `client_id` público.
+  - `.env`, `certs/`, `*.p12` y los `.env` de servicio están ignorados (`.gitignore:15,35,46`). `.env` y `certs/` existen en local, sin rastrear, y no se abrieron.
+  - El realm usa marcadores `${…}` para las 6 contraseñas de usuarios de prueba y para el secret de `biohub-gateway`.
+- **Historial completo:**
+  - `git log --all --diff-filter=A` no muestra ningún `.env`, `certs/`, `*.pem` ni `*.p12` añadido nunca. Solo `*.env.example`, incluidos `deploy/backend/.env.example` y `deploy/datos/.env.example` de `origin/feature/despliegue`.
+  - Ninguna versión del realm (`bc82cd7`, `73636c9`) tuvo contraseñas o secrets literales.
+  - No aparecen llaves `vN:`+base64, URL con credenciales, hosts Aiven con credenciales, `avns_`, JWT, PEM, claves AWS ni tokens de GitHub.
+  - Las coincidencias de `*_PASSWORD=` son referencias `$VAR`, marcadores o ejemplos de documentación (por ejemplo, `servicio-cientifico/README.md` en `d92c920`: `UBICACION_KEYSTORE_PASSWORD=la…`, texto explicativo). Los hosts `*.a.aivencloud.com` que aparecen son de ejemplo (`mysql-xxxx-proyecto`, `CAMBIAR`, `mysql-x`).
+- **Único valor literal:** `.github/workflows/ci.yml`, commit `5b168b2`, tiene contraseñas de CI (`ci…`) y la llave `CI_UBICACION_CLAVE` (base64 de 32 bytes, `Ym…`). Son valores ficticios de contenedores efímeros del job, ya registrados como **SEC-J-I7**. Se comprobó que esa llave no se reutiliza en ningún otro archivo ni commit. Sigue abierto como informativo.
+
+## 6. Observaciones sobre el realm y el compose del PR #7
+
+- **SEC-04 en los servicios de Juanita:** `rabbitmq-usuarios` (`docker-compose.yml:128-148`) ya crea `cientifico_mq` (configure y write solo sobre `biohub.eventos`, sin read: `crear-usuarios.sh:34-37`) y `consulta_mq`. servicio-cientifico y consulta-pública **siguen usando el usuario administrador `biohub`** hasta que se migren sus `.env` (`11-seguridad-y-acceso.md` §4, incluido `BIOHUB_EVENTOS_PUBLICADOR_CIENTIFICO=cientifico_mq`). Mientras tanto, SEC-J-I10 (el `user_id` solo prueba que "tiene las credenciales del broker") sigue vigente. Responsable: Juanita (configuración, sin cambiar código).
+- **Para Santiago:** `consulta_mq` y `reportes_mq` necesitan write sobre `biohub.eventos.dlx` para declarar su cola. Como las dos DLQ se enlazan a ese exchange con el nombre de la cola como clave de enrutamiento, un consumidor comprometido podría publicar mensajes falsos en la DLQ del otro (`reportes.eventos.dlq` ← `consulta_mq`). El impacto es bajo: son colas de inspección. Si se quiere cerrar, que la declaración de colas y DLX la haga `rabbitmq-usuarios` con el administrador y que los consumidores queden sin configure ni write.
+- **Realm y D55:** `sinrol1` y `biohub-pruebas` (password grant con `aud=biohub-api`) son justo la población "autenticada sin rol" que D55 deja llegar al método si alguien se salta el gateway. Fuera de local deben eliminarse, como ya se pidió en este reporte (sección del esqueleto, punto 2 de "fuera de local").
+- La API de usuarios del gateway asigna **exactamente un rol** (`ServicioUsuarios.java:18`, `UsuarioDtos.java:20`). Por eso el caso de SEC-J-I16 solo puede darse desde la consola de Keycloak.
+
+## Estado de los hallazgos previos afectados por este diff
+
+| ID | Estado | Evidencia |
+|---|---|---|
+| **SEC-02** (lado servicio) | **Cerrado** en servicio-consulta-publica y servicio-cientifico. Sigue pendiente en equipos y reportes (Nicolás) | Secciones 1 y 2. `SeguridadEndpointsTest` (96 casos) y `ArquitecturaSeguridadTest` en los dos servicios |
+| **SEC-J-01** (validación estricta del payload) | **Sigue cerrado** | Mismo criterio de fecha. El `Clock` solo hace determinista la prueba (sección 4) |
+| **D44 / SEC-J-10, 15, 16** | **Sin cambios** | El diff no toca `ArquitecturaUbicacionTest` ni la cadena auditoría → cifrado → JPA. `UbicacionExceptionHandler` sigue auditando cada 403 de `ubicacion`, ahora también el de un JWT sin roles |
+| **SEC-J-17, SEC-J-18** | **Siguen abiertos** (no son de este diff) | Sin cambios en `PublicadorEventos`/`DetectorCoordenadas` ni en `logback-spring.xml` |
+| **SEC-J-I7** | **Abierto** (informativo) | Sección 5 |
+| **SEC-04** (servicios de Juanita) | **Abierto**: infraestructura lista, falta migrar los `.env` | Sección 6 |
+
+## Hallazgos nuevos
+
+### SEC-J-19 · Bajo · A01 (`ArquitecturaSeguridadTest` se puede eludir y no mira el contenido del `@PreAuthorize`)
+- **Archivos:** `servicio-cientifico/src/test/java/co/edu/unbosque/biohub/cientifico/ArquitecturaSeguridadTest.java:34-39`, y la regla idéntica en `servicio-consulta-publica/.../ArquitecturaSeguridadTest.java:34-39`.
+- **Problema:** la regla solo mira métodos **declarados** en clases anotadas **directamente** con `@RestController`, y solo exige que **exista** un `@PreAuthorize`. Resultado de la sonda en la copia:
+
+  | Controlador de prueba | ¿Pasa la regla sin control de rol? |
+  |---|---|
+  | `@Controller` + `@ResponseBody` en la clase | **Sí** |
+  | `@Controller` con método que devuelve `ResponseEntity` | **Sí** |
+  | `@RestController` que hereda un `@GetMapping` de una clase base sin anotar | **Sí** |
+  | `@RestController` que implementa una interfaz con `@GetMapping` (estilo OpenAPI generator) | **Sí** |
+  | `@GetMapping` con `@PreAuthorize("isAuthenticated()")` | **Sí** |
+  | `@PreAuthorize` a nivel de clase y métodos sin anotar | No (falso positivo: más estricto, aceptable) |
+
+  Tampoco cubre `RouterFunction`/`HandlerFunction` ni un estereotipo propio meta-anotado con `@RestController`, porque `areAnnotatedWith` no sigue meta-anotaciones. En servicio-cientifico, con D55, `isAuthenticated()`, `permitAll()` o `true` en un endpoint de registro dejarían entrar a **cualquiera de los 5 roles** (por ejemplo, `analista_ambiental` en el historial), y no fallaría ninguna prueba.
+- **Por qué importa:** D55 quita la barrera de rol de la URL y se apoya en esta prueba, que pasa a ser la red de seguridad de HU-10 c.2 dentro del servicio. Hoy no hay ningún endpoint afectado. El riesgo aparece cuando registro empiece a añadir controladores.
+- **Corrección:** ampliar la selección y validar el contenido. En servicio-cientifico, prohibir expresiones que no nombren un rol:
+  ```java
+  private static final DescribedPredicate<CanBeAnnotated> ES_ENDPOINT =
+          CanBeAnnotated.Predicates.metaAnnotatedWith(RequestMapping.class)
+                  .or(CanBeAnnotated.Predicates.annotatedWith(RequestMapping.class));
+
+  // 1) Solo @RestController: cierra @Controller + @ResponseBody y los estereotipos propios
+  static ArchRule controladoresSonRest() {
+      return classes().that().areMetaAnnotatedWith(Controller.class)
+              .should().beAnnotatedWith(RestController.class);
+  }
+  // 2) Los mappings se declaran en la clase concreta del controlador: cierra la herencia y las interfaces
+  static ArchRule mappingsSoloEnRestControllerConcreto() {
+      return methods().that(ES_ENDPOINT)
+              .should().beDeclaredInClassesThat().areAnnotatedWith(RestController.class)
+              .andShould().beDeclaredInClassesThat().areNotInterfaces()
+              .andShould().beDeclaredInClassesThat().doNotHaveModifier(JavaModifier.ABSTRACT);
+  }
+  // 3) Solo servicio-cientifico: el @PreAuthorize debe nombrar un rol o la política de ubicación
+  static ArchRule endpointsConRolExplicito() {
+      return methods().that(ES_ENDPOINT).should(new ArchCondition<JavaMethod>("tener @PreAuthorize con un rol explícito") {
+          @Override
+          public void check(JavaMethod m, ConditionEvents eventos) {
+              String expr = m.tryGetAnnotationOfType(PreAuthorize.class).map(PreAuthorize::value).orElse("");
+              boolean conRol = expr.matches(".*\\b(hasRole|hasAnyRole)\\(.*|.*@politicaUbicacion\\..*")
+                      && !expr.matches(".*\\b(permitAll|isAuthenticated|isFullyAuthenticated|isAnonymous|true)\\b.*");
+              if (!conRol) {
+                  eventos.add(SimpleConditionEvent.violated(m, m.getFullName() + ": @PreAuthorize sin rol explícito"));
+              }
+          }
+      });
+  }
+  // 4) Sin endpoints funcionales
+  static ArchRule sinRouterFunction() {
+      return noClasses().should().dependOnClassesThat()
+              .areAssignableTo(org.springframework.web.servlet.function.RouterFunction.class);
+  }
+  ```
+  En consulta-pública, `permitAll()` sí es válido en los públicos, porque allí el `denyAll` de la URL exige un matcher explícito. Basta con aplicar las reglas 1, 2 y 4 junto con la actual. Añadir a las dos pruebas de control un fixture por cada evasión de la tabla.
+- **Responsable sugerido:** ubicación (Juanita), porque la prueba es suya; avisar a Hernando. **Condición previa** a integrar controladores de registro (ver D55). **Esfuerzo:** S.
+
+### SEC-J-20 · Bajo · A05 / A09 (fuera de `ubicacion`, el 403 por rol no es `ROL_INSUFICIENTE`: la justificación de D55 es parcial)
+- **Archivos:** `servicio-cientifico/.../ubicacion/controller/UbicacionExceptionHandler.java:32,56-68`: el manejador de `AccessDeniedException` está limitado a `basePackages = "...ubicacion.controller"`. `EventosExceptionHandler.java:15` no maneja `AccessDeniedException`. `SecurityConfig.java:24-41` no define un `accessDeniedHandler`.
+- **Problema (comprobado en la copia):** con un JWT sin roles, `GET /api/cientifico/ping` responde **403 sin cuerpo ni `Content-Type`**. Lo mismo ocurre con `POST /api/cientifico/eventos/prueba` y con cualquier 403 de un rol válido en esos endpoints. En el servidor real, la excepción termina en el `/error` de Spring Boot (`{timestamp,status,error,path}`), no en problem+json `ROL_INSUFICIENTE` con `no-store`. Esa es precisamente la situación que D55 dice evitar, y D48 promete `ROL_INSUFICIENTE` para todo 403. Cuando registro añada controladores, sus 403 heredarán este comportamiento.
+- **Por qué importa:** son respuestas inconsistentes con el contrato, y `web-interna` tendría que tratar dos formatos de 403. No filtran datos (el cuerpo del `/error` no incluye trazas). No se pierde auditoría D28, porque la de `ubicacion` sigue funcionando.
+- **Corrección:** un 403 uniforme para todo servicio-cientifico, sin tocar la auditoría de `ubicacion` (que ya tiene `@Order(HIGHEST_PRECEDENCE)` y se evalúa primero):
+  ```java
+  // config/AccesoDenegadoGlobal.java
+  @RestControllerAdvice
+  @Order(Ordered.LOWEST_PRECEDENCE)
+  class AccesoDenegadoGlobal {
+      @ExceptionHandler(AccessDeniedException.class)
+      ResponseEntity<ProblemDetail> denegado(AccessDeniedException e, HttpServletRequest req) throws AccessDeniedException {
+          Authentication a = SecurityContextHolder.getContext().getAuthentication();
+          if (a == null || a instanceof AnonymousAuthenticationToken) throw e;          // 401 lo resuelve Security
+          ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "No tienes permiso para ver esta información.");
+          pd.setTitle("Acceso denegado");
+          pd.setProperty("codigo", "ROL_INSUFICIENTE");
+          return ResponseEntity.status(HttpStatus.FORBIDDEN).contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                  .cacheControl(CacheControl.noStore()).body(pd);
+      }
+  }
+  // SecurityConfig: el mismo cuerpo para los 403 de la cadena de filtros (denyAll fuera del prefijo).
+  // ProblemaAccesoDenegadoHandler implementa AccessDeniedHandler y escribe el mismo problem+json con no-store.
+  .exceptionHandling(ex -> ex.accessDeniedHandler(new ProblemaAccesoDenegadoHandler()))
+  ```
+  Y parametrizar `elRol403SinRolesConservaElProblemJsonDelContrato` sobre `ENDPOINTS`.
+- **Responsable sugerido:** ubicación (Juanita), porque `config/` es compartido con Hernando. **Esfuerzo:** S.
+
+### SEC-J-21 · Bajo · A04 (el cuerpo se deserializa y se valida antes de comprobar el rol)
+- **Archivos:** `servicio-cientifico/.../config/SecurityConfig.java:36` (sin rol en la URL) y `eventos/controller/EventosPruebaController.java:34` (`@Valid @RequestBody`).
+- **Problema (comprobado en la copia):** `@PreAuthorize` se evalúa al invocar el método, **después** de resolver los argumentos. Un JWT **sin roles** y uno de `investigador_campo` que mandan a `POST /api/cientifico/eventos/prueba` (endpoint solo para administrador) un `mensaje` de 300 caracteres reciben `400` con el detalle `"mensaje: máximo 200 caracteres"`, y con JSON inválido también `400`, en vez de `403`. Esto es propio de la seguridad por método. D55 lo extiende a los usuarios sin rol, que con `hasAnyRole` en la URL recibirían 403 antes de leer el cuerpo.
+- **Por qué importa:** hoy el impacto es mínimo (un endpoint de diagnóstico). Con registro cambia: los adjuntos de hasta 10 MB (`11` §3, Hernando) se leerían y validarían en memoria para usuarios que no pueden registrar (`auditor_cientifico`, `analista_ambiental`, `administrador`). Además, los mensajes de validación revelan la forma del contrato a quien no debería usarlo.
+- **Corrección:** en los endpoints con cuerpo grande o multipart, repetir el rol en la URL, **antes** del matcher general (no contradice D55: el 403 lo resuelve el `accessDeniedHandler` de SEC-J-20):
+  ```java
+  .requestMatchers(HttpMethod.POST, "/api/cientifico/hallazgos", "/api/cientifico/hallazgos/*/adjuntos")
+          .hasAnyRole("investigador_campo", "cientifico_alto_rango")
+  .requestMatchers("/api/cientifico/**").authenticated()
+  .anyRequest().denyAll())
+  ```
+  Y configurar `spring.servlet.multipart.max-file-size`/`max-request-size` acordes al límite del gateway.
+- **Responsable sugerido:** Hernando (endpoints de registro), con revisión de Juanita en `SecurityConfig`. **Esfuerzo:** S.
+
+### Informativos
+- **SEC-J-I16 (usuario con `administrador` y `cientifico_alto_rango` a la vez):** `puedeVerCoordenadas` solo busca `ROLE_cientifico_alto_rango`. Un usuario que además sea `administrador` recibiría coordenadas, lo que choca con la lectura literal de RF12 ("administrador nunca recibe coordenadas"). La API del gateway impide esa combinación (exactamente un rol), pero la consola de Keycloak no. Opcional: `&& authorities.noneMatch("ROLE_administrador")` en `puedeVerCoordenadas`, con una prueba, o una regla de Keycloak/gateway que lo vigile. Decisión de Juanita y el Tech Lead.
+- **SEC-J-I17 (actuator `info` expuesto pero denegado):** `management.endpoints.web.exposure.include: health,info` (`servicio-cientifico/.../application.yml:59`, `servicio-consulta-publica/.../application.yml:79`), pero la URL solo permite `health`. No hay riesgo; para alinear la configuración con la intención, usar `include: health`.
+- **SEC-J-I18 (comentario desactualizado):** `servicio-consulta-publica/.../config/SecurityConfig.java:38` cita `ArquitecturaConsultaPublicaTest`, que no existe. La prueba es `ArquitecturaSeguridadTest`.
+- **SEC-J-I19 (D7 y D55 en contenedores):** `servicio-cientifico/Dockerfile:14` y los demás Dockerfile ponen `SERVER_ADDRESS=0.0.0.0`. Al crear el compose del backend (Santiago): no publicar 8081 ni 8083 en el host, usar una red `internal` compartida solo con el gateway, y documentarlo en `09-despliegue.md` como condición de D55.
+
+## Bien hecho (esta iteración)
+- `denyAll` real en los dos servicios, con matchers **exactos** por método y ruta en consulta-pública. El de eventos se estrechó de `/eventos/**` a `GET /eventos/recibidos`.
+- `@PreAuthorize("permitAll()")` explícito en los públicos: la intención queda escrita y la prueba de arquitectura lo exige.
+- Pruebas de matriz exhaustivas (endpoint × rol, sin token, sin roles, roles técnicos, variantes de nombre, denyAll con varios métodos), más la prueba de control de la propia regla ArchUnit.
+- D55 está documentada con su alternativa y deja la decisión a ciberseguridad. El código mantiene la auditoría D28 de **todos** los 403 de `ubicacion`, también el de un JWT sin roles.
+- Las correcciones de pruebas inestables arreglan la causa (1 de cada 256) en vez de reintentar. La alteración verifica que el dato cambió, y la ayuda quedó en la base común de las tres clases.
+- El `Clock` se inyecta por un constructor de paquete sin abrir superficie en producción, y las pruebas cubren los bordes exactos de la medianoche Bogotá/UTC.
+- Ningún secreto nuevo. Los mensajes de commit describen el cambio sin incluir valores.
+
+## Veredicto (iteración 17)
+**APROBADO CON OBSERVACIONES.** No hay Críticos ni Altos.
+- **D55:** **aceptada**. No se exige `hasAnyRole` + `AccessDeniedHandler`, con dos condiciones:
+  - SEC-J-19 y SEC-J-20 corregidos **antes** de que registro integre controladores en servicio-cientifico. Si no, la alternativa `hasAnyRole` pasa a ser obligatoria.
+  - En contenedores, la red interna sin puertos publicados (SEC-J-I19).
+- **SEC-J-21:** la aplica Hernando en los endpoints con cuerpo o adjuntos.
+- **SEC-02:** cerrado para los dos servicios de Juanita.
+- **Cifrado:** sin cambios en producción. La detección de manipulación sigue probada.
+- **Secretos:** ninguno en el árbol ni en el historial (SEC-J-I7 sigue como informativo).
+- **SEC-04:** migrar los `.env` de servicio-cientifico y consulta-pública a `cientifico_mq` y `consulta_mq`.
+
+---
+
+# Iteración 18 – re-verificación de SEC-J-19 y SEC-J-20 (2026-11-09)
+
+**Revisor:** ciberseguridad · **Rama:** `feature/ubicacion-consulta-publica` (HEAD `913aece`) · **Alcance:** `git show d718be5` (SEC-J-19) y `git show e49373a` (SEC-J-20), condiciones de D55 antes de que `registro` integre controladores, y lectura de los 3 controladores de `origin/feature/registro-cientifico` (`0137053`). Antes del push y del PR a `develop`.
+
+## Resumen
+
+| Severidad | Cantidad (nuevos) |
+|---|---|
+| Crítico | 0 |
+| Alto | 0 |
+| Medio | 1 (SEC-J-23, en la rama de Hernando, no en este diff) |
+| Bajo | 1 (SEC-J-22) |
+| Informativo | 3 (SEC-J-I20 a SEC-J-I22) |
+
+| ID | Estado |
+|---|---|
+| **SEC-J-19** | **Parcial.** Las 6 vías de la tabla de la iteración 17, y las que se añadieron (estereotipos propios, rutas funcionales, handlers alternativos, `isAuthenticated()`, `true`, vacío, `rol or permitAll()`, `rol or 1 == 1`), quedan detectadas. Siguen pasando 3 vías nuevas, todas comprobadas: `@GetExchange`/`@HttpExchange` y los métodos `final` o `static` (SEC-J-22) |
+| **SEC-J-20** | **Cerrado.** 403 problem+json `ROL_INSUFICIENTE` con `no-store` en todo servicio-cientifico y consulta-pública. El 401 va sin cuerpo y sin la descripción interna. La auditoría de `ubicacion` no cambia |
+| SEC-J-21 | Abierto (Hernando). Sin cambios en este diff |
+
+**Veredicto: APROBADO CON OBSERVACIONES** (detalle al final).
+
+## Cómo se revisó
+- **Documentación:** D55 (`03-arquitectura.md:106`), contrato §2, §5.1 y la tabla de códigos (`04-contrato-api.md:131,252-330`), matriz §2 de `11-seguridad-y-acceso.md` y la sección "Iteración 17" de este reporte.
+- **Código (estático):** los dos `ArquitecturaSeguridadTest`, las dos `SondasElusion`, los dos `ProblemaSeguridadHandler`, los dos `SecurityConfig`, `ConsultaPublicaExceptionHandler`, `UbicacionExceptionHandler` y `EventosExceptionHandler`. En la rama de Hernando: `HallazgoController`, `FichaPlantillaController`, `HistorialController`, `RegistroExceptionHandler` y los `import` de `ubicacion` dentro de `registro`.
+- **Pruebas:** en una copia de `HEAD` (`git archive`) en el scratchpad, para no chocar con la suite de QA, con `mvn -o`:
+  - servicio-cientifico: `ArquitecturaSeguridadTest` (69) y `SeguridadEndpointsTest` (101), **0 fallos**;
+  - servicio-consulta-publica: `ArquitecturaSeguridadTest` (66) y `SeguridadEndpointsTest` (76), **0 fallos**.
+- **Sondas (solo en la copia, nunca en el repositorio):**
+  - `Sonda18ReglaTest`: aplica `ArquitecturaSeguridadTest.reglas()` (R1 a R6) a 4 controladores nuevos;
+  - `Sonda18HttpTest`: `@WebMvcTest` con el `SecurityConfig` real; llama a esos 4 controladores con un JWT **sin roles**;
+  - `Sonda18ExprTest`: pasa las 8 expresiones `@PreAuthorize` de la rama de Hernando por `expresionAceptada`.
+- **Artefacto:** `mvn -o package -DskipTests` en la copia. El jar de servicio-cientifico **no contiene** `sondaseguridad` ni ninguna clase `*Test`, y sí contiene `ProblemaSeguridadHandler`.
+
+## 1. SEC-J-19: vías de elusión, una por una
+
+| Vía | ¿Cubierta? | Evidencia |
+|---|---|---|
+| `@Controller` + `@ResponseBody` / `ResponseEntity` | Sí (R1, R2, R4) | Sondas propias del commit |
+| Estereotipo propio meta-anotado con `@RestController` | Sí (R1: exige `@RestController` **directo**) | `ConEstereotipoPropio` |
+| `@Component` + `@RequestMapping` de tipo | Sí (R2) | `ComponenteConRequestMapping` |
+| Mapping heredado de clase base (con o sin rol) o de una interfaz, aunque el padre esté fuera del escaneo | Sí (R3; R2 si el padre está en el escaneo) | `HeredaMapping*`, `ImplementaInterfazConMapping`, `laClaseBaseConMappingEsDetectadaPorR2` |
+| `@PreAuthorize` **solo en la clase** | Sí. R4 lo exige en cada método (más estricto, a propósito) | Lectura de R4 (`tryGetAnnotationOfType` del método) |
+| `@PreAuthorize` vía **meta-anotación** propia (`@SoloAdmin`) | Sí. No cuenta como anotación directa, así que R4 falla (más estricto). Si un método lleva a la vez una directa y una meta-anotada, Spring Security 6 rechaza la duplicidad al invocar (falla cerrado; no se comprobó con sonda) | Lectura de R4 |
+| `@Secured` / `@RolesAllowed` en lugar de `@PreAuthorize` | Sí. No están habilitados (`@EnableMethodSecurity` por defecto) y R4 exige `@PreAuthorize`, así que el método falla la regla | `SecurityConfig.java:20` |
+| SpEL con `or` y algo siempre verdadero (`permitAll()`, `isAuthenticated()`, `true`, `1 == 1`, `!hasRole`, paréntesis, `;`) | Sí. La lista blanca exige que **toda** la expresión sean términos de rol con roles del realm; no hay ninguna combinación de términos aceptados que sea siempre verdadera | 30 casos rechazados en `laListaBlancaRechazaExpresionesSinRolExplicito` |
+| `@politicaUbicacion` con otro método u otro bean | Sí (lista `METODOS_POLITICA_UBICACION`) | `PoliticaNoListada` |
+| `RouterFunction`, también oculto tras `Object` | Sí (R5, por dependencia de paquete) | `RutasFuncionales*` |
+| `HttpRequestHandler`, `mvc.Controller`, `Servlet`, `ServletRegistrationBean` | Sí (R6) | `ManejadorHttpRequestHandler`, `ServletPropio` |
+| Controladores fuera del paquete escaneado | Sí en la práctica. Spring escanea desde `ServicioCientificoApplication` (`...biohub.cientifico`), el mismo paquete que importa la regla. Un `@ComponentScan`/`@Import` de otro paquete, o un controlador que venga en una dependencia, no los ve la regla; queda el `denyAll` fuera de `/api/cientifico/**` | Ver SEC-J-I22 |
+| **`@GetExchange` / `@HttpExchange` en un `@RestController` (Spring 6.1+)** | **No** | SEC-J-22 |
+| **Método de endpoint `final`** (con `@PreAuthorize` válido) | **No** | SEC-J-22 |
+| **Método de endpoint `static`** (con `@PreAuthorize` válido) | **No** | SEC-J-22 |
+
+- **Sondas fuera de producción:** cumplido. Las dos `SondasElusion` están en `src/test/java/co/edu/unbosque/biohub/sondaseguridad/`, fuera del paquete base de cada servicio. Por eso no las ve el escaneo de componentes ni de `@SpringBootApplication` ni de `@WebMvcTest`, y la regla las excluye con `DO_NOT_INCLUDE_TESTS`. Ningún `pom.xml` usa `test-jar`, `build-helper` ni `testSourceDirectory`. El `Dockerfile` copia solo el jar empaquetado, y se comprobó que el jar no las incluye.
+- **Prueba de control positiva:** `unControladorCorrectoPasaTodasLasReglas` evita que las reglas rechacen todo, y `elEscaneoNoEstaVacio` evita que el escaneo quede vacío sin que nadie lo note. Bien.
+- **Controladores de registro (Hernando):** los 3 controladores (8 métodos) son `@RestController` directos, con métodos `public` no `final` y sin herencia. Sus 8 expresiones `hasAnyRole(...)` son **aceptadas** por la lista blanca (`Sonda18ExprTest`: 8 de 8 `true`), así que la regla los deja pasar sin cambios. Pero la regla solo valida la **forma** de la expresión, no la matriz §2 (ver SEC-J-23).
+
+## 2. SEC-J-20: `ProblemaSeguridadHandler`
+
+- **Sin filtración de información:**
+  - el cuerpo del 403 es fijo (`ProblemaSeguridadHandler.java:49-53,70-84`): no incluye el mensaje de la excepción, el rol exigido, el usuario ni una traza;
+  - `instance` es `getRequestURI()`, serializado por Jackson como `application/problem+json`: no hay XSS reflejado, y `StrictHttpFirewall` ya rechaza `;`, `%2F` y `%25`;
+  - la prueba `elCuerpoDel403NoFiltraTrazasNiDetallesInternos` lo cubre.
+- **Cabeceras:**
+  - el 401 (`:56-68`) solo emite `Bearer` y, si aplica, `error="<código RFC 6750>"`, filtrado por la lista `invalid_request|invalid_token|insufficient_scope`. Se elimina el `error_description`, que antes reflejaba el mensaje del decodificador JWT. Probado con `BadJwtException("... interno-7")`;
+  - el 403 ya no envía el `WWW-Authenticate` con descripción que ponía `BearerTokenAccessDeniedHandler`.
+- **`no-store`:** se pone en el 401 y en el 403 (`:67,80`), y lo comprueba `esRolInsuficiente`/`esNoAutenticado` en todos los endpoints, en el `denyAll` y en el JWT inválido.
+- **Registro en la cadena:** el handler se registra en `exceptionHandling` **y** en `oauth2ResourceServer` (`SecurityConfig.java:42-45`). Esto cubre el JWT inválido o vencido (que no pasa por `ExceptionTranslationFilter`) y el `denyAll` (`AuthorizationFilter`). Un anónimo que llega a `denyAll` recibe 401, no 403 (`ExceptionTranslationFilter`).
+- **Auditoría de `ubicacion` intacta:**
+  - `UbicacionExceptionHandler` no cambió (`git show --stat e49373a`). Sigue con `@Order(HIGHEST_PRECEDENCE)` y `basePackages = ...ubicacion.controller`, y resuelve y audita la `AccessDeniedException` **antes** de que llegue a Spring Security;
+  - como `/api/cientifico/**` es `authenticated()`, un usuario autenticado nunca recibe un 403 de la cadena de filtros en `ubicacion`: todo 403 de `ubicacion` pasa por el método y queda auditado;
+  - en las pruebas, `ProblemaSeguridadHandler` produce el mismo cuerpo, así que el contrato es uniforme.
+- **`ConsultaPublicaExceptionHandler.seguridad`** (`:61`): relanzar la misma excepción hace que `ExceptionHandlerExceptionResolver` devuelva `null` sin registrar un aviso. La excepción llega a `ExceptionTranslationFilter`, en vez de acabar como 500 en el `@ExceptionHandler(Exception.class)` genérico. Correcto.
+- **Registro (Hernando):** `RegistroExceptionHandler` no captura `AccessDeniedException` ni `Exception`, así que sus 403 saldrán por `ProblemaSeguridadHandler` con el formato del contrato. Riesgo futuro en SEC-J-I20.
+
+**Estado: Cerrado.**
+
+## 3. Condiciones de D55 antes de integrar `registro`
+
+| Condición (iteración 17) | Estado |
+|---|---|
+| SEC-J-19: endurecer `ArquitecturaSeguridadTest` | **Parcial**: falta SEC-J-22 (S, dos reglas más) |
+| SEC-J-20: 403 uniforme | **Cumplida** |
+| SEC-J-I19: red interna sin puertos publicados (Santiago) | Sin cambios; sigue pendiente para el compose del backend |
+| Nueva: los endpoints de registro se añaden a `ENDPOINTS` de `SeguridadEndpointsTest` con su matriz | **Pendiente (Hernando)**. Es la única prueba que compara el rol con la matriz §2; la regla ArchUnit no lo hace (SEC-J-23) |
+
+Los 3 controladores actuales de Hernando **no** usan ninguna de las vías de SEC-J-22, así que hoy no hay ningún endpoint expuesto por ellas. Por eso no exijo pasar a `hasAnyRole` en la URL. La condición queda así: **SEC-J-22 corregido antes de que `registro` se fusione en `develop`** (si se puede, en este mismo PR; el esfuerzo es S). Si `registro` entra antes, la alternativa de D55 (`hasAnyRole` de los 5 roles en la URL) pasa a ser obligatoria hasta corregirlo.
+
+Sobre D53 (`registro` importa `ubicacion.service.EstadoConservacion`, `UbicacionInvalidaException` y `UbicacionNoEncontradaException`): son tipos de la capa de servicio. No hay `import` de `ubicacion.domain` ni de `ubicacion.infrastructure` (texto cifrado, llaves), así que **no afecta a la seguridad** de las coordenadas. Es un tema de arquitectura.
+
+## Hallazgos nuevos
+
+### SEC-J-22 · Bajo · A01 (quedan tres vías que pasan `ArquitecturaSeguridadTest` y dejan el endpoint sin control de rol)
+- **Archivos:** `servicio-cientifico/src/test/java/co/edu/unbosque/biohub/cientifico/ArquitecturaSeguridadTest.java:107-109` (`ES_ENDPOINT`) y `:161-178` (R4), y lo mismo en `servicio-consulta-publica/.../ArquitecturaSeguridadTest.java:104-106,158-175`.
+- **Problema (comprobado en la copia):** las 4 sondas pasan **las seis reglas** (R1 a R6) y responden **200 con el dato** a un JWT **sin roles**, con el `SecurityConfig` real:
+
+  | Sonda | Reglas | `GET` con JWT sin roles |
+  |---|---|---|
+  | `@RestController` con `@GetExchange("/api/cientifico/...")` y sin `@PreAuthorize` | todas pasan | **200** |
+  | `@RestController` que implementa una interfaz `@HttpExchange` con `@GetExchange` | todas pasan | **200** |
+  | `@GetMapping` + `@PreAuthorize("hasRole('administrador')")` en un método **`final`** que llama a un método auxiliar del propio controlador | todas pasan | **200** |
+  | `@GetMapping` + `@PreAuthorize("hasRole('administrador')")` en un método **`static`** | todas pasan | **200** |
+
+  - **`@HttpExchange`:** desde Spring Framework 6.1 (el proyecto usa 6.2.x, Boot 3.5.16), `RequestMappingHandlerMapping` también registra como endpoints de servidor los métodos con `@HttpExchange`/`@GetExchange`/`@PostExchange`. Esas anotaciones **no** llevan `@RequestMapping` como meta-anotación, así que `ES_ENDPOINT` no las ve: R2, R3 y R4 no se aplican.
+  - **`final` / `static`:** `@PreAuthorize` se aplica con un proxy CGLIB, y CGLIB no puede sobrescribir métodos `final` ni `static`. Spring MVC invoca el método sin pasar por el interceptor. En el caso `final`, el cuerpo corre sobre la instancia del proxy, y cualquier llamada a otro método no `final` se delega al bean real, con sus dependencias. Así, el endpoint devuelve datos reales. El `@PreAuthorize` **está escrito y la regla lo acepta**, pero no se ejecuta, lo que lo hace más difícil de detectar en una revisión.
+- **Por qué importa:** con D55, el `@PreAuthorize` es la única barrera de rol dentro del servicio, y esta prueba es su red de seguridad. Cualquiera de las 3 vías dejaría un endpoint restringido (por ejemplo, el historial o la reclasificación) abierto a **cualquiera de los 5 roles** que dejó pasar el gateway, sin que falle ninguna prueba. Hoy no hay ningún endpoint afectado (tampoco en la rama de Hernando).
+- **Corrección:** ampliar `ES_ENDPOINT` y añadir una regla sobre los modificadores, más una sonda por vía:
+  ```java
+  private static final DescribedPredicate<CanBeAnnotated> ES_ENDPOINT =
+          CanBeAnnotated.Predicates.metaAnnotatedWith(RequestMapping.class)
+                  .or(CanBeAnnotated.Predicates.annotatedWith(RequestMapping.class))
+                  .or(CanBeAnnotated.Predicates.metaAnnotatedWith(HttpExchange.class))
+                  .or(CanBeAnnotated.Predicates.annotatedWith(HttpExchange.class));
+
+  // R7: el proxy de @PreAuthorize solo intercepta métodos de instancia no final; la clase tampoco puede ser final
+  static ArchRule r7EndpointsInterceptables() {
+      return methods().that(ES_ENDPOINT)
+              .should().bePublic()
+              .andShould().notHaveModifier(JavaModifier.FINAL)
+              .andShould().notHaveModifier(JavaModifier.STATIC)
+              .andShould().beDeclaredInClassesThat().doNotHaveModifier(JavaModifier.FINAL)
+              .because("un método final o static no pasa por el interceptor de @PreAuthorize (SEC-J-22)")
+              .allowEmptyShould(true);
+  }
+  ```
+  Y en R3 (herencia), el mismo `ES_ENDPOINT` ampliado cubre la interfaz `@HttpExchange`. Para cerrar a la vez esta clase de errores, se puede añadir en `SeguridadEndpointsTest` un caso que recorra **todos** los `RequestMappingInfo` de `RequestMappingHandlerMapping` y compruebe que cada ruta de `/api/cientifico/**` responde 403 con un JWT sin roles. Así se prueba el comportamiento real, no la forma del código, y aparecería cualquier vía que la regla aún no conozca.
+- **Responsable sugerido:** ubicación (Juanita); avisar a Hernando. **Condición de D55** antes de fusionar `registro` en `develop`. **Esfuerzo:** S.
+
+### SEC-J-23 · Medio · A01 (rama de Hernando: los `@PreAuthorize` de `registro` no siguen la matriz §2; la regla los acepta)
+- **Archivos** (en `origin/feature/registro-cientifico`, `0137053`), en `servicio-cientifico/.../registro/controller/`:
+  - `HallazgoController.java:48` (`POST /hallazgos`: `investigador_campo, cientifico_alto_rango, administrador`) y `:66` (`PUT /hallazgos/{id}`: `cientifico_alto_rango, administrador`);
+  - `FichaPlantillaController.java:37` (`PUT /fichas/{n}/atributos`: `cientifico_alto_rango, administrador`);
+  - `HistorialController.java:34,41,53` (`versiones`, `auditoria`, `comparar`: `auditor_cientifico, cientifico_alto_rango, administrador`).
+- **Problema:** la matriz §2 de `11-seguridad-y-acceso.md` dice:
+  - registrar hallazgo y ficha: investigador y alto rango;
+  - reclasificar: investigador, auditor y alto rango;
+  - ver historial: auditor y alto rango;
+  - y "`administrador` nunca recibe coordenadas (RF12) **ni edita datos científicos**".
+
+  En la rama, `administrador` puede **registrar, reclasificar y editar fichas**, y ver el historial. Además, `investigador_campo` y `auditor_cientifico` no pueden reclasificar, aunque la matriz se lo permite (esto es funcional, no de seguridad). `ArquitecturaSeguridadTest` acepta todas estas expresiones porque solo valida que nombren roles del realm. Las rutas de registro están marcadas como propuestas (`*`) en la matriz, pero la regla del administrador no lo está.
+- **Por qué importa:** con D55, ese `@PreAuthorize` es el **único** control de rol. Un administrador (cuenta técnica de gestión) podría crear o modificar datos científicos y su historial inmutable, lo que rompe la separación de funciones que fija la matriz. No es un fallo de este diff, pero es justo el caso que la red de D55 no detecta.
+- **Corrección:** ajustar las expresiones a la matriz, o actualizar la matriz con el Tech Lead si el cambio es intencional, y añadir los 8 endpoints a `ENDPOINTS` de `SeguridadEndpointsTest` con sus roles permitidos, para que la matriz quede probada:
+  ```java
+  // HallazgoController
+  @PostMapping
+  @PreAuthorize("hasAnyRole('investigador_campo', 'cientifico_alto_rango')")
+  // HistorialController
+  @GetMapping("/versiones")
+  @PreAuthorize("hasAnyRole('auditor_cientifico', 'cientifico_alto_rango')")
+  // SeguridadEndpointsTest.ENDPOINTS
+  new Endpoint(HttpMethod.POST, "/api/cientifico/hallazgos", Set.of(INVESTIGADOR, ALTO_RANGO)),
+  ```
+- **Responsable sugerido:** Hernando (registro), con validación del Tech Lead sobre la matriz. **No bloquea** el PR de esta rama. **Bloquea** la integración de `registro` hasta que se corrija o se documente. **Esfuerzo:** S.
+
+### Informativos
+- **SEC-J-I20 (manejadores genéricos y 403 futuros):** si un `@RestControllerAdvice` de `registro` (u otro módulo) añade `@ExceptionHandler(Exception.class)` o `RuntimeException.class` sin excluir `AccessDeniedException`, sus 403 se convertirían en 500. Es lo que ya pasó en consulta-pública y se corrigió en `e49373a`. Recomendación para Hernando: copiar el patrón `seguridad(RuntimeException e) { throw e; }` de `ConsultaPublicaExceptionHandler.java:60-63`, o tratar `AccessDeniedException` antes del genérico. `todoEndpointDa403ProblemJsonConRolNoPermitido` lo detecta si los endpoints de registro se añaden a `ENDPOINTS`.
+- **SEC-J-I21 (`PUBLICOS_PERMIT_ALL` por nombre simple):** `servicio-consulta-publica/.../ArquitecturaSeguridadTest.java:90,165` identifica los públicos como `ClaseSimple.metodo`. Otra clase llamada `PingController` en otro paquete, con un método `ping`, podría usar `permitAll()`. El riesgo es nulo mientras exista el `denyAll` con matchers exactos en la URL. Para mayor precisión, usar `metodo.getFullName()`.
+- **SEC-J-I22 (fuera del alcance de la regla):** la regla no ve controladores que vengan en dependencias ni paquetes añadidos con `@ComponentScan`/`@Import`, y tampoco comprueba que `@EnableMethodSecurity` siga con `prePostEnabled` activo. Ambos casos quedan cubiertos por el `denyAll` fuera del prefijo y por `SeguridadEndpointsTest`, que fallaría si se desactivara la seguridad por método. La prueba de comportamiento que se propone en SEC-J-22 cerraría también este hueco.
+
+## Bien hecho (esta iteración)
+- La lista blanca de expresiones es la solución correcta: exige que **toda** la expresión sean términos de rol del realm, en vez de buscar palabras prohibidas. Rechaza las 30 variantes probadas, incluidas `!rol`, paréntesis, `;`, comillas dobles y roles con otra capitalización.
+- Las sondas viven en `src/test`, fuera del paquete escaneado. Hay una por vía, con control positivo y comprobación de que el escaneo no está vacío. No llegan al jar.
+- `ProblemaSeguridadHandler` registrado en los dos puntos de la cadena (resource server y `exceptionHandling`), con el cuerpo fijo del contrato y `no-store`. Además, quita del `WWW-Authenticate` la descripción interna del decodificador, una filtración que no estaba en el alcance de SEC-J-20.
+- La corrección de consulta-pública (`AccessDeniedException` como 500) se detectó y se arregló en el mismo commit.
+- Pruebas parametrizadas de 401 y 403 sobre todos los endpoints y sobre el `denyAll`.
+
+## Veredicto (iteración 18)
+**APROBADO CON OBSERVACIONES.** No hay Críticos ni Altos en este diff.
+- **SEC-J-20: Cerrado.**
+- **SEC-J-19: Parcial.** Lo que quedó abierto se sigue como **SEC-J-22** (Bajo, S). Debe corregirse antes de que `registro` se fusione en `develop`; si no, `hasAnyRole` en la URL pasa a ser obligatorio (alternativa de D55).
+- **SEC-J-23** (Medio, rama de Hernando): no bloquea este PR, pero sí la integración de `registro`. Hay que alinear los `@PreAuthorize` con la matriz §2 (el administrador no edita datos científicos) y añadir los endpoints a `SeguridadEndpointsTest`.
+- **D55** sigue aceptada con las condiciones de la sección 3.
+
+---
+
+## Iteración 18 – re-verificación de SEC-J-22 (2026-11-09)
+
+**Revisor:** ciberseguridad · **Rama:** `feature/ubicacion-consulta-publica` (HEAD `89e280e`) · **Alcance:** `git show 99fdf15` (SEC-J-22, solo `src/test`) y `git show 89e280e` (BUG-J18-1, solo la comprobación del `user_id` falsificado). Estado de SEC-J-I22 y de las condiciones de D55 para integrar `registro`.
+
+### Resumen
+
+| ID | Estado |
+|---|---|
+| **SEC-J-22** | **Cerrado.** Las 3 vías (`@HttpExchange`/`@GetExchange`, método `final`, método `static`) fallan el build por dos caminos independientes: la regla de forma (R7 y `ES_ENDPOINT` ampliado) y la prueba de comportamiento |
+| **SEC-J-19** | **Cerrado** (lo que quedaba abierto era SEC-J-22) |
+| **SEC-J-I22** | **Cerrado en lo esencial; queda un residuo** (`prePostEnabled=false` y controladores sin proxy: cerrado; controladores de fuera del paquete base con argumentos obligatorios: ver SEC-J-I23) |
+| BUG-J18-1 | Correcto. La prueba es **más estricta** que antes, no más débil |
+
+Hallazgos nuevos: **0 Críticos, 0 Altos, 0 Medios, 0 Bajos, 1 Informativo (SEC-J-I23).**
+
+### Cómo se revisó
+- **Lectura:** los dos `ArquitecturaSeguridadTest` (diff), `VerificadorDeEndpoints`, `MocksDeDependencias` y `SondasElusion` (idénticos en los dos servicios, comprobado con `diff`), los dos `TodosLosEndpointsExigenRolTest`, `SondasDeComportamientoTest`, `PoliticaAccesoUbicacion` y `PublicadorNoPermitidoIntegracionTest` (diff).
+- **Pruebas en una copia de `HEAD`** (`git archive`, en el scratchpad; nada en el repositorio), `mvn -o -pl servicio-cientifico test -Dtest='ArquitecturaSeguridadTest,TodosLosEndpointsExigenRolTest,SondasDeComportamientoTest'`: 79 + 5 + 9 pruebas, **0 fallos**.
+- **Mutaciones (solo en la copia):**
+  - controlador del paquete de la aplicación, **sin** `@PreAuthorize`, con un `@RequestParam` obligatorio (la petición de relleno da **400**, que es "no concluyente"): la prueba **falla** por la invocación directa ("el bean no tiene proxy de seguridad") y por `laSeguridadPorMetodoSigueActiva`. El 400 queda compensado;
+  - controlador en `com.terceros` (fuera de `co.edu.unbosque.biohub`), traído con `@Import` y mapeado en `/api/cientifico/externo`, sin control: con el parámetro **opcional**, la prueba HTTP lo marca (`respondió 200 a un JWT sin roles`); con el parámetro **obligatorio**, **pasa sin ser detectado** (SEC-J-I23).
+- **Artefacto:** `mvn -o package -DskipTests` en la copia. Los jar de servicio-cientifico y servicio-consulta-publica tienen **0** entradas de `sondaseguridad`, `VerificadorDeEndpoints`, `MocksDeDependencias` ni `*Test.class`. Ningún `pom.xml` usa `test-jar`, `build-helper`, `testSourceDirectory` ni configura `maven-jar-plugin`.
+
+### 1. Las tres vías de SEC-J-22
+
+| Vía | Regla de forma | Prueba de comportamiento |
+|---|---|---|
+| `@GetExchange` / `@HttpExchange` sin rol, también desde una interfaz | R2/R3/R4, por `ES_ENDPOINT` ampliado (`ArquitecturaSeguridadTest.java:119-123`). Sondas `ConGetExchange`, `ConHttpExchange`, `ApiExchange`, `ImplementaInterfazHttpExchange` | HTTP 200 → violación; invocación sin `AccessDeniedException` → violación (`SondasDeComportamientoTest:70-85`) |
+| Método `final` con `@PreAuthorize` válido | R7 (`:211-221`), sonda `MetodoFinal` | La invocación corre el cuerpo sobre el proxy y no lanza `AccessDeniedException` → violación "es final" (`:87-91`) |
+| Método `static` con `@PreAuthorize` válido | R7, sonda `MetodoStatic` | Invocación con destino `null` → violación "es static" (`:93-97`) |
+| Extra: método no público y clase `final` | R7, sondas `MetodoNoPublico` y `ClaseFinal` | — |
+
+Hay control positivo en los dos niveles: `ControladorCorrecto` y `ConGetExchangeYRol` pasan las 7 reglas y la prueba de comportamiento no los marca. Así se evita que las reglas rechacen todo o que la prueba no detecte nada. `elRecorridoNoEstaVacio` y `lasSondasEstanRegistradas` evitan un recorrido vacío. La R7 aplica exactamente lo que propuse en la iteración 18.
+
+### 2. ¿Aceptar 400/406/415 como "no concluyente" abre un hueco?
+
+**Para los endpoints de la aplicación, no.** `invocacionDirecta` (`VerificadorDeEndpoints.java:154-185`) no pasa por la resolución de argumentos de Spring MVC. Toma el mismo bean (el proxy) y el mismo `Method` que usa el `HandlerMethod`, pone un JWT sin roles en el `SecurityContext` y exige **exactamente** `AccessDeniedException`. Cualquier otro resultado es una violación: que el método se ejecute, cualquier otra excepción o que el bean no tenga proxy. Por eso, todo endpoint que por HTTP diera 400/406/415 queda cubierto por la segunda comprobación. Lo comprobé con la primera mutación. El caso "el cuerpo del método lanza su propia `AccessDeniedException`" no es un hueco: un usuario sin rol también sería rechazado en la petición real. Los roles válidos que no corresponden siguen siendo cosa de R4 y de `SeguridadEndpointsTest` (SEC-J-23).
+
+**Para los endpoints de fuera del paquete base, sí queda un residuo pequeño.** La invocación se filtra con `esDeLaAplicacion()` (`:76-78`; `TodosLosEndpointsExigenRolTest.java:126`), así que un mapping de otro paquete solo pasa por HTTP, donde el 400 se tolera. Ver SEC-J-I23.
+
+En consulta-pública, `soloLasRutasPublicasExplicitasEstanAbiertas` compara el **conjunto de ids** de los mappings públicos con `PUBLICOS_PERMIT_ALL`. Así, un segundo handler en la misma ruta pública (por ejemplo, con una condición `params`/`headers`, que `rutas()` no distingue) cambia el conjunto y hace fallar la prueba. No hay hueco por `esPublico`. SEC-J-I21 (comparación por nombre simple) sigue igual.
+
+### 3. ¿Puede `MocksDeDependencias` ocultar un control de seguridad?
+
+**No, en el diseño actual.**
+- Solo registra un mock para un tipo de la aplicación que aparece **en un constructor** y **no tiene bean** (`MocksDeDependencias.java:35-41`). En servicio-cientifico, `PoliticaAccesoUbicacion` se importa **real** (`TodosLosEndpointsExigenRolTest.java:88`) y ya está registrada cuando corre el post-procesador (`ConfigurationClassPostProcessor` es `PriorityOrdered`), así que no se simula.
+- Aunque un día se quitara ese `@Import` y un controlador inyectara la política por constructor, el mock se registra con el nombre `mock#<clase>`, **nunca** como `politicaUbicacion`. El `@politicaUbicacion` del SpEL no lo resolvería y lanzaría una excepción que no es `AccessDeniedException`, lo que da violación. Es decir, **falla cerrado**.
+- La lista blanca de R4 solo admite `hasRole`/`hasAnyRole` y `@politicaUbicacion` con métodos listados, así que no hay otro bean en el SpEL que un mock pudiera suplantar.
+- Un mock de Mockito no lanza `AccessDeniedException` por defecto. Si un control vive en el **cuerpo** del método (un servicio simulado que debería denegar), el mock lo hace más permisivo: la prueba falla, no lo oculta.
+- Recomendación (no es hallazgo): si se añade otro bean a la lista blanca de SpEL, importarlo real y comprobar `Mockito.mockingDetails(ctx.getBean("<nombre>")).isMock() == false`.
+
+### 4. BUG-J18-1 (`elBrokerRechazaUnUserIdFalsificado`)
+
+No debilita la comprobación; la **refuerza**. Antes bastaba con que **cualquier** operación lanzara algo (`assertThatThrownBy(...).isNotNull()`), incluido un fallo de autenticación o de permisos que nada tiene que ver con el `user_id`. Ahora exige:
+- que el broker cierre **el canal**, no la conexión (`isHardError() == false`);
+- motivo `Channel.Close` con código **406 PRECONDITION_FAILED** y un texto que contiene `user_id`, así que un 403 por permisos haría fallar la prueba;
+- que no se haya creado ninguna ficha (`fichas() == 0`).
+
+La espera tiene un tope de 15 s y no reintenta. Si el broker aceptara el mensaje, la prueba falla por tiempo. El `user_id` falsificado es el del publicador legítimo (`Contenedores.usuarioAmqp()`). No ejecuté esta prueba (necesita contenedores); me baso en la lectura y en el verify en verde que reporta el backend.
+
+### 5. SEC-J-I22
+
+- **`@EnableMethodSecurity` desactivado o `prePostEnabled=false`:** cerrado. `laSeguridadPorMetodoSigueActiva` y `invocacionDirecta` exigen el proxy. Aunque otro aspecto (`@Transactional`, `@Validated`) creara el proxy, la invocación ejecutaría el método y no lanzaría `AccessDeniedException`, así que también falla.
+- **Controladores de dependencias o de paquetes añadidos con `@Import`/`@ComponentScan`:** la regla ArchUnit sigue sin verlos (importa solo el paquete base). La prueba de comportamiento sí los recorre (todos los `RequestMappingHandlerMapping`, más `otrasVias`), pero solo por HTTP. Los detecta si responden algo distinto de 403/400/406/415, **no** si exigen un argumento que el relleno no aporta. Este es el límite anotado por el backend, y se sigue como SEC-J-I23.
+
+### Hallazgo nuevo
+
+#### SEC-J-I23 · Informativo · A01 (un endpoint de fuera del paquete base con argumentos obligatorios pasa la prueba de comportamiento)
+- **Archivos:** `servicio-*/src/test/java/co/edu/unbosque/biohub/sondaseguridad/VerificadorDeEndpoints.java:64,205` (`NO_CONCLUYENTES` se aplica a todos los mappings) y `TodosLosEndpointsExigenRolTest.java:126` (la invocación directa filtra con `esDeLaAplicacion`).
+- **Problema (comprobado en la copia):** un `@RestController` en `com.terceros`, traído con `@Import` y mapeado en `GET /api/cientifico/externo` con `@RequestParam` obligatorio y sin control, responde 400 al relleno y no se invoca directamente. **Las 5 pruebas pasan.** Con un usuario sin rol y el parámetro puesto, respondería 200. ArchUnit tampoco lo ve.
+- **Riesgo:** bajo. Exige introducir a propósito un controlador de otro paquete bajo `/api/cientifico/**` (o `/api/publica/**` fuera de las 3 rutas). Fuera del prefijo sigue el `denyAll`. Lo dejo como informativo porque es la red de D55 y es barato cerrarlo.
+- **Corrección:** fuera de la aplicación, no tolerar respuestas no concluyentes. Opcionalmente, fijar una lista cerrada de handlers del framework:
+  ```java
+  // VerificadorDeEndpoints.peticionHttp
+  boolean tolerable = endpoint.esDeLaAplicacion() && NO_CONCLUYENTES.contains(estado);
+  if (estado != 403 && !tolerable) { violaciones.add(...); }
+
+  // TodosLosEndpointsExigenRolTest: ningún handler ajeno salvo los del framework conocidos
+  assertThat(VerificadorDeEndpoints.registrados(ctx).stream().filter(e -> !e.esDeLaAplicacion())
+          .map(e -> e.metodo().getBeanType().getName()).distinct())
+      .allMatch(n -> n.equals("org.springframework.boot.autoconfigure.web.servlet.error.BasicErrorController"));
+  ```
+- **Responsable sugerido:** ubicación (Juanita). **No bloquea.** **Esfuerzo:** XS.
+
+### Condiciones de D55 para integrar `registro`
+
+| Condición | Estado |
+|---|---|
+| SEC-J-19 / SEC-J-22: red de seguridad de `@PreAuthorize` | **Cumplida** |
+| SEC-J-20: 403 uniforme | Cumplida (iteración 18) |
+| SEC-J-I19: red interna sin puertos publicados (Santiago) | Sin cambios; pendiente para el compose del backend (no depende de esta rama) |
+| Endpoints de registro en `ENDPOINTS` de `SeguridadEndpointsTest` con su matriz, y SEC-J-23 | **Pendiente (Hernando)**. `TodosLosEndpointsExigenRolTest` ya cubrirá sola a los usuarios sin rol en los endpoints de `registro`, sin editar la prueba. La comparación con la matriz §2 (roles válidos que no corresponden) sigue dependiendo de `ENDPOINTS` |
+
+**La condición de D55 que dependía de esta rama queda cumplida.** No hace falta `hasAnyRole` en la URL. Para fusionar `registro` solo queda lo que es de Hernando (SEC-J-23 y sus entradas en `ENDPOINTS`).
+
+### Veredicto (re-verificación de SEC-J-22)
+**APROBADO.** No hay Críticos ni Altos.
+- **SEC-J-22: Cerrado.**
+- **SEC-J-19: Cerrado.**
+- **SEC-J-I22:** cerrado salvo el residuo de **SEC-J-I23** (Informativo, XS, no bloquea).
+- **BUG-J18-1:** correcto; la comprobación del `user_id` falsificado queda más estricta.
+- **D55:** la condición de esta rama está cumplida; quedan SEC-J-23 y `ENDPOINTS` de registro (Hernando).
+
+---
+
+# Iteración 20 – teselas por el gateway (20c)
+
+**Fecha:** 2026-11-15 · **Revisor:** ciberseguridad · **Rama:** `feature/ubicacion-consulta-publica` (HEAD `1071843` + cambios sin commit de 20a) · **Alcance:** parte front de SEC-J-04: `web-interna/src/ubicacion/componentes/CapaTeselasGateway.js`, `TeselasGateway.jsx`, `MapaHallazgos.jsx`, `PaginaMapa.jsx`, `api/ubicacionApi.js` y sus pruebas. Para la privacidad se revisó todo `web-interna/src`, `index.html`, `public/`, `leaflet.css` y el `dist/` existente. El backend del proxy (`TeselasController`, `ServicioTeselas`, `OrigenTeselasHttp`, `SecurityConfig`) solo se usó como contexto: ya estaba auditado.
+
+## Resumen
+
+| ID | Estado |
+|---|---|
+| **SEC-J-04** | **Corregido en el código del front.** El navegador ya no contacta a ningún host de OSM. Para cerrarlo formalmente falta la prueba manual en un navegador real (ver "Qué queda") |
+| **SEC-J-I14** | **Cerrado.** El navegador no pide nada a OSM, así que la política de `Referer` de `tile.openstreetmap.org` ya no aplica al front. El gateway manda `User-Agent` sin `Referer`, y ya se probó de punta a punta contra OSM (200 `image/png`) |
+| **SEC-J-07** | **Sigue abierto** (Santiago). La CSP de web-interna debe cambiar: ver SEC-J-I24 |
+
+Hallazgos nuevos: **0 Críticos, 0 Altos, 0 Medios, 1 Bajo (SEC-J-24), 4 Informativos (SEC-J-I24 a SEC-J-I27).**
+
+## Cómo se revisó
+- **Lectura:** `git diff` completo y los 3 archivos nuevos. Además, `11-seguridad-y-acceso.md` §7, `04-contrato-api.md` §8.1, D17/D31/D56 y las fichas SEC-J-04, SEC-J-07 y SEC-J-I14 de este reporte.
+- **Internos de Leaflet 1.9.4** (`node_modules/leaflet/dist/leaflet-src.js`): `GridLayer._removeTile` (:11876), `GridLayer._tileReady` (:11941), `TileLayer._abortLoading` (:12258), `TileLayer._removeTile` (:12283) y `TileLayer._tileReady` (:12293), para ver el orden real de los abortos y las revocaciones.
+- **Búsquedas en `web-interna`:** URL absolutas en `src`, `public`, `index.html` y `vite.config.js`; `url(` y `@import` en CSS; `console.`, `localStorage`/`sessionStorage`; `innerHTML`/`dangerouslySetInnerHTML`/`eval`; URL remotas en `dist/assets`.
+- **Comandos:** `git diff --quiet HEAD -- package.json package-lock.json` (sin cambios), `npm audit --omit=dev` (**found 0 vulnerabilities**) y `npx vitest run src/ubicacion` (**5 archivos, 82/82 en verde**; incluye `qa-teselas.test.jsx`, que QA está escribiendo en paralelo).
+- No se modificó código ni se levantó el gateway. No hubo prueba en navegador.
+
+## 1. Privacidad: ¿algún tercero ve IP + hora + z/x/y?
+
+**No queda ninguna vía en el código.**
+- `MapaHallazgos.jsx` ya no tiene `URL_TESELAS` ni `TileLayer`. La única capa de fondo es `TeselasGateway` (`MapaHallazgos.jsx:50`), con la ruta fija `RUTA_TESELAS = '/api/gateway/teselas/{z}/{x}/{y}.png'` (`CapaTeselasGateway.js:4`). El cliente le antepone `apiUrl` (`ubicacionApi.js:35`).
+- En `web-interna/src` solo hay tres URL absolutas: `config.js:2-3` (gateway y Keycloak, propios) y el enlace de atribución `https://www.openstreetmap.org/copyright` (`MapaHallazgos.jsx:16`). Ese enlace solo se usa si el usuario hace clic, y entonces es una navegación: OSM recibe como mucho el **origen** de web-interna (`strict-origin-when-cross-origin`), nunca z/x/y. El enlace a leafletjs.com del prefijo de atribución es igual.
+- `index.html` no carga fuentes, scripts ni hojas externas. `public/` está vacío. `index.css` y `ubicacion.css` no tienen `url(` ni `@import`.
+- `leaflet.css` solo apunta a imágenes **relativas** (`images/layers.png`, `images/marker-icon.png`): Vite las empaqueta locales o las incrusta como `data:` (pesan menos de 4 KB). Los marcadores son `L.divIcon` con HTML fijo (`MapaHallazgos.jsx:19-24`), así que `L.Icon.Default` no se usa y no se piden imágenes de marcador. `behavior: url(#default#VML)` es un fragmento local de IE.
+- El `dist/` actual no contiene Leaflet, porque `src/ubicacion/` aún no está montado en `App.jsx`. No tiene URL de OSM.
+- Las pruebas lo cubren: `CapaTeselasGateway.test.jsx:50,189-213` (con cliente simulado y con el cliente real, ninguna petición ni `<img>` hacia openstreetmap; ruta relativa).
+
+**Riesgo residual (no es del front):** quien opere un proxy, CDN o "rewrite" delante del gateway verá la ruta con z/x/y. Ver SEC-J-I26.
+
+## 2. Token
+
+- **Destino:** el JWT solo va en la cabecera `Authorization` hacia `${apiUrl}${ruta}` (`ubicacionApi.js:35-36`). `ruta` sale de `L.Util.template` con la constante `RUTA_TESELAS` y `coords` enteros que da Leaflet, ya envueltos con `_wrapCoords` (`CapaTeselasGateway.js:35`). No hay entrada del usuario ni de la red en la ruta. `apiUrl` viene de `config.js`, que se fija en el build. Para que el token saliera hacia otro host habría que configurar mal `VITE_API_URL`: es un riesgo de despliegue, no de este código.
+- **Nunca en la URL ni en logs:** no hay `console.*` en `src`. `ErrorApi` solo lleva el estado y el `codigo`. `TeselasGateway.jsx:24` llama a `alErrorTesela()` **sin argumentos**, así que el evento `tileerror` (que trae `coords`) no sale de la capa.
+- **Cookies:** `credentials: 'omit'` (`ubicacionApi.js:37`), comprobado en `ubicacionApi.test.js:81`.
+- **Detalle de robustez:** `...opciones` va **después** de `headers` y `credentials` (`:39`), así que una llamada interna futura podría sobrescribirlos. Hoy solo se pasa `{ cache }`. Ver SEC-J-I25.
+- **Caché del navegador:** el token **no** se guarda en la caché: la entrada se indexa por URL y la cabecera de la petición no se persiste. Lo que sí queda en disco 24 h es la tesela con su URL (z/x/y). Ver SEC-J-24.
+
+## 3. Object URL, blobs y XSS
+
+- **Fugas:** no hay. Seguí los cinco caminos en los internos de Leaflet:
+  1. Carga correcta: se revoca en `onload` (`:42-45`).
+  2. Imagen ilegible: se revoca en `onerror` (`:46-49`).
+  3. Descarte durante la descarga: `tileunload` → `_cancelar` aborta y libera (`:25,65-70`). La respuesta tardía se descarta sin crear un object URL (`:40`).
+  4. Descarte durante la decodificación: `TileLayer._removeTile` pone el GIF vacío y después `tileunload` revoca.
+  5. Cambio de zoom: el `_abortLoading` propio cubre las teselas que aún bajan, que Leaflet considera `complete` porque no tienen `src` (`:81-93`). El de Leaflet cubre las que decodifican.
+
+  Al quitar la capa, `onRemove` → `_removeAllTiles` → `tileunload` vacía `_pendientes`. Hay prueba para cada camino (`CapaTeselasGateway.test.jsx:79-147`).
+- **Contenido que no es imagen:** el front no mira `blob.type`. Aun así, no hay XSS:
+  - el blob solo se usa como `src` de un `<img>`, que no ejecuta scripts, ni siquiera en un SVG, y no carga recursos externos en modo imagen;
+  - el object URL se revoca en cuanto carga, así que "abrir imagen en otra pestaña" no lo encuentra;
+  - el gateway rechaza lo que no sea `image/*` (`OrigenTeselasHttp.java:64-66`).
+
+  Pero el gateway acepta **cualquier** `image/*`, incluido `image/svg+xml`. Ver SEC-J-I25.
+- **`alt` y atribución:** `alt=''` y `role="presentation"` son constantes. La atribución, que Leaflet inserta con `innerHTML`, es una constante del código. No hay `innerHTML`, `dangerouslySetInnerHTML` ni `eval` en `src`.
+
+## 4. Abuso y disponibilidad
+
+- **Aborto por tesela:** es correcto y está probado. Matiz: abortar evita gastar cupo **solo** en las peticiones que aún no salieron, es decir, las que esperan su preflight o hacen cola en HTTP/1.1. Con HTTP/2, una petición ya enviada cuenta en el gateway aunque se aborte. Las teselas que están en la caché del navegador no cuentan. Para una vista de 20 a 40 teselas, 600/min sigue sobrando; no es hallazgo.
+- **Sin bucles de reintento:** la capa no reintenta nunca. Ante 401, 403, 429 o 503, cada tesela llama a `listo(error)` una vez (`:52-59`). Al cuarto `tileerror`, `MapaHallazgos` dispara `onTeselasFallidas` y `PaginaMapa` pasa a la vista Lista (`PaginaMapa.jsx:148-151`), lo que desmonta la capa y corta las peticiones. Volver a "Mapa" es una acción del usuario. `Retry-After` se ignora, lo cual es correcto: no hay reintento automático.
+- **401:** `alSesionVencida` se llama **una vez por instancia** de la capa (`_sesionAvisada`, `:55-58`). La instancia solo se recrea si cambian `cliente`, `attribution` o `maxZoom` (`TeselasGateway.jsx:29`): las dos últimas son constantes y el README exige un `cliente` estable. `PaginaMapa` puede llamarla otra vez por su propio 401 de `/mapa`. En total son como mucho dos llamadas, sin bucle dentro del módulo. Si `alSesionVencida` = `keycloak.login()` y el gateway rechazara siempre un token recién emitido (configuración rota), habría un bucle de redirecciones. Eso ya pasaba con `/mapa`, no lo introduce este cambio, y la guarda corresponde a Santiago en el montaje.
+- **`obtenerToken` falla:** se convierte en `ErrorApi(401)` sin llamar al gateway (`ubicacionApi.js:28-32`). Un `signal` ya abortado hace que `fetch` rechace sin enviar nada.
+
+## 5. Dependencias
+`web-interna/package.json` y `package-lock.json` **sin cambios**. No se añadió `@react-leaflet/core`. `npm audit --omit=dev`: **0 vulnerabilidades**. Leaflet sigue en `^1.9.4`, resuelto a 1.9.4 por el lockfile. La capa depende de internos (`_tiles`, `_tileZoom`, `_abortLoading`): ver SEC-J-I27.
+
+## Hallazgos nuevos
+
+### SEC-J-24 · Bajo · A04 (la caché del navegador guarda 24 h las teselas que miró el científico, con z/x/y en la URL)
+- **Archivos:** `web-interna/src/ubicacion/api/ubicacionApi.js:62-67` (`getBlob` sin `cache: 'no-store'`, a propósito) y `api-gateway/.../controller/TeselasController.java:31,40` (`Cache-Control: private, max-age=86400`).
+- **Problema:** el navegador guarda cada tesela en su caché de disco con la clave `https://<gateway>/api/gateway/teselas/{z}/{x}/{y}.png`. Cerrar sesión en Keycloak no borra esa caché. En un equipo compartido (laboratorio o estación de campo), el siguiente usuario de la misma cuenta del sistema puede listar esas URL: en Firefox basta con `about:cache?storage=disk`, y en Chrome con herramientas que leen `Cache_Data`. Con eso deduce las zonas que revisó un `cientifico_alto_rango`: con "Ver en el mapa" de un solo hallazgo, las teselas z8 alrededor del punto, y hasta z12 (unos 10 km) si acercó a mano. Es justo la información que SEC-J-04 protege frente a OSM. El token no queda en la caché.
+- **Por qué importa:** es poco, pero no es nulo. Hace falta acceso local al perfil y solo revela un área de 10 km o más. **No es una regresión:** con `tile.openstreetmap.org` directo, el navegador también cacheaba esas teselas. La caché compartida del gateway (en memoria, unos 12 ms por acierto) ya cubre el ahorro hacia OSM, así que la caché del navegador sirve sobre todo para gastar menos cupo de 600/min.
+- **Corrección (elegir una):**
+  1. **Front (Juanita, sin tocar el gateway):** no persistir las teselas de detalle. Las de zoom bajo (país y región) no delatan nada y se pueden cachear:
+     ```js
+     // CapaTeselasGateway.js, createTile
+     .then(() => this.options.cliente.getBlob(ruta, { signal: entrada.controlador.signal, sinCache: coords.z >= 9 }))
+
+     // ubicacionApi.js, getBlob
+     async getBlob(ruta, { signal, sinCache = false } = {}) {
+       const r = await pedir(ruta, { signal, accept: 'image/png', opciones: sinCache ? { cache: 'no-store' } : {} });
+     ```
+  2. **Gateway (Santiago):** `Cache-Control: no-store` para `z >= 9` y `private, max-age=86400` para `z <= 8`. Así funciona también con un cliente propio que no use `crearClienteUbicacion`.
+  3. **Aceptarlo como riesgo residual** de R6 y documentarlo en D56 y en `11` §7: "en equipos compartidos, usar perfil propio o navegación privada".
+- **Esfuerzo:** S. **Responsable sugerido:** Juanita (opción 1) o Santiago (opción 2), con decisión del Tech Lead. **No bloquea** el PR.
+
+### Informativos
+
+- **SEC-J-I24 (la CSP que recomiendan los documentos rompe Leaflet):** `11-seguridad-y-acceso.md` §7 y `src/ubicacion/README.md` dicen `img-src 'self' blob:`. Pero Leaflet 1.9.4 asigna `data:image/gif;base64,...` (`emptyImageUrl`) al `src` de cada tesela que descarta (`TileLayer._removeTile`, `_abortLoading`), y Vite incrusta como `data:` las imágenes de `leaflet.css`. Sin `data:`, cada tesela descartada genera una violación de CSP: mucho ruido en consola y en `report-uri`. No cuenta como fallo de tesela, porque `TileLayer._tileReady` ignora las teselas con `emptyImageUrl` (lo comprobé). Además, la ficha SEC-J-07 de este reporte todavía pide `img-src ... https://tile.openstreetmap.org`, que ya sobra. CSP recomendada para web-interna (Santiago, SEC-J-07):
+  ```
+  default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
+  img-src 'self' data: blob:; connect-src 'self' https://<gateway> https://<keycloak>;
+  object-src 'none'; base-uri 'self'; frame-ancestors 'none'
+  ```
+  Hay que corregir `11` §7 y el README (Juanita). **Esfuerzo:** XS.
+- **SEC-J-I25 (el front no comprueba el tipo del blob; el gateway admite `image/svg+xml`):** hoy no es explotable (ver §3). Como defensa en profundidad, para no depender de lo que mande un `GATEWAY_TESELAS_URL` distinto de OSM:
+  ```js
+  // ubicacionApi.js, getBlob, tras r.blob()
+  if (!/^image\/(png|jpeg|webp)$/i.test(blob.type)) throw new ErrorApi(502, 'TESELA_NO_DISPONIBLE');
+  ```
+  En `OrigenTeselasHttp.java:65`, aceptar solo `image/png` y `image/jpeg` (Santiago). Aprovechando el cambio, en `pedir` conviene poner `...opciones` **antes** de `headers` y `credentials` (`ubicacionApi.js:39`), para que ninguna opción pueda quitar `credentials: 'omit'` ni el `Authorization`. **Esfuerzo:** XS.
+- **SEC-J-I26 (preflight por tesela; proxies y CDN delante del gateway):**
+  - Como web-interna y el gateway tienen orígenes distintos y la petición lleva `Authorization`, cada URL de tesela nueva genera un `OPTIONS` previo. La caché de preflight se guarda **por URL**, así que `setMaxAge(3600)` no sirve entre teselas distintas. Duplica peticiones y latencia, pero no gasta cupo: `OPTIONS` es `permitAll`, no lleva JWT y no cuenta en `por-usuario`. El límite por IP solo se aplica a `/api/publica/**`. Se resuelve sirviendo web-interna y gateway desde el mismo origen.
+  - Si se pone NGINX, Vercel (rewrites) u otra CDN delante del gateway, ese intermediario verá IP, hora y z/x/y: (a) no debe registrar la ruta de `/api/gateway/teselas/**` en su access log; (b) si es un tercero que termina TLS, se vuelve a abrir SEC-J-04. Hay que anotarlo en `09-despliegue.md`.
+  - Como defensa barata, añadir `referrerPolicy: 'no-referrer'` en `pedir`. Con un mismo origen, la petición de tesela llevaría la URL completa de la página (`/ubicacion/mapa?hallazgo=<id>`, propuesta en el README), y un log intermedio enlazaría el id del hallazgo con las teselas.
+
+  **Esfuerzo:** XS (front), S (despliegue).
+- **SEC-J-I27 (internos de Leaflet con rango `^`):** el comentario de `CapaTeselasGateway.js:18` dice "versión fijada", pero `package.json` tiene `"leaflet": "^1.9.4"`. Un `npm update` a una 1.x futura que cambie `_tiles`, `_tileZoom` o `_abortLoading` rompería en silencio el aborto al hacer zoom: más consumo del cupo de 600/min, sin efecto sobre la privacidad. Conviene fijar `"leaflet": "1.9.4"` o añadir una prueba que verifique `L.version === '1.9.4'`. **Esfuerzo:** XS.
+
+## Bien hecho (esta iteración)
+- La capa no sabe de Keycloak ni del host: todo pasa por el `cliente` inyectado (D17). La ruta es una constante relativa, así que no hay forma de que el token salga hacia OSM por la capa.
+- `credentials: 'omit'`, `Accept: image/png` y el token solo en la cabecera. El fallo de `obtenerToken` da 401 sin tocar la red.
+- La gestión del ciclo de vida es cuidadosa: un `AbortController` por tesela, la revocación del object URL en los cinco caminos y el arreglo de `_abortLoading` para las teselas sin `src` (Leaflet las cree completas). Esto último es un detalle que la propuesta original de `11` §7 no cubría y que habría gastado cupo al hacer zoom.
+- Un aborto no cuenta como error, no hay reintentos y el 401 avisa una sola vez. El paso automático a la vista Lista tras 4 fallos corta cualquier cascada.
+- `tileerror` no saca `coords` de la capa. No hay logs ni almacenamiento de coordenadas.
+- Ninguna dependencia nueva (se evitó `@react-leaflet/core`). Las pruebas incluyen el cliente real con `fetch` simulado y comprueban que no hay peticiones a OSM.
+
+## Qué queda para cerrar SEC-J-04 del todo
+1. **Prueba manual en navegador** (Juanita o QA, con el gateway levantado y el módulo montado o en un arnés), con DevTools → Network:
+   - **0** peticiones a `*.openstreetmap.org`;
+   - todas las teselas van a `<apiUrl>/api/gateway/teselas/...` con `Authorization: Bearer` y sin token en la URL;
+   - al hacer zoom rápido, las teselas pendientes aparecen como `(canceled)`;
+   - tras unos minutos de uso no quedan `blob:` sin revocar (Memory → "Detached"/Blob).
+2. **Montaje (Santiago):** `cliente` creado una sola vez y `VITE_API_URL` en `https` en producción. Si no, el JWT viaja en claro: es un riesgo previo, no de este cambio.
+3. **SEC-J-07 (Santiago):** CSP de web-interna con `img-src 'self' data: blob:`, sin hosts de OSM (SEC-J-I24).
+4. **Decidir SEC-J-24** (opción 1, 2 o aceptar el riesgo).
+
+## Veredicto (iteración 20, 20c)
+**APROBADO CON OBSERVACIONES.** No hay Críticos ni Altos.
+- **SEC-J-04: corregido en el código del front.** Pasa a **Cerrado** cuando se haga la prueba manual del punto 1, que es una verificación y no un cambio de código.
+- **SEC-J-I14: Cerrado** (el navegador ya no habla con OSM).
+- **SEC-J-24** (Bajo, S): no bloquea. Hay que decidir si se corrige o se acepta.
+- **SEC-J-I24 a SEC-J-I27** (Informativos, XS): no bloquean. Conviene corregir SEC-J-I24 en los documentos antes de que Santiago escriba la CSP.
+
+---
+
+## 20g – re-verificación de SEC-J-24 (2026-11-15)
+
+**Revisor:** ciberseguridad · **Rama:** `feature/ubicacion-consulta-publica` (HEAD `8bba7ed` + cambios sin commit de D57) · **Alcance:** `web-interna/src/ubicacion/api/ubicacionApi.js`, `componentes/CapaTeselasGateway.js`, sus dos archivos de prueba, `src/ubicacion/README.md`, `11-seguridad-y-acceso.md` §7 y D57. Como contexto: `MapaHallazgos.jsx`, `TeselasGateway.jsx`, `src/auth/keycloak.js`, `App.jsx`, `vite.config.js`, `keycloak-js` 26.2.4 (`node_modules/keycloak-js/lib/keycloak.js`), `TeselasController.java`, `ServicioTeselas.java` y `SecurityConfig.java`.
+
+### Resumen
+
+| ID | Estado |
+|---|---|
+| **SEC-J-24** | **Cerrado** (corregido según D57). Desde el zoom 9 las teselas no se leen ni se escriben en la caché HTTP del navegador. Las de zoom 0 a 8 siguen en caché 1 día: es un riesgo aceptado en D57 y no revelan más que el departamento, que ya ven todos los roles internos. La comprobación en navegador real se suma a la prueba manual que ya estaba pendiente para SEC-J-04 |
+| **SEC-J-I25** | **Parcialmente cerrado.** La segunda parte (orden de `...opciones` en `pedir`) está **cerrada** y no tiene efectos colaterales. La primera parte sigue **abierta**: comprobar `blob.type` en el front, y que `OrigenTeselasHttp` acepte solo `image/png` y `image/jpeg` (Santiago) |
+
+Hallazgos nuevos: **0 Críticos, 0 Altos, 0 Medios, 1 Bajo (SEC-J-25), 1 Informativo (SEC-J-I28).**
+
+### Cómo se revisó
+- **Lectura:** `git diff` completo, mi ficha SEC-J-24 (20c) y D57.
+- **Búsquedas en `web-interna`:** `serviceWorker`, `workbox`, `vite-plugin-pwa`, `caches.`, `pageshow`/`persisted`, `unload`, `logout` en `src`, `index.html`, `public/`, `vite.config.js` y `package.json`.
+- **Comandos:** `npx vitest run src/ubicacion` (**5 archivos, 89/89 en verde**) y `npm audit --omit=dev` (**found 0 vulnerabilities**). `package.json` y `package-lock.json` no cambian.
+- **Sin navegador:** el punto 1 se basa en la especificación Fetch y en el comportamiento documentado de los tres motores. No se levantó el gateway ni se modificó código.
+
+### 1. ¿`cache: 'no-store'` evita leer y escribir en la caché HTTP aunque el gateway mande `private, max-age=86400`?
+
+**Sí.** El modo de caché de la petición manda sobre las cabeceras de la respuesta.
+- **Especificación Fetch (HTTP-network-or-cache fetch):** con el modo `"no-store"`, la caché HTTP se trata como si no existiera. No se consulta antes de la petición y la respuesta no se guarda después, diga lo que diga `Cache-Control`. `max-age` solo cuenta cuando el modo permite almacenar.
+- **Motores:** Chromium (desactiva la caché para esa carga), Gecko (evita la caché y además impide guardar la respuesta) y WebKit (no usa ninguna caché para esa petición) implementan `RequestInit.cache` desde hace años. En los tres, una respuesta pedida con `no-store` no aparece en la caché de disco (`Cache_Data` en Chrome, `about:cache?storage=disk` en Firefox, `NetworkCache` en Safari).
+- **Efecto secundario revisado:** la especificación añade `Cache-Control: no-cache` y `Pragma: no-cache` a la petición. Los pone el navegador, no el autor, así que no entran en `Access-Control-Request-Headers` y no cambian el preflight. Lo importante es que **el gateway no los interpreta**: ni `TeselasController` ni `ServicioTeselas` leen cabeceras de caché de la petición. La caché Caffeine sigue sirviendo, y D57 no genera descargas extra hacia OSM, lo que respeta su política de uso. Un CDN delante del gateway sí podría saltarse su caché por esa cabecera. Eso solo afecta al rendimiento, y SEC-J-I26 ya desaconseja ese CDN.
+- **Entradas antiguas:** `no-store` no borra lo que ya estaba guardado. No pesa en producción, porque `src/ubicacion/` todavía no está montado en `App.jsx` y ningún usuario real tiene teselas de antes de D57 en caché. En los equipos de desarrollo caducan en 24 h como mucho.
+- **Pruebas:** `ubicacionApi.test.js` comprueba que con `sinCache` se manda `cache: 'no-store'` sin perder el token, `credentials` ni la señal, y que sin la opción no se manda `cache`. `CapaTeselasGateway.test.jsx` comprueba el corte en z 8/9. La decisión se toma con `coords.z`, que es el z real de la URL, así que sigue siendo correcta si algún día se usa `zoomOffset` o `detectRetina`.
+- **Comprobación manual que propongo** (añadir al punto 1 de "Qué queda para cerrar SEC-J-04"): con el gateway levantado, acercar a z ≥ 9, recargar y verificar en DevTools → Network que esas teselas **nunca** muestran "(disk cache)" ni "(memory cache)". En Firefox, revisar además `about:cache?storage=disk`: solo deben aparecer URL `/teselas/0..8/`.
+
+### 2. Otras vías por las que una tesela de zoom ≥ 9 podría persistir tras cerrar sesión
+
+| Vía | Qué pasa | Clasificación |
+|---|---|---|
+| **Service worker / Cache API** | No hay ninguno: no aparecen `navigator.serviceWorker`, `caches.`, Workbox ni `vite-plugin-pwa`; `public/` está vacío y `vite.config.js` solo usa `plugin-react` | **No aplica** |
+| **Caché de memoria de imágenes** (MemoryCache de Blink, caché de imágenes decodificadas) | La clave es el object URL (`blob:<origen>/<uuid>` aleatorio, sin z/x/y). Vive en el proceso de la pestaña y desaparece al cerrarla. Otra página no puede llegar a ella: el URL está ligado al origen y se revoca en cuanto carga | **No residual** |
+| **Object URL y blobs** | Se revocan en los cinco caminos (20c §3). Chrome solo pasa blobs a disco (`blob_storage` del perfil) cuando la memoria total de blobs supera su cuota. Una tesela pesa decenas de KB y vive milisegundos, y esos archivos se borran al liberar el blob o al arrancar el navegador | **No residual** (despreciable) |
+| **Caché de preflight CORS** | Se indexa por URL (con z/x/y) durante `max-age=3600` (`SecurityConfig.java:117`; Chrome lo limita a 2 h). Está **solo en memoria**, no la expone ninguna interfaz del navegador y desaparece al cerrarlo. `no-store` no la afecta porque es una caché distinta | **No residual** |
+| **Historial, autocompletado** | Los `fetch` no entran en el historial | **No aplica** |
+| **bfcache** | Al cerrar sesión, `keycloak-js` 26 envía un **POST con un formulario** (`logoutMethod` por defecto), que es una navegación normal: la página del mapa queda en el historial. Si el usuario no cierra la pestaña, quien use el equipo después puede pulsar "Atrás" en los minutos siguientes y recuperar la página **desde la bfcache**: teselas ya pintadas y, más grave, el estado de React con las coordenadas exactas de los hallazgos | **Residual, fuera del alcance de D57.** Ver SEC-J-25 |
+
+### 3. ¿Es razonable el umbral 9?
+
+**Sí.** Ancho de una tesela a la latitud de Colombia (unos 4°, con cos ≈ 1; 40 075 km / 2^z):
+
+| z | Ancho de tesela | Qué delata |
+|---|---|---|
+| 8 | ~156 km | Escala de departamento |
+| 9 | ~78 km | Subregión |
+| 10 | ~39 km | Pocos municipios |
+| 12 (`ZOOM_MAXIMO`) | ~10 km | Zona concreta |
+
+- **`ZOOM_AJUSTE_VARIOS = 10`:** el ajuste automático con varios puntos queda por encima del umbral y no se guarda. Correcto.
+- **`ZOOM_AJUSTE_UN_PUNTO = 8`:** "Ver en el mapa" de un solo hallazgo queda en z8, **justo por debajo** del umbral. Esas teselas sí se guardan, centradas en el punto. Con el rango de teselas cacheadas y la hora de cada entrada se acota el centro de la vista a ±1 tesela de z9, unos 80 a 150 km. Aun así, lo considero aceptable:
+  1. Esa precisión equivale a un departamento, y `aHallazgo` ya muestra `departamento` y `region` a **todos** los roles internos.
+  2. La caché no relaciona la vista con un hallazgo ni con una especie: `/mapa?hallazgoId=` se pide con `get`, que siempre usa `no-store`.
+  3. Bajar el umbral a 8 casi no añade privacidad y sí añade peticiones en la vista de país y departamento.
+- **Opcional, no es hallazgo:** si el grupo considera que el departamento de un hallazgo protegido también es sensible, basta con `ZOOM_SIN_CACHE = 8`. Cubre "Ver en el mapa" y apenas cuesta: solo cambia la vista inicial de un punto.
+- **Invariantes:** con `zoomSnap` 1 (valor por defecto, `MapContainer` no lo cambia), `fitBounds` y la rueda dan zooms enteros. Las animaciones de zoom no piden teselas intermedias. Así, ningún z ≥ 9 se cuela por redondeo. La prueba fija `ZOOM_SIN_CACHE === 9`, de modo que subirlo por encima de 10 rompería el build.
+- **Costo:** volver a una zona ya vista con z ≥ 9 vuelve a pedir sus teselas, salvo las que Leaflet conserva en el DOM (`keepBuffer`). El preflight sigue cacheado en memoria y no gasta cupo. Con 20 a 40 teselas por vista, 600/min permite de 15 a 30 cambios de zoom por minuto. D57 ya acepta el riesgo de 429 con un uso muy intenso, y en ese caso el paso a la vista Lista corta la cascada.
+
+### 4. Orden de `...opciones` (SEC-J-I25, segunda parte)
+
+**Cerrado y sin efectos colaterales.**
+- Ahora `headers` (con `Authorization` y `Accept`), `credentials: 'omit'` y `signal` van después de `...opciones` (`ubicacionApi.js:37-41`), así que ninguna opción puede sobrescribirlos.
+- Los únicos llamadores son `get` (`{ cache: 'no-store' }`) y `getBlob` (`{ cache: 'no-store' }` o `{}`). Ninguno pasaba `headers`, `credentials` ni `signal` en `opciones`, así que el comportamiento actual no cambia. Las 89 pruebas pasan, incluida la nueva, que verifica token, `credentials` y señal junto con `no-store`.
+- Único efecto, buscado: si una llamada futura pasara `headers` en `opciones`, se descartarían en silencio. Es lo correcto para este cliente.
+- Lo que `opciones` todavía puede fijar (`cache`, `redirect`, `mode`, `referrerPolicy`) no compromete el token ni las cookies. `pedir` es interna y no se exporta.
+
+### Hallazgos nuevos
+
+#### SEC-J-25 · Bajo · A04 (tras cerrar sesión, "Atrás" puede recuperar el mapa con coordenadas desde la bfcache)
+- **Archivos:** `web-interna/src/auth/keycloak.js:33-35` (`keycloak.logout({ redirectUri })` con el método por defecto, POST por formulario en `keycloak-js` 26.2.4, `lib/keycloak.js:322-345`). No hay ningún manejador de `pageshow` en `web-interna/src`.
+- **Problema:** el cierre de sesión es una navegación normal, así que la página de la app queda en el historial. Si es apta para la bfcache (no tiene manejadores `unload`, `checkLoginIframe: false`, y el `index.html` del hosting no manda `Cache-Control: no-store`), Chrome, Firefox y Safari la guardan congelada en memoria durante unos minutos (en Chrome, hasta 10). Si el siguiente usuario de un equipo compartido pulsa "Atrás", vuelve a ver la pantalla tal como estaba: el mapa con sus teselas, los marcadores y la lista con latitud y longitud exactas. El token está en memoria, pero no importa: la página no necesita pedir nada al gateway para mostrar lo que ya tenía.
+- **Por qué es Bajo:** hace falta acceso físico **en los minutos siguientes** y que la pestaña siga abierta. Al cerrar la pestaña o el navegador, la entrada desaparece, a diferencia de la caché de disco de SEC-J-24. No es una regresión de D57 ni de las teselas: afecta a cualquier pantalla de web-interna con datos protegidos. Pero entra en el mismo modelo de amenaza que motivó D57 (equipos compartidos) y expone más que las teselas.
+- **Corrección** (Santiago, en `main.jsx` o junto a `iniciarSesion`). Si la página vuelve de la bfcache, se recarga. Al recargar, `onLoad: 'login-required'` exige iniciar sesión, porque Keycloak ya cerró la sesión SSO:
+  ```js
+  // web-interna/src/main.jsx
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) window.location.reload();
+  });
+  ```
+  Complemento opcional: servir `index.html` con `Cache-Control: no-store` en `09-despliegue.md`. Así la página deja de ser apta para la bfcache en la mayoría de los navegadores, pero no en todos, porque Chrome está ampliando la bfcache a páginas `no-store`. El manejador de `pageshow` es la defensa fiable.
+- **Prueba sugerida (QA, manual):** abrir el mapa, cerrar sesión y pulsar "Atrás" dos veces. No debe verse el mapa ni la lista; debe aparecer el login de Keycloak.
+- **Esfuerzo:** XS. **Responsable sugerido:** Santiago (montaje y cierre de sesión). **No bloquea.**
+
+#### SEC-J-I28 (la documentación sigue diciendo que `getBlob` nunca usa `no-store`)
+Quedaron cuatro textos sin actualizar, y uno de ellos contradice D57:
+- `docs/equipo/11-seguridad-y-acceso.md:144`: "*y no usa `cache: 'no-store'` para que el navegador reutilice la tesela*". Contradice la tabla de la misma sección (l. 138) y D57. Propuesta: "*y solo usa `cache: 'no-store'` con `sinCache` (zoom ≥ 9, D57); las de zoom 0 a 8 se reutilizan (`private, max-age=86400`)*".
+- `web-interna/src/ubicacion/README.md:35`: "*`getBlob` sin él para que el navegador reutilice las teselas*". La viñeta siguiente lo matiza, pero conviene añadir "salvo con `sinCache`".
+- `web-interna/src/ubicacion/api/ubicacionApi.js:16`: el contrato resumido aún dice `getBlob(ruta, { signal })`. Debe decir `{ signal, sinCache }`, como el párrafo de debajo.
+- `web-interna/src/ubicacion/componentes/CapaTeselasGateway.js:16`: lo mismo en las opciones de la capa. Esto importa porque **un cliente propio que ignore `sinCache` reabre SEC-J-24 en silencio**, y el contrato es la única barrera (la opción 2 de SEC-J-24, en el gateway, sí lo cubriría).
+
+**Esfuerzo:** XS. **Responsable sugerido:** Juanita.
+
+### Bien hecho
+- Es el cambio mínimo y en el sitio correcto: la capa decide según el z real de la tesela, el cliente traduce la decisión a `no-store`, y el gateway y su caché Caffeine siguen igual (OSM no recibe más peticiones).
+- `get` sigue con `no-store` siempre, así que ni el GeoJSON ni la relación hallazgo–vista llegan nunca a la caché.
+- La reordenación de `...opciones` se hizo en el mismo cambio y tiene prueba propia.
+- Las pruebas cubren los dos lados del umbral (0, 5, 8, 9, 10, 12) y que no se pierden el token, `credentials` ni la señal.
+
+### Veredicto (20g)
+**APROBADO CON OBSERVACIONES.** No hay Críticos ni Altos.
+- **SEC-J-24: Cerrado.** Corregido según D57. La comprobación en navegador real se añade a la prueba manual pendiente de SEC-J-04.
+- **SEC-J-I25: Parcialmente cerrado.** El orden de `...opciones` está cerrado. Siguen abiertos la comprobación de `blob.type` en el front (Juanita) y la lista de tipos permitidos en `OrigenTeselasHttp` (Santiago).
+- **SEC-J-25** (Bajo, XS, Santiago): bfcache tras cerrar sesión. No bloquea.
+- **SEC-J-I28** (Informativo, XS, Juanita): documentación desalineada con D57. Conviene corregirla antes del commit, sobre todo `11` §7 l. 144, que contradice la decisión.
+
+---
+
+# Iteración 21 – arnés, E2E y CI de web-interna (21d)
+
+**Fecha:** 2026-11-15 · **Revisor:** ciberseguridad · **Rama:** `feature/ubicacion-consulta-publica` (HEAD `03e909d` + cambios sin commit de 21a y 21b) · **Alcance:**
+- **21a:** `web-interna/src/ubicacion/dev/` (los 6 archivos), `src/ubicacion/e2e/` (4 archivos), `web-interna/playwright.config.js`, `web-interna/.gitignore`, `package.json` y `package-lock.json`, `componentes/MapaHallazgos.jsx`, `pruebas/PaginaMapa.test.jsx` y `src/ubicacion/README.md`.
+- **21b:** `.github/workflows/ci.yml` y la tabla de CI de `09-despliegue.md` §10.
+
+**Contexto leído:** D17, D57 y D58; 20c y 20g de este reporte; `11-seguridad-y-acceso.md` §7; `src/auth/keycloak.js`; `vite.config.js`; `infra/keycloak/realm-biohub.json` (cliente `web-interna` y usuarios); `.dockerignore`; `docker-compose.yml`; `api-gateway` (`SecurityConfig.java`, `application.yml`, `ProxyService.java`).
+
+## Resumen
+
+Hallazgos nuevos: **0 Críticos, 0 Altos, 0 Medios, 0 Bajos y 5 Informativos (SEC-J-I29 a SEC-J-I33).** No se usa ningún ID `SEC-J-2x` nuevo. El siguiente libre sigue siendo **SEC-J-26**.
+
+**El arnés es seguro tal como está.** No llega a `dist/`, el modo simulado no se puede activar fuera del servidor de desarrollo de Vite y, aunque se activara, su token falso no sirve contra el gateway real.
+
+## Cómo se revisó
+- **Lectura:** `git diff` completo y todos los archivos nuevos (`git status`).
+- **Build de producción:** `vite build` con la configuración del repo, hacia un directorio temporal para no tocar `web-interna/dist/`. Resultado: 21 módulos, solo `index.html`, un `.js` y un `.css`. Búsqueda de `arnes|arnés|simulad|token-simulado|usuario-simulado|e2e|playwright|ubicacion/dev`: **0 coincidencias**. El módulo `src/ubicacion/` todavía no está montado en `App.jsx`, así que tampoco entra en el bundle.
+- **Build forzado del arnés (defensa en profundidad):** configuración temporal fuera del repo con `arnes.html` como única entrada, en modo producción y sin minificar. Resultado: `iniciar()` queda reducida a `mostrarMensaje("El arnés de ubicación solo funciona en desarrollo.")`. **Ni `sesionSimulada.js` ni `sesionReal.js` (ni keycloak-js) entran en el bundle.** La única aparición de "simulado" está en el comentario de cabecera de `arnes.jsx`, que se elimina al minificar.
+- **Comandos:** `npx vitest run src/ubicacion` (**5 archivos, 90/90 en verde**); `npm audit` (**0 vulnerabilidades**); `npm audit --omit=dev` (**0 vulnerabilidades**); `npm ls @playwright/test playwright playwright-core`; `npm view` para comparar las integridades con las del registro. `npm audit signatures` falla con `EEXPIREDSIGNATUREKEY` en `dequal@2.0.3`: es un problema de las claves que trae la versión local de npm, no de este cambio. Por eso las integridades se compararon a mano.
+- **No se ejecutaron las E2E.** Levantan Vite en el puerto 5175 con `--strictPort`, y QA trabaja en paralelo con ese mismo puerto. El análisis de las trazas se basa en la configuración y en el comportamiento documentado de Playwright.
+
+## 1. ¿El arnés o el modo simulado pueden llegar a producción?
+
+**No.** Hay tres barreras independientes y una cuarta circunstancial:
+
+| Barrera | Evidencia |
+|---|---|
+| `vite build` solo usa `index.html` como entrada | `vite.config.js` no define `rollupOptions.input`. Ningún archivo fuera de `dev/` y `e2e/` importa `dev/`, y `src/ubicacion/index.js` no lo exporta (comprobado con grep). El build real no contiene ningún rastro |
+| `if (!import.meta.env.DEV) return` al inicio de `iniciar()` (`arnes.jsx:27-31`) y `import.meta.env.DEV &&` antes del `import()` dinámico (`arnes.jsx:34`) | En el build forzado, el código muerto se elimina: el chunk de la sesión simulada ni se genera |
+| `crearSesionSimulada` vuelve a comprobar `DEV` (`sesionSimulada.js:22`) | Tercera línea de defensa |
+| No hay despliegue que sirva `vite dev` ni `src/` | `09-despliegue.md:241` dice "No hay despliegue de las webs (Vercel) en esta iteración". Los Dockerfile son solo de servicios Java, y `.dockerignore` excluye `web-interna/` y `**/src/`. `docker-compose.yml` no menciona `web-interna`. El plan previsto (D11, Vercel) ejecuta `vite build` y sirve `dist/` |
+
+**`vite preview`:** sirve solo `dist/`, que no contiene el arnés. Aunque alguien lo construyera a mano, vería el mensaje "solo funciona en desarrollo".
+
+**`import.meta.env.DEV` fuera de `vite dev`:** solo vale `true` en un build si se ejecuta `NODE_ENV=development vite build`. `--mode development` no basta, porque `DEV` depende de `NODE_ENV` y no del modo. Aun así, ese build tampoco incluiría `arnes.html` sin cambiar `vite.config.js`. Para llegar al modo simulado fuera de un servidor de desarrollo habría que hacer las dos cosas a propósito.
+
+**Riesgo residual con `vite dev`:** cualquier servidor de desarrollo de Vite, incluido uno expuesto con `--host` en una red de laboratorio, sirve el arnés y su modo simulado. **El impacto es nulo** (ver §2): solo se obtiene una interfaz vacía que recibe 401 del gateway. Ver SEC-J-I33 para dejarlo por escrito.
+
+## 2. Modo simulado
+
+- **¿Se puede activar fuera de DEV?** No (§1).
+- **¿El token falso se puede confundir con uno real?** No:
+  - `'token-simulado-e2e'` no tiene forma de JWT: no tiene tres segmentos base64url.
+  - No se guarda en ningún sitio: no usa `localStorage`, `sessionStorage` ni cookies. Solo lo devuelve el `obtenerToken` en memoria.
+  - No se escribe en la consola.
+  - Ningún camino mezcla un token real con roles falsos. En modo simulado, `keycloak.js` ni siquiera se importa, y en modo real los roles salen de `keycloak.tokenParsed`, no de la URL.
+- **¿El gateway lo rechaza?** Sí:
+  - `SecurityConfig.java:74-78` usa `oauth2ResourceServer().jwt()` con `issuer-uri` y `audiences` (`application.yml:48-49`). Spring Security valida la firma contra el JWKS de Keycloak, además de `iss`, `exp` y `aud`.
+  - Una cadena que no es un JWT da 401 `invalid_token` en `BearerTokenAuthenticationFilter`, antes de llegar a cualquier controlador.
+  - El gateway no registra la cabecera `Authorization`: no hay ningún log de token en `src/main`, y `ProxyService` solo la reenvía.
+- **Abuso por parámetros de URL:**
+
+| Parámetro | Tratamiento | Riesgo |
+|---|---|---|
+| `roles` | Lista blanca de los 5 roles (`sesionSimulada.js:23-26`), igual que `rolesUsuario()` | Solo cambia la interfaz. La autorización real la hace el backend, que rechaza el token |
+| `usuario` | Se muestra como texto de React (`Arnes.jsx:39`) | Sin XSS: React lo escapa, y no hay `innerHTML`, `dangerouslySetInnerHTML`, `bindPopup` ni `eval` en `src/ubicacion` |
+| `pantalla` | Comparación estricta con `'mapa'` (`arnes.jsx:51`) | Ninguno |
+| `hallazgo` | Llega a `obtenerMapa`, que lo codifica con `URLSearchParams` (`ubicacionApi.js:89-95`) | Sin inyección en la ruta ni en la consulta |
+| `token=vencido` | Solo hace que `obtenerToken` rechace | Ninguno |
+| `modo` | Solo se tiene en cuenta bajo `DEV` | Ninguno |
+
+## 3. Modo real
+
+- **`keycloak.js` no cambia** (`git diff` vacío para `src/auth/`). `sesionReal.js` llama a `iniciarSesion()` (Authorization Code con PKCE S256, `checkLoginIframe: false`), `rolesUsuario()` y `cerrarSesion()`. El token se pide con `keycloak.updateToken(30)` y se devuelve desde memoria. El arnés no lo muestra ni lo guarda. Solo pinta `preferred_username` y los roles de negocio, que son datos que el propio usuario ya conoce.
+- **Realm:** **no hace falta ningún cambio.** El cliente `web-interna` ya es público, solo tiene `standardFlowEnabled`, sin flujo implícito ni `directAccessGrants`, y ya declara `redirectUris: ["http://localhost:5173/*"]`, `webOrigins: ["http://localhost:5173"]`, `post.logout.redirect.uris: "http://localhost:5173/*"` y `pkce.code.challenge.method: S256`. La ruta `/src/ubicacion/dev/arnes.html?...` entra en el comodín. El puerto 5175 de Playwright no necesita estar en el realm porque las E2E no usan Keycloak.
+- **Open redirect:** no hay. El arnés no lee ninguna URL de destino de los parámetros. `keycloak-js` usa como `redirectUri` la URL actual, que Keycloak valida contra la lista del cliente. El logout vuelve a `window.location.origin`.
+- **Comodín `/*`:** ya existía y solo afecta a desarrollo. El realm de producción, cuando exista, debe declarar las URI exactas del dominio desplegado (hoy `11` no lo menciona; se puede añadir junto con SEC-J-I33). No es un hallazgo de esta iteración.
+
+## 4. E2E
+
+- **Sin secretos:** las E2E no tienen contraseñas, claves ni tokens reales. `fixtures.js` solo contiene el token falso, IDs UUID inventados, coordenadas centinela y un PNG de 1x1. `investigador1` aparece como valor del campo `investigador`, e `investigador2` ni siquiera existe en el realm.
+- **Usuarios del realm en la guía manual del README:** `cientifico1`, `investigador1`, `auditor1`, `analista1`, `admin1` y `sinrol1` ya eran públicos en `infra/keycloak/realm-biohub.json` y en el `README.md` de la raíz. La contraseña se remite a `KEYCLOAK_TEST_USERS_PASSWORD` del `.env` de cada uno: placeholder `${...}` en el realm y `.env` no versionado. Correcto.
+- **Aislamiento de red:** el fixture `red` aborta cualquier petición que no vaya a `localhost` o `127.0.0.1` (`fixtures.js:213`). Las pruebas nunca salen a internet ni contactan con OSM.
+- **Artefactos:**
+  - En CI, `trace: 'retain-on-failure'` y el reporter `html` meten las trazas de los fallos en `playwright-report/data`. Ese es el artefacto que se sube (`ci.yml:77-84`), y solo si algo falla.
+  - Una traza guarda las cabeceras de las peticiones (`Authorization: Bearer token-simulado-e2e`), el DOM y capturas con las coordenadas centinela. **Todo es sintético**, así que hoy no se filtra nada.
+  - El job no usa secretos, y Vite solo recibe `VITE_API_URL=http://localhost:8080`.
+  - Retención de 7 días y `if-no-files-found: ignore`.
+  - Ver SEC-J-I30 para el caso futuro de una E2E con Keycloak real.
+- **`.gitignore`** de web-interna: excluye `test-results/`, `playwright-report/` y `blob-report/`. `dist/` ya estaba en el `.gitignore` de la raíz.
+
+## 5. Dependencias
+
+- `npm audit` (todas): **0**. `npm audit --omit=dev`: **0**.
+- **Lockfile:** solo **añade** 3 entradas: `@playwright/test`, `playwright` y `playwright-core`, las tres en 1.64.1, `dev: true`, `engines.node >=20` y `resolved` en `registry.npmjs.org`. No cambia ninguna otra versión: el diff no tiene ninguna línea `-"version"`.
+- **Integridades:** coinciden con las que publica el registro (`npm view ... dist.integrity`) para los tres paquetes.
+- **Procedencia:** `@playwright/test`, del repositorio `github.com/microsoft/playwright`, mantenido por cuentas de Microsoft.
+- **Superficie de instalación:** `playwright-core` no tiene dependencias, y ninguno de los tres declara scripts `postinstall`.
+- **Versión:** 1.64.1 se publicó el 2026-10-14. La última es 1.65.1, del 2026-11-13. Es **adecuada**:
+  - fijada exacta (sin `^`), como en `web-publica/package.json:20`, lo que permite compartir la caché de navegadores en CI;
+  - sin avisos conocidos;
+  - posterior a la corrección de la verificación de descargas de navegadores (CVE-2025-59288, corregida en 1.55.1).
+  - Conviene subir **las dos webs a la vez** en una iteración posterior. No es un hallazgo.
+
+## 6. CI (21b)
+
+- `permissions: contents: read` se mantiene a nivel de workflow (`ci.yml:8-9`), y el job nuevo no lo amplía. **No usa secretos.**
+- **Disparadores:** `push` y `pull_request`, sin `pull_request_target` ni `workflow_run`. Una PR desde un fork se ejecuta con un token de solo lectura y sin secretos, así que no hay código no confiable con privilegios.
+- **Acciones:** `actions/checkout@v5`, `actions/setup-node@v5` y `actions/upload-artifact@v6`, en las mismas versiones mayores que el resto del workflow. Fijarlas a un SHA sería más estricto, pero es una decisión de todo el workflow, no de este cambio.
+- **Descarga de navegadores:**
+  - `npx playwright install --with-deps` usa el binario local 1.64.1 instalado por `npm ci` con el lockfile, no uno descargado al momento.
+  - Los navegadores vienen de la CDN oficial de Playwright.
+  - `--with-deps` usa `apt-get` con `sudo` en un runner efímero de GitHub.
+  - Es igual que el job `frontend`, que ya existía. No añade riesgo.
+- **Matriz de backend:**
+  - `TZ` y `-DargLine=-Duser.timezone=${{ matrix.tz }}` (`ci.yml:122`) se interpolan desde valores **literales** de `matrix.include`. No hay entrada controlada por un atacante, como títulos de PR o nombres de rama, así que no hay inyección de expresiones.
+  - Las comillas protegen `America/Bogota`.
+  - Nadie define `argLine` en los pom, como dice `09` §10, así que no se pisa ninguna configuración de seguridad de Surefire.
+- **Nombres de artefactos:** `playwright-report-web-interna`, `surefire-<servicio>-utc` y `surefire-<servicio>-bogota`. Son literales, sin ramas, usuarios ni datos.
+- Ver SEC-J-I29 (pasos de E2E condicionales) y SEC-J-I31 (endurecimiento opcional).
+
+## 7. `MapaHallazgos.jsx`
+
+- **`keydown` en los marcadores (`MapaHallazgos.jsx:85-92`):** llama al **mismo** `onSeleccionar(p.id, elemento)` que el `click`. No añade ningún dato nuevo a la página: el detalle y la regla de roles siguen en `PaginaMapa`, que ni siquiera pide `/mapa` sin `cientifico_alto_rango` (lo cubren WI-06 en E2E y las pruebas unitarias). `preventDefault` solo actúa con Enter o Espacio. El `title` del marcador sigue sin coordenadas. La prueba nueva (`PaginaMapa.test.jsx`) comprueba que otra tecla no abre el detalle.
+- **`CerrarZoomAlQuitar` (`MapaHallazgos.jsx:33-38`):**
+  - solo pone `_animatingZoom = false` al desmontar, así que el temporizador de 250 ms de Leaflet (`leaflet-src.js:4827`) sale en `_onZoomTransitionEnd` (`:4831`) sin tocar el mapa ya quitado;
+  - no cambia la carga de teselas, que se abortan igual en `onRemove` de la capa (20c), ni el umbral de D57;
+  - no expone coordenadas.
+  - Sin impacto en seguridad ni en privacidad. Su único efecto es de mantenimiento (SEC-J-I32).
+
+## Hallazgos nuevos (Informativos)
+
+- **SEC-J-I29 (los pasos de E2E condicionales permiten que una PR desactive en silencio las pruebas de seguridad):** `ci.yml:72, 75, 78` ejecutan las E2E solo si existe `web-interna/playwright.config.js`. Eso tenía sentido mientras no existían, pero una vez estén en el repo, una PR que borre o renombre el archivo dejaría la CI en verde sin ejecutar WI-15 (ninguna petición a OSM, SEC-J-04) ni WI-10 (coordenadas fuera del DOM). **Corrección:** en el mismo commit que añade `playwright.config.js`, quitar los tres `if: hashFiles(...)` y dejar solo `if: failure()` en la subida del informe, como en el job `frontend`. Así, quitar el archivo rompe la CI en vez de saltarse las pruebas. **Esfuerzo:** XS. **Responsable sugerido:** Juanita (21b).
+- **SEC-J-I30 (las trazas y el informe de Playwright guardan cabeceras, DOM y capturas):** hoy no se filtra nada porque todo es sintético. Pero si alguna E2E futura usa Keycloak real (por ejemplo, con `CI_USUARIOS_PRUEBA_PASSWORD` del job `bruno`) o un gateway con datos reales, la traza guardaría la contraseña tecleada, el JWT real en `Authorization` y coordenadas exactas en capturas y DOM, dentro de un artefacto que cualquier usuario con acceso de lectura al repo puede descargar. **Corrección:** dejarlo como regla en `playwright.config.js`. Por ejemplo:
+  ```js
+  // Las trazas guardan cabeceras (Authorization), DOM y capturas. Solo con datos sintéticos y el modo simulado.
+  // Un proyecto con Keycloak real o datos reales debe usar trace: 'off', screenshot: 'off' y no subir artefactos.
+  use: { baseURL: `http://localhost:${PUERTO}`, locale: 'es-CO', trace: 'retain-on-failure' },
+  ```
+  **Esfuerzo:** XS. **Responsable sugerido:** Juanita.
+- **SEC-J-I31 (endurecimiento opcional del job `web-interna`):**
+  - (a) `actions/checkout@v5` deja el `GITHUB_TOKEN` (de solo lectura) en `.git/config` mientras se ejecutan `npm ci` y las dependencias de desarrollo. `with: { persist-credentials: false }` lo evita, porque el job no necesita hacer push.
+  - (b) La CI solo audita producción (`--omit=dev`), y Playwright no entra en esa auditoría. Un paso adicional `npm audit --audit-level=critical`, sin `--omit=dev`, detectaría una dependencia de desarrollo comprometida que se ejecuta en el runner.
+  - Las dos cosas también aplican a `frontend` y no son una regresión de 21b.
+  - **Esfuerzo:** XS. **Responsable sugerido:** quien mantenga la CI (Juanita o Tech Lead).
+- **SEC-J-I32 (segundo interno de Leaflet con rango `^`):** `CerrarZoomAlQuitar` depende de `_animatingZoom`, igual que `CapaTeselasGateway` depende de `_tiles` y `_tileZoom`. `package.json:17` sigue con `"leaflet": "^1.9.4"`, así que SEC-J-I27 sigue abierto. Una 1.x futura que renombre el campo volvería a lanzar el error al desmontar, pero no afectaría a la privacidad. **Corrección:** la misma de SEC-J-I27: fijar `"leaflet": "1.9.4"`, o una prueba con `expect(L.version).toBe('1.9.4')`. **Esfuerzo:** XS. **Responsable sugerido:** Juanita, coordinando con Santiago porque `package.json` es suyo (D58).
+- **SEC-J-I33 (dejar por escrito que web-interna solo se despliega desde `dist/`):** hoy no hay ningún despliegue que sirva `vite`, pero `09-despliegue.md` no lo prohíbe de forma explícita. **Corrección:** añadir a `09` una línea como esta: "*web-interna y web-publica se despliegan solo como estáticos de `npm run build` (`dist/`). Nunca `vite`/`npm run dev`/`vite preview` en un servidor accesible, ni `vite --host` en redes compartidas: el servidor de desarrollo expone `src/` y el arnés de D58.*" El modo simulado no daría acceso a nada (§2), pero el servidor de desarrollo sirve el código fuente y no tiene las cabeceras de seguridad que se esperan en producción (SEC-J-07). **Esfuerzo:** XS. **Responsable sugerido:** Santiago o Tech Lead.
+
+## Bien hecho (esta iteración)
+- **Defensa en profundidad real, y verificada:** el arnés no es una entrada del build; `DEV` se comprueba antes del `import()` dinámico y dentro de `crearSesionSimulada`; y un build forzado no contiene ni la sesión simulada ni Keycloak. Lo que dice el README coincide con lo que obtuve.
+- **El modo simulado está aislado del real:** carga dinámica separada, no carga keycloak-js, el token no tiene forma de JWT, y los roles pasan por la misma lista blanca de 5. No hay forma de mezclar un token real con roles de la URL.
+- **`keycloak.js` no se modifica** (D17). El modo real conserva PKCE S256 y el token solo en memoria, y no necesita cambios en el realm.
+- **E2E pensadas para seguridad:** bloquean cualquier petición fuera de localhost; comprueban `Bearer` en cada petición al gateway, 0 peticiones a OSM y `no-store` desde z9 con un espía de `fetch` (honesto sobre el límite de que Playwright desactiva la caché); y buscan coordenadas centinela en URL, título, `localStorage`, `sessionStorage`, cookies y consola (WI-10).
+- **Sin secretos en specs, fixtures ni guía.** La guía manual remite al `.env` local y solo nombra usuarios que ya eran públicos.
+- **Dependencia mínima y bien fijada:** versión exacta, solo de desarrollo, solo 3 paquetes en el lockfile, la misma versión que web-publica y 0 vulnerabilidades.
+- **CI sin regresiones de seguridad:** se mantiene `contents: read`, sin secretos, sin `pull_request_target`, con acciones en versiones mayores fijas y artefactos de 7 días con nombres literales.
+- **`MapaHallazgos.jsx`:** el teclado reutiliza exactamente el camino del `click` y tiene prueba propia.
+
+## Veredicto (iteración 21, 21d)
+**APROBADO CON OBSERVACIONES.** No hay Críticos, Altos, Medios ni Bajos.
+- **El arnés es seguro tal como está** y puede entrar en el commit.
+- **SEC-J-I29** (XS): conviene aplicarlo en el mismo commit que añade `playwright.config.js`, para que las E2E de seguridad no se puedan desactivar en silencio.
+- **SEC-J-I30 a SEC-J-I33** (XS): no bloquean.
+- **Estados anteriores:** sin cambios. SEC-J-04 sigue pendiente solo de la prueba manual en navegador, que la guía nueva del README (pasos 5 y 6) ya describe. SEC-J-25, SEC-J-I25 (primera parte), SEC-J-I27 y SEC-J-07 siguen abiertos.
+
+---
+
+# Iteración 27 – D66 (fotos públicas por evento) y detector unificado (27f)
+
+**Fecha:** 2026-11-21. **Rama:** `feature/ubicacion-consulta-publica` con cambios sin commit (27a-c). **Alcance:** D66 productor y consumidor, detector unificado (BE-R-1 / SEC-R-2), web-publica (FE-R-1), permisos de RabbitMQ y dependencias. SEC-R-1 (GPS en audio/MPF del original) es de otra persona y queda fuera de alcance; solo se indica cuánto lo mitiga D66.
+
+## Resumen
+| Severidad | Cantidad |
+|---|---|
+| Crítico | 0 |
+| Alto | 0 |
+| Medio | 2 (SEC-I27-1, SEC-I27-2) |
+| Bajo | 6 (SEC-I27-3 a SEC-I27-8) |
+| Informativo | 4 (SEC-I27-I1 a SEC-I27-I4) |
+
+**D66 está bien resuelto desde la seguridad.** El tráfico público ya no llega al científico, la única ruta sin rol del científico desapareció junto con su `permitAll` y sus excepciones en las pruebas de arquitectura, y la miniatura sale sin ningún metadato (comprobado). Lo que falla está en el **detector unificado**: al reemplazar las reglas de `ValidadorTextoPublico` por las de `DetectorCoordenadas`, registro dejó de detectar formatos que antes sí rechazaba. Como consulta-publica usa los mismos patrones, esos textos llegan ahora **al portal público** (SEC-I27-1). Además, los atributos flexibles siguen aceptando coordenadas como números o con claves `lat`/`lon` (SEC-I27-2). **SEC-R-2 queda Parcial, no cerrado.**
+
+## Cómo se revisó
+- **Documentación:** `00-plan.md` (iteración 27), `03` D21, D44, D53, D54, D65 y D66, `04` §4.4, §7.5, §7.6 y §13.10, y `docs/revision/2026-11-19/seguridad.md` (SEC-R-1, SEC-R-2) y `arquitectura-asr.md` (ARQ-R-1).
+- **Código (estático):** `git diff` y los archivos nuevos sin seguimiento de `servicio-cientifico` (`FotoPublica`, `FotosPublicas`, `RepublicadorFotosPublicas`, `FotosPublicasAdminController`, `MigracionFotosPublicasAlArrancar`, `AlmacenEvidenciasDisco`, `EvidenciaService`, `PublicadorEventos`, `PublicadorCambiosHallazgo`, `DetectorCoordenadas`, `ValidadorTextoPublico`, `HallazgoService`, `SecurityConfig`, migraciones), de `servicio-consulta-publica` (`ConsumidorFotos`, `ValidadorSobre`, `ValidadorFotoJpeg`, `ProcesadorFotos`, `ProyectorFotos`, `FotosPublicasJdbc`, `BusquedaEspeciesJdbc`, `EspeciesPublicasController`, `FotosEspeciesService`, `InvalidadorCacheFichas`, `RabbitConfig`, `SecurityConfig`, migración), de `web-publica` (`index.html`, `especies.js`, `FotoEspecie.jsx`, `Ficha.jsx`, `TarjetaEspecie.jsx`, `Inicio.jsx`, `README.md`), `infra/rabbitmq/crear-usuarios.sh`, `docker-compose.yml` y las pruebas de arquitectura de seguridad de los dos servicios.
+- **Pruebas locales en el scratchpad, fuera del repo, sin servicios:**
+  1. Se compiló una **copia** de `DetectorCoordenadas` y se ejecutaron unos 60 textos: evasiones, formatos GPS habituales y falsos positivos conocidos.
+  2. Se compiló la versión **anterior** de `ValidadorTextoPublico` (`git show HEAD:`) y se comparó con el detector nuevo. Así se vieron las regresiones de SEC-I27-1.
+  3. Se compiló una **copia** de `FotoPublica` y se le pasó un JPEG de 3000×2000 con APP1 "Exif", COM, APP2 y un trailer después del EOI, todos con texto GPS. También un PNG que declara 100 000×100 000 px y uno de 20 000×2 000.
+  4. Se probaron los patrones que se proponen en SEC-I27-1 contra 15 evasiones y 13 textos legítimos.
+- **Dependencias:** ni `pom.xml` ni `package.json` cambiaron (`git diff --stat`), así que no hay dependencias nuevas. `npm audit --omit=dev` en web-publica da **0 vulnerabilidades**. Maven sigue sin escáner de CVE (SEC-15).
+- **No se leyeron** `.env` ni `certs/`. No se ejecutó nada contra servicios reales.
+
+## Hallazgos
+
+### SEC-I27-1 · **Medio** · El detector unificado tiene regresiones y deja pasar formatos GPS habituales, que ahora llegan al portal público
+- **Archivos:**
+  - `servicio-cientifico/.../eventos/service/DetectorCoordenadas.java:39-56`, los patrones.
+  - `servicio-consulta-publica/.../eventos/service/DetectorCoordenadas.java`, con los mismos patrones. Los dos detectores solo se diferencian en `contieneEnBruto`.
+  - `servicio-cientifico/.../registro/service/ValidadorTextoPublico.java:33`, que ahora solo delega en el detector.
+- **Problema:** resultados con la copia compilada (`viejo` es `ValidadorTextoPublico` en HEAD; `nuevo` es el detector unificado):
+
+  | Texto | viejo | nuevo | ¿Llega al portal? |
+  |---|---|---|---|
+  | `5.532, 73.367` / `4.609 74.081` (par sin signo, 3 decimales ≈ 110 m) | detecta | **no** | **Sí (regresión)** |
+  | `5 31 55 N 73 22 10 W` (GMS sin símbolos) | detecta | **no** | **Sí (regresión)** |
+  | `5°31N 73°22W` | detecta | **no** | **Sí (regresión)** |
+  | `N05 31.928 W073 22.027` (pantalla de un Garmin GPSMAP, formato hddd mm.mmm) | no | no | Sí |
+  | `N5.53214 W73.36712` / `latitud: N 5.53214` (hemisferio delante) | no | no | Sí |
+  | `5.53214,` + U+00A0 + `-73.36712` (espacio duro: se cuela al pegar desde Word o desde la web) | no | no | Sí |
+  | `latitud norte 5.53214 y longitud oeste 73.36712` / `5.53214 norte, 73.36712 oeste` | no | no | Sí |
+  | `Norte 1012345 Este 1045678` (coordenadas planas MAGNA/IGAC, muy comunes en Colombia) | no | no | Sí |
+  | `５.５３２１４, -７３.３６７１２` (dígitos de ancho completo) | no | no | Sí |
+
+  Los casos que SEC-R-2 pedía corregir (coma decimal, `lat … lon …` y una unidad en el mismo texto) **sí** se detectan ahora.
+- **Por qué importa:** antes registro era una barrera **más estricta** que consulta-publica para estos tres formatos. Al unificar, las dos barreras quedan iguales, así que todo lo que pase una pasa también la otra: el texto se guarda en claro en `hallazgo` y en el historial append-only (D60), viaja en `hallazgo.*` y **se publica en el portal**. El formato Garmin y las coordenadas planas son justo lo que un investigador copia de su equipo de campo. No hace falta un atacante: basta un error humano, el mismo escenario de SEC-J-02.
+- **Corrección:**
+  1. Normalizar el texto antes de buscar.
+  2. Añadir patrones en **las dos copias** del detector.
+  3. Añadir una prueba de paridad que ejecute el mismo corpus contra las dos copias (D4: sin módulo común).
+
+  Probado en el scratchpad: los 15 textos que debe detectar dan positivo, salvo `‐ 73.36712`, que tiene un espacio después del signo. Los 12 textos legítimos dan negativo: `3.200, 3.500 msnm`, `12,5 cm`, `12.500, 13.000 individuos`, `peso 1.250 g`, `longitud total 12 cm`, `E3 y N2 son parcelas`, `altitud 2.600 msnm, 14 °C`, etc. El único falso positivo nuevo es `talla 5 12 N`.
+  ```java
+  static String normalizar(String t) {             // dígitos de ancho completo, espacios duros y guiones Unicode
+      String n = Normalizer.normalize(t, Normalizer.Form.NFKC);
+      return n.replaceAll("[\\u00A0\\u2007\\u202F\\u2000-\\u200B]", " ").replaceAll("[\\u2010-\\u2015\\u2212]", "-");
+  }
+  /** Hemisferio delante: "N5.53214 W73.36712", "N05 31.928 W073 22.027", "latitud: N 5.53214". */
+  private static final Pattern HEMISFERIO_DELANTE = Pattern.compile(
+          "\\b[NSEOW]\\s{0,2}\\d{1,3}(?:[.,]\\d{3,}|\\s{0,2}[°º˚]|\\s{1,2}\\d{1,2}[.,]\\d{1,4})");
+  /** GMS sin símbolos y hemisferio detrás: "5 31 55 N", "5°31N". */
+  private static final Pattern GMS_SIN_SIMBOLOS = Pattern.compile(
+          "\\b\\d{1,3}(?:\\s{0,2}[°º˚]\\s{0,2}|\\s{1,2})\\d{1,2}(?:\\s{1,2}\\d{1,2}(?:[.,]\\d+)?)?\\s{0,2}[NSEOW]\\b");
+  /** Par sin signo dentro de Colombia (lat 0-13, lon 66-82): "5.532, 73.367". No confunde "3.200, 3.500 msnm". */
+  private static final Pattern PAR_COLOMBIA = Pattern.compile(
+          "\\b\\d{1,2}[.,]\\d{3,}" + SEP + "0?(?:6[6-9]|7\\d|8[0-2])[.,]\\d{3,}\\b");
+  /** Hemisferio en palabras: "5.53214 norte", "latitud norte 5.53214". */
+  private static final Pattern PALABRA_HEMISFERIO = Pattern.compile(
+          "(?iu)\\b(?:\\d{1,3}[.,]\\d{3,}\\s{0,2}(?:norte|sur|este|oeste)\\b"
+          + "|(?:latitud|longitud)\\s{0,2}(?:norte|sur|este|oeste)\\s{0,2}:?\\s{0,2}\\d)");
+  /** Coordenadas planas: "Norte 1012345", "N: 1.012.345". */
+  private static final Pattern PLANAS = Pattern.compile("(?iu)\\b(?:norte|este|n|e)\\s{0,2}[:=]?\\s{0,2}\\d(?:\\.?\\d{3}){2}\\b");
+
+  public static boolean pareceCoordenada(String texto) {
+      if (texto == null || texto.isEmpty()) return false;
+      String n = normalizar(texto);
+      return DECIMAL_CON_SIGNO.matcher(n).find() || DECIMAL_PRECISO.matcher(n).find()
+              || DECIMAL_HEMISFERIO.matcher(n).find() || GRADOS_MINUTOS.matcher(n).find()
+              || CLAVE_Y_NUMERO.matcher(n).find() || HEMISFERIO_DELANTE.matcher(n).find()
+              || GMS_SIN_SIMBOLOS.matcher(n).find() || PAR_COLOMBIA.matcher(n).find()
+              || PALABRA_HEMISFERIO.matcher(n).find() || PLANAS.matcher(n).find();
+  }
+  ```
+  Además, `NEG + "\\s?"` en `DECIMAL_CON_SIGNO` para `- 73.36712`.
+- **Esfuerzo:** S. **Responsable sugerido:** Juanita (las dos copias). Avisar a Hernando de los falsos positivos nuevos, como se hizo con "lat 3".
+
+### SEC-I27-2 · **Medio** · Atributos flexibles: se aceptan coordenadas como números, con claves `lat`/`lon` o repartidas en dos claves (SEC-R-2, parte 2, sin hacer)
+- **Archivos:**
+  - `servicio-cientifico/.../registro/service/ValidadorTextoPublico.java:52-75`: `verificarAtributos` solo revisa los **valores `String`**. No revisa las claves y se salta los números (el javadoc lo dice: "Los números y booleanos no son texto y no se revisan aquí").
+  - `RegistrarHallazgoRequest.java:28` y `ReclasificarHallazgoRequest.java:23`: `Map<String, Object>` libre.
+  - `FichaPlantillaService.java:31`: `CLAVE_VALIDA` sigue admitiendo `latitud_gps` de tipo `NUMERO`.
+  - `FichaPlantillaService.validarValores` sigue sin llamarse desde producción (ARQ-R-3).
+- **Problema** (con la copia compilada). Todo esto se guarda sin error:
+  - `{"lat": 5.53214, "lon": -73.36712}`: el detector reconocería la clave `lat`, pero `verificarAtributos` nunca le pasa las claves.
+  - `{"latitud_gps": 5.53214}` y `{"punto": [5.53214, -73.36712]}`: números sin revisar.
+  - `{"x": "5.53214", "y": "-73.36712"}`: cada valor por separado no tiene forma de coordenada.
+
+  Los atributos no viajan en el evento (`ConstructorSnapshotPublico` usa una lista fija de campos), así que **el portal no se ve afectado**. Pero la coordenada queda en claro en `hallazgo.atributos` y en el historial append-only, y `HallazgoResponse.java:27` la muestra a `administrador` y `auditor_cientifico`, a quienes RF12/D21 se lo prohíben.
+- **Por qué importa:** es la vía más directa para guardar una coordenada en claro, fuera de AES-GCM (D15), y no se puede borrar (D60). Un formulario de plantilla con un campo "GPS" numérico la provoca sin mala intención.
+- **Corrección:**
+  1. Revisar también las claves y los números en `verificarAtributos`.
+  2. Prohibir esas claves en la plantilla.
+  ```java
+  private static final Pattern CLAVE_COORDENADA = Pattern.compile(
+          "(?i)(^|_)(lat|latitud|latitude|lon|lng|long|longitud|longitude|coord|coordenadas|gps|utm|geo|este|norte|x|y)(_|$)");
+
+  private void verificarValor(String campo, Object clave, Object valor, int profundidad) {
+      if (clave != null && (CLAVE_COORDENADA.matcher(clave.toString()).find()
+              || DetectorCoordenadas.pareceCoordenada(clave.toString()))) {
+          throw new DatosHallazgoInvalidosException(campo, "las coordenadas van en latitud/longitud del hallazgo, cifradas");
+      }
+      if (valor instanceof Number) {
+          return;                         // un número suelto con clave neutra (p. ej. "talla_cm") es legítimo
+      }
+      if (valor instanceof Collection<?> c && c.size() == 2 && c.stream().allMatch(Number.class::isInstance)) {
+          throw new DatosHallazgoInvalidosException(campo, "un par de números parece una coordenada");
+      }
+      // ... resto igual (String → verificar; Map/Collection → recursión pasando la clave)
+  }
+  ```
+  3. Revisar también el texto **concatenado** de todos los valores `String`, para detectar `x`/`y` repartidos: `verificar("atributos", String.join(" ", valoresTexto))`.
+  4. En `FichaPlantillaService.guardarVersion`, rechazar las claves que cumplan `CLAVE_COORDENADA`.
+- **Esfuerzo:** S. **Responsable sugerido:** Hernando (`registro`, `FichaPlantillaService`), con Juanita por el validador.
+
+### SEC-I27-3 · **Bajo** · El tope de 1 MB se aplica después de recibir el mensaje; el broker admite 16 MiB y las colas no tienen límite
+- **Archivos:**
+  - `servicio-consulta-publica/.../eventos/service/ConsumidorFotos.java:46-49`: `traeCoordenadas` y luego `interpretar(…, 1 MB)`.
+  - `RabbitConfig.java:68-80`: colas sin `x-max-length-bytes`.
+  - `docker-compose.yml:108`: `rabbitmq:4.1` sin `rabbitmq.conf`, así que se aplica el `max_message_size` por defecto de 16 MiB.
+- **Problema:** el cliente AMQP carga el cuerpo completo antes de que el código compruebe el tamaño. Con `prefetch=4` caben hasta unos 64 MiB por consumidor. Un mensaje de más de 1 MB se analiza en bruto solo en su primer MB y va a la DLQ, que crece sin límite. Ese mensaje solo lo puede publicar `cientifico_mq`: `crear-usuarios.sh` no da `write` sobre `biohub.eventos` a ningún consumidor, y `user_id` se verifica. Por eso el riesgo se limita a una credencial del científico comprometida o a un fallo del productor.
+- **Por qué importa:** si la DLQ llena el disco del broker, salta la alarma de disco y RabbitMQ bloquea a **todos** los publicadores, también `hallazgo.*` y reportes.
+- **Corrección:**
+  - Límite en el broker: ningún mensaje del sistema necesita más de 1 MiB.
+    ```ini
+    # infra/rabbitmq/rabbitmq.conf (montado en el servicio rabbitmq de docker-compose.yml)
+    max_message_size = 1048576
+    ```
+  - Política de longitud en las DLQ:
+    ```bash
+    rabbitmqctl set_policy dlq-acotadas '^.*\.dlq$' '{"max-length-bytes":104857600,"overflow":"drop-head"}' --apply-to queues
+    ```
+- **Esfuerzo:** S. **Responsable sugerido:** Santiago o devops (`docker-compose.yml`), con Juanita.
+
+### SEC-I27-4 · **Bajo** · `ValidadorFotoJpeg` usa una lista negra (solo APP1 y APP13) y no comprueba las dimensiones reales
+- **Archivo:** `servicio-consulta-publica/.../eventos/service/ValidadorFotoJpeg.java:96-98`.
+- **Problema:** se aceptan COM (`FFFE`), APP2 (ICC/MPF), APP0 JFXX (miniatura incrustada), APP3-APP12, APP14 y APP15. Además, el `ancho`/`alto` del evento no se compara con el SOF real: un JPEG de 600 KB puede declarar 65 535×65 535 px en el SOF. El productor de hoy solo emite `E0, DB, C0, C4, DA` (lo comprobé), así que esto es **defensa en profundidad**. Aun así, el javadoc dice que "una foto pública sale al visitante sin ninguna otra revisión", y el detector de coordenadas excluye a propósito `jpegBase64`.
+- **Por qué importa:** si el productor cambia (otro codificador, o se copia el original por error), un comentario `COM` con "5.53214, -73.36712" o una miniatura JFXX del original llegarían al portal sin ninguna barrera. Un SOF gigante podría colgar la pestaña del visitante.
+- **Corrección:** usar una lista blanca y comparar el SOF con lo declarado:
+  ```java
+  private static final Set<Integer> PERMITIDOS = Set.of(0xE0, 0xDB, 0xC4, 0xC0, 0xC2, 0xDD, 0xDA);
+  if (!PERMITIDOS.contains(marcador)) throw new EventoInvalidoException("Segmento JPEG no permitido");
+  if (marcador == 0xE0 && !esJfif(b, i + 2)) throw new EventoInvalidoException("APP0 que no es JFIF");
+  if (marcador == 0xC0 || marcador == 0xC2) {
+      int alto = ((b[i + 3] & 0xFF) << 8) | (b[i + 4] & 0xFF), ancho = ((b[i + 5] & 0xFF) << 8) | (b[i + 6] & 0xFF);
+      if (ancho != anchoDeclarado || alto != altoDeclarado) throw new EventoInvalidoException("Dimensiones distintas");
+  }
+  ```
+  Actualizar 04 §7.6: "solo APP0 JFIF, DQT, DHT, SOF0/SOF2, DRI y SOS".
+- **Esfuerzo:** S. **Responsable sugerido:** Juanita.
+
+### SEC-I27-5 · **Bajo** · `immutable` de un año en una foto que se puede retirar
+- **Archivo:** `servicio-consulta-publica/.../controller/EspeciesPublicasController.java:42` (`public, max-age=31536000, immutable`).
+- **Problema:** retirar una foto (`evidencia.retirada`) borra los bytes de `foto_publica`, pero la URL sigue sirviéndose desde las cachés **compartidas** (CDN o proxy, si existen) hasta un año, sin revalidar. Ya figura como "decisión a llevar al grupo" (2) en el plan.
+- **Por qué importa:** retirar es la única forma de corregir una foto publicada por error. Una foto puede revelar el lugar exacto por su contenido: un letrero, un hito, o la pantalla del GPS fotografiada. Hoy no hay CDN delante del gateway, así que el riesgo real es bajo. Si se añade una, pasa a ser Medio.
+- **Corrección:** `public` permite que la guarde la CDN; una caché corta con revalidación por ETag (el 304 ya está implementado) evita que la sirva un año.
+  ```java
+  private static final String INMUTABLE = "public, max-age=86400, stale-while-revalidate=3600";   // sin immutable
+  ```
+  Si se quiere conservar `immutable`, la alternativa es que cada publicación genere un `fotoId` nuevo (no el `evidenciaId`) y que una CDN, si llega a existir, se purgue al retirar.
+- **Esfuerzo:** S. **Responsable sugerido:** Juanita (y decisión del grupo).
+
+### SEC-I27-6 · **Bajo** · La miniatura se genera en el hilo de la petición, dentro de la transacción y sin límite de concurrencia
+- **Archivos:** `servicio-cientifico/.../registro/service/EvidenciaService.java:129-145` (`@Transactional`) → `FotosPublicas.java:67-86` → `FotoPublica.generar`.
+- **Problema:** con el tope de 40 MP, que se comprobó y funciona, el heap de Java queda acotado gracias al submuestreo. Pero un JPEG **progresivo** de 9 MB obliga a libjpeg a reservar memoria **nativa** para todos los coeficientes (unos 120-240 MB a 40 MP), y un archivo con miles de escaneos consume CPU durante segundos. Mientras tanto se mantiene una conexión del pool de MySQL. Varias peticiones `PUT …/publica` a la vez (`investigador_campo`, `cientifico_alto_rango`) pueden agotar la memoria nativa o el pool.
+- **Por qué importa:** afecta a la disponibilidad del científico (ASR2), aunque solo lo pueden disparar usuarios autenticados con rol. Es mucho menos que antes de D66, cuando cada visita pública decodificaba la imagen.
+- **Corrección:**
+  ```java
+  private static final Semaphore DECODIFICANDO = new Semaphore(2);
+  static Miniatura generar(byte[] original) throws IOException {
+      if (!DECODIFICANDO.tryAcquire(5, TimeUnit.SECONDS)) throw new ImagenNoAdmitidaException("Inténtalo de nuevo en unos segundos.");
+      try { /* ... */ } finally { DECODIFICANDO.release(); }
+  }
+  ```
+  Además, rechazar un JPEG con más de 100 SOS antes de decodificarlo, o al subirlo en `TipoArchivoEvidencia`. Opcional: generar la miniatura antes de abrir la transacción.
+- **Esfuerzo:** S. **Responsable sugerido:** Juanita.
+
+### SEC-I27-7 · **Bajo** · La republicación no deja constancia de qué administrador la pidió y responde 202 aunque no arranque
+- **Archivos:**
+  - `servicio-cientifico/.../registro/controller/FotosPublicasAdminController.java:31-35`: no recibe el `Jwt`.
+  - `RepublicadorFotosPublicas.java:123-126`: si ya hay una en curso, devuelve `ids.size()` sin lanzar nada.
+  - `RepublicadorFotosPublicas.java:120`: usa el usuario `"sistema"`.
+- **Problema:** el rol es correcto (`hasRole('administrador')`, `denyAll` fuera del prefijo y la prueba `TodosLosEndpointsExigenRolTest`), y el *single-flight* evita que varias ejecuciones se acumulen. Pero el log no dice **quién** republicó. Además, el administrador recibe "n fotos" aunque no se haya iniciado nada.
+- **Por qué importa:** es una acción masiva que reenvía todas las fotos públicas al portal, y HU-11 c.3 pide saber quién cambia la visibilidad.
+- **Corrección:**
+  ```java
+  public ResponseEntity<Map<String, Object>> republicar(@AuthenticationPrincipal Jwt jwt) {
+      String admin = jwt.getClaimAsString("preferred_username");
+      log.info("Republicación de fotos públicas solicitada por {}", admin);
+      var r = republicador.republicarTodas(admin);            // devuelve también si se inició o ya había una en curso
+      return ResponseEntity.status(r.iniciada() ? HttpStatus.ACCEPTED : HttpStatus.CONFLICT).body(Map.of("fotos", r.fotos()));
+  }
+  ```
+- **Esfuerzo:** S. **Responsable sugerido:** Juanita.
+
+### SEC-I27-8 · **Bajo** · La CSP de producción que documenta el README no tiene `blob:`
+- **Archivo:** `web-publica/README.md:28` y `:36` (cabecera y `vercel.json`, `img-src 'self' data:`), frente a `web-publica/index.html:10` (`img-src 'self' data: blob: …`).
+- **Problema:** si se despliega tal como dice el README, el navegador aplica **las dos** políticas (la `<meta>` y la cabecera), es decir, su intersección. Las fotos, que ahora se cargan como `blob:`, quedarían bloqueadas en producción. Ya figura como "pendiente al integrar" en 27c.
+- **Por qué importa:** la reacción típica ante "las fotos no cargan en producción" es aflojar o quitar la CSP de la cabecera, que es la única que aplica `frame-ancestors`.
+- **Corrección:** en las dos líneas del README, `img-src 'self' data: blob:`. Ya no hace falta el origen del gateway en `img-src` (SEC-I27-I1).
+- **Esfuerzo:** S. **Responsable sugerido:** Juanita (27c).
+
+### Informativos
+- **SEC-I27-I1 (`img-src` más amplio de lo necesario):** `index.html:10` sigue permitiendo `%CONNECT_SRC%` en `img-src`, pero las fotos ya no se piden con `<img src>` al gateway: llegan por `fetch` y se muestran como `blob:`. Basta con `img-src 'self' data: blob:`, y hay que actualizar el comentario de `vite.config.js:5`. **Esfuerzo:** S.
+- **SEC-I27-I2 (carrera mínima al revocar el blob):** en `FotoEspecie.jsx:22-36`, si el `then` ya estaba encolado cuando se ejecuta la limpieza, se crea un `blob:` que nunca se revoca y hay un `setEstado` sobre un componente desmontado. Es solo una pequeña fuga de memoria, sin efecto en la seguridad. Se arregla con `if (control.signal.aborted) return;` al principio del `then`. **Esfuerzo:** S.
+- **SEC-I27-I3 (republicar no excluye hallazgos anulados):** la consulta anterior filtraba `h.anuladoEn IS NULL`, y `idsFotosPublicas()` (`EvidenciaHallazgoRepository.java:20-24`) ya no. Hoy `Hallazgo.anular` no se llama desde ningún sitio, así que no hay efecto. Cuando exista la anulación, debe emitir `evidencia.retirada`, y la republicación debe filtrar por hallazgo vigente.
+- **SEC-I27-I4 (log del listener poco útil para las fotos):** `PublicadorCambiosHallazgo.java:44-51` escribe "Hallazgo {hallazgoId} guardado…" también en los `evidencia.*`. No filtra datos, porque solo registra ids, el tipo y la clase de la excepción. Pero falta el `evidenciaId`, que es lo que hace falta para republicar una sola foto. Se puede añadir `cambio.datos().get("evidenciaId")` cuando el tipo empiece por `evidencia.`.
+
+## Respuestas por punto del alcance
+| Punto | Resultado |
+|---|---|
+| **1. Límite de 40 MP antes de decodificar** | **Correcto.** `FotoPublica.java:72-81` lee el encabezado con `setInput(…, ignoreMetadata=true)` y rechaza antes de llamar a `read`. Probado: el PNG que declara 100 000×100 000 da `ImagenNoAdmitidaException`. 20 000×2 000 se reduce a 1200×120 en 155 ms con submuestreo |
+| **1. Formatos raros** | Solo entran JPEG y PNG (`TipoArchivoEvidencia`, por magic bytes). Un JPEG CMYK o con ICC dañado da 400 genérico, sin la causa. Recomendación menor: limitar el lector a `ImageIO.getImageReadersByFormatName("jpeg"/"png")` en lugar de autodetectar. Lo de JPEG progresivo está en SEC-I27-6 |
+| **1. Rutas de la miniatura / path traversal** | **Sin riesgo.** `AlmacenEvidenciasDisco.java:40-41`: `<hallazgoUUID>/<evidenciaUUID>.publica.jpg`, solo con UUID, y `resolver()` con `normalize()` + `startsWith(base)`. La escritura es atómica (temporal + `ATOMIC_MOVE`). La ruta nunca sale en una respuesta ni en un evento |
+| **1. Metadatos en la miniatura** | **Ninguno.** Con EXIF, COM, APP2 y un trailer en la entrada, la salida solo tiene los marcadores `E0 (JFIF), DB, C0, C4, DA`, y no aparecen "GPS" ni "Exif". `IIOImage(img, null, null)` sobre `TYPE_INT_RGB` tampoco escribe ICC |
+| **1. Guarda que omite `jpegBase64`** | **Correcto y acotada.** En el productor (`PublicadorEventos.java:63-71`) se quita solo esa clave de **una copia** y el resto pasa por `DetectorCoordenadas.contiene`. En el consumidor (`ValidadorSobre.java:121-139`) solo se excluye si es Base64 válido: con puntos, comas o grados sí se analiza. El riesgo que queda (contenido dentro del JPEG) es SEC-I27-4 |
+| **1. `POST …/republicar`** | Rol correcto, con *single-flight*, en un hilo propio y una transacción por foto. Lo que falta está en SEC-I27-7 |
+| **1. Runner de arranque** | `MigracionFotosPublicasAlArrancar`: en segundo plano, captura los errores y escribe en el log solo la clase. Se puede apagar por variable. Solo toca fotos `publica = true` sin miniatura. Sin observaciones |
+| **1. Ruta sin rol eliminada** | **Sí, por completo.** Se borraron `FotoPublicaController` y `FotosCientificoHttp`, y `SecurityConfig` ya no tiene `permitAll`. `PUBLICOS_PERMIT_ALL = Set.of()` y `RUTAS_PUBLICAS = Set.of()`. Una prueba comprueba 401 sin token y 404 con token. No queda ninguna referencia en código ni en configuración (`grep`) |
+| **2. Validación del JPEG y del sobre** | Sobre: reutiliza `ValidadorSobre` (claves duplicadas, tipo conocido, routing key igual al tipo, origen, `user_id`). Datos: UUID canónico, `cambioEn` entre 2020 y ahora + 1 día (evita "congelar" la foto), sha256 de 64 hex, lados entre 1 y 1200 como entero y tope del Base64 **antes** de decodificar. JPEG: SOI, sha256, recorrido de segmentos y escaneos y nada después del EOI. Falta la lista blanca (SEC-I27-4) |
+| **2. `user_id` / origen en la cola nueva** | **Sí.** `ConsumidorFotos.java:51` aplica `validarOrigen` igual que en `hallazgo.*`, con la verificación activa por defecto |
+| **2. Tope de 1 MB y memoria** | Ver SEC-I27-3 |
+| **2. Prefetch** | 4, configurable, en una fábrica propia que hereda reintentos y `default-requeue-rejected: false`. Es adecuado |
+| **2. Permisos de RabbitMQ** | **Mínimos.** `crear-usuarios.sh:54-57` solo amplía `consulta-publica.(eventos\|fotos)(.dlq)?`. El consumidor sigue sin `write` sobre `biohub.eventos`. `reportes.eventos` no recibe `evidencia.#`: `PATRONES` de reportes es `prueba.#` y `hallazgo.#` |
+| **2. Rutas `/fotos/{fotoId}` y `?nombre=`** | **Inyección:** no la hay. `fotoId` se valida con una regex de UUID canónico y `nombre` con `[\p{L} .'-]{2,150}`, y todo el SQL va parametrizado. **Enumeración:** con UUID v4 es inviable, y por nombre solo se obtiene lo que ya publica el catálogo. Una foto retirada da 404 al instante y su ETag también (el 304 exige `publica = TRUE`). **Cabeceras:** `nosniff`, `image/jpeg`, ETag con sha256 y errores en problem+json sin detalles. El riesgo de `immutable` está en SEC-I27-5 |
+| **2. `SecurityConfig`** | `permitAll` solo para `GET` y rutas exactas. `denyAll` por defecto. `fotoPorId` está registrado en `ArquitecturaSeguridadTest` |
+| **3. Detector unificado** | Ver SEC-I27-1 (texto) y SEC-I27-2 (atributos anidados, números y claves). **Atributos anidados:** los `String` se revisan a cualquier profundidad (tope de 16, y si se supera se rechaza). Las claves y los números no |
+| **3. Logs del listener AFTER_COMMIT** | **Ya no filtra datos.** `PublicadorCambiosHallazgo.java:46-51` captura `RuntimeException` y registra solo `hallazgoId`, tipo y `getClass().getSimpleName()`. La `IllegalArgumentException` de la guarda tampoco lleva valores. Ya no se devuelve un 500 después del commit (BE-R-1) |
+| **4. CSP con `blob:`** | Correcta en `index.html`, y `blob:` solo en `img-src`. Falta en el README (SEC-I27-8) |
+| **4. `credentials: 'omit'`** | **Sí** (`especies.js:68`). No se envían cookies ni token al gateway |
+| **4. Lista blanca de `fotoId`** | **Sí**, en tres puntos: `aEspeciePublica` (`idFotoValido`), `pedirFotoEspecie` (vuelve a validar antes de construir la URL) y `Ficha.jsx` sobre `location.state`. Un valor que no sea un UUID nunca llega a la URL |
+| **4. Revocación de blob URLs** | Se revoca al desmontar el componente o al cambiar de foto, nunca mientras la URL está en uso. La carrera mínima está en SEC-I27-I2. Sin sinks XSS: `<img src=blob:>` no ejecuta contenido |
+| **5. Dependencias** | Ninguna nueva. npm da 0 vulnerabilidades |
+
+## Estado de hallazgos previos
+| ID | Estado | Evidencia |
+|---|---|---|
+| **ARQ-R-1** (seguridad) | **Cerrado** | No queda ninguna ruta pública → científico. La única ruta sin rol desapareció del código, de la configuración y de las pruebas de arquitectura |
+| **SEC-R-2** | **Parcial (mejorado)** | **Resuelto:** un solo detector sin el atajo de "cualquier unidad", con coma decimal y `lat … lon …`. Los atributos de texto se revisan a cualquier profundidad. Se valida en `registrar` y en `reclasificar`/`actualizar` **antes** del commit. El listener ya no da 500. **Pendiente:** SEC-I27-1 (regresiones y formatos GPS) y SEC-I27-2 (claves y números en atributos, claves de plantilla) |
+| **SEC-R-1** | **Abierto** (fuera de alcance) | **D66 lo mitiga solo para el portal:** la miniatura se vuelve a codificar desde los píxeles y no hereda segundas imágenes MPF, trailers ni EXIF (comprobado). El consumidor rechaza además datos después del EOI y APP1/APP13. **No cambia nada** en la descarga interna del original ni en el audio: sigue en Alto para su responsable |
+| **SEC-R-4** (píxeles) | **Cerrado para la miniatura** | Tope de 40 MP antes de decodificar y submuestreo. Lo que queda es SEC-I27-6 (concurrencia y JPEG progresivo) |
+| **SEC-R-5** (autoría al publicar) | **Abierto, sin cambios** | `marcarPublica` sigue sin comprobar que quien publica sea el autor del hallazgo |
+| **SEC-15** | **Abierto** | Maven sigue sin escáner de CVE |
+
+## Bien hecho
+- **D66 elimina una superficie entera:** sin ruta sin rol en el científico, sin cliente HTTP en consulta-publica y sin decodificar imágenes en el camino público. Las pruebas de arquitectura vaciaron las excepciones (`Set.of()`), así que cualquier ruta pública nueva en el científico rompe el build.
+- **Miniatura sin metadatos de verdad:** se vuelve a codificar desde los píxeles sobre `TYPE_INT_RGB`. La salida solo tiene JFIF y las tablas, y ni siquiera hereda los restos de SEC-R-1.
+- **Tope de 40 MP leído del encabezado**, con submuestreo dentro del límite y mensajes al cliente sin la causa interna.
+- **Consumidor muy defensivo:** tope del Base64 **antes** de decodificar, sha256, recorrido completo de los segmentos (incluidos los datos de escaneo y los RST), nada después del EOI, `cambioEn` acotado contra eventos "del futuro", UUID canónico, lados enteros y un `CHECK` en la tabla que repite las reglas.
+- **Idempotencia sin bloqueos:** `UPDATE … WHERE cambio_en < ?` y una "lápida" `publica = FALSE` cuando la retirada llega antes que la publicación, para que una publicación vieja no reviva la foto.
+- **Exclusión acotada de `jpegBase64`:** solo esa clave, solo en una copia y, en el consumidor, solo si es Base64 válido.
+- **Mínimo privilegio en RabbitMQ:** la cola nueva solo amplía lo justo y reportes no recibe las fotos.
+- **web-publica:** el `fotoId` se valida en tres puntos, `credentials: 'omit'`, blobs propios del componente y revocados al desmontar, y sin sinks HTML.
+- **Logs limpios:** en los dos servicios solo se registran ids, tipo, origen y la clase de la excepción. Nunca bytes, textos ni claves que coincidieron.
+
+## Veredicto (iteración 27, 27f)
+**APROBADO CON OBSERVACIONES.** No hay Críticos ni Altos.
+- **Corregir antes del PR** (los tres son de esfuerzo S):
+  - **SEC-I27-1**, al menos las **regresiones**: el par sin signo de 3 decimales y el GMS sin símbolos, que antes se rechazaban y ahora llegan al portal. Lo ideal es incluir también el formato Garmin, el hemisferio delante y la normalización Unicode, con la prueba de paridad entre las dos copias.
+  - **SEC-I27-2:** claves y números en `verificarAtributos`. Es lo que falta para cerrar SEC-R-2, y coordinarlo con Hernando.
+  - **SEC-I27-8:** `blob:` en la CSP del README, para que no se rompan las fotos en producción.
+- **Pueden ir después del PR:** SEC-I27-3 a SEC-I27-7 y los informativos. SEC-I27-5 queda sujeto a la decisión del grupo sobre `immutable`.
+
+---
+
+# Iteración 27 – re-verificación del ciclo 27g
+
+**Fecha:** 2026-11-22. **Rama:** `feature/ubicacion-consulta-publica`, con cambios sin commit (27g ya está en la rama). **Alcance:** SEC-I27-1, SEC-I27-2, SEC-I27-7 y SEC-I27-8, además de una búsqueda de evasiones del detector y de los atributos que el corpus no cubre.
+
+## Resumen
+| Hallazgo de 27f | Estado | Evidencia |
+|---|---|---|
+| **SEC-I27-1** (Medio) regresiones del detector | **Cerrado** | Las tres regresiones (`5.532, 73.367`, `5 31 55 N`, `5°31N`), el formato Garmin, el hemisferio delante, la normalización Unicode, el hemisferio en palabras, las coordenadas planas y UTM se detectan. Patrones en `servicio-cientifico/.../eventos/service/DetectorCoordenadas.java:57-104` y normalización en `:115-142`. En consulta-publica, el bloque `<reglas-compartidas>` es idéntico byte a byte (`diff` sin diferencias en `:39-190`). Hay un corpus compartido (`detector-corpus.txt`, idéntico en los dos servicios, con 41 casos `+`, 37 `-` y 6 `?`) y `DetectorCoordenadasParidadTest`, que también fija el SHA-256 del bloque. Las pruebas pasan: científico 2/2 y consulta-publica 2/2. Hay residuos nuevos en SEC-I27g-1, SEC-I27g-3 y SEC-I27g-4 |
+| **SEC-I27-2** (Medio) claves y números en atributos | **Cerrado** (los casos que se reportaron) | `ValidadorTextoPublico.java:78-130` revisa claves y valores a cualquier profundidad, y `:133-155` busca pares numéricos (número o texto). La plantilla rechaza claves de coordenadas (`FichaPlantillaService.java:132-134`). Con la copia compilada se rechazan los cuatro casos de 27f: `{"lat":…,"lon":…}`, `{"latitud_gps":…}`, `{"punto":[…]}` y `{"x":"5.53214","y":"-73.36712"}`. El error no repite una clave que parezca coordenada (`:106-110`). `ValidadorTextoPublicoTest` pasa 80/80 y `FichaPlantillaServiceTest` 8/8. Lo que queda se describe en SEC-I27g-2 |
+| **SEC-I27-7** (Bajo) quién republica y 409 | **Cerrado** | `FotosPublicasAdminController.java:36-42` recibe el `Jwt` y pasa el `preferred_username`. `RepublicadorFotosPublicas.java:82` y `:101` registran quién lo pidió; `:111` registra el resultado. Si ya hay una republicación en curso, `RepublicacionEnCursoException` devuelve un 409 problem+json (`RegistroExceptionHandler`, `TIPO_CONFLICTO`). `RepublicadorFotosPublicasTest` pasa 3/3 |
+| **SEC-I27-8** (Bajo) `blob:` en la CSP del README | **Cerrado** | `web-publica/README.md:28` y `:36` usan `img-src 'self' data: blob:`, igual que `index.html:10`. El README explica el motivo en `:22` |
+
+| Severidad (hallazgos nuevos) | Cantidad |
+|---|---|
+| Crítico | 0 |
+| Alto | 0 |
+| Medio | 2 (SEC-I27g-1, SEC-I27g-2) |
+| Bajo | 2 (SEC-I27g-3, SEC-I27g-4) |
+| Informativo | 3 (SEC-I27g-I1 a SEC-I27g-I3) |
+
+## Cómo se revisó
+- **Documentación:** `00-plan.md` (iteración 27, fila 27g y "Pendiente para el grupo") y `04` §4.4, §7.6 y §13.10.
+- **Código:** las dos copias de `DetectorCoordenadas` (con `diff`), los dos `DetectorCoordenadasParidadTest` (idénticos salvo el paquete), los dos `detector-corpus.txt` (`diff` sin diferencias), `ValidadorTextoPublico`, `FichaPlantillaService`, `HallazgoService` (llamadas en `:82` y `:164`), `RepublicadorFotosPublicas`, `RepublicacionEnCursoException`, `FotosPublicasAdminController`, `RegistroExceptionHandler`, `FotosPublicas` (el `usuario` del sobre), `logback-spring.xml` y `web-publica/README.md`.
+- **Pruebas autorizadas (`mvn -o test`, sin la suite completa):**
+  - servicio-cientifico, `-Dtest='DetectorCoordenadas*,ValidadorTextoPublico*,FichaPlantilla*,RepublicadorFotos*'`: **97 pruebas, 0 fallos**.
+  - consulta-publica, `-Dtest='DetectorCoordenadas*'`: **9 pruebas, 0 fallos**.
+- **Pruebas en el scratchpad (copias compiladas, fuera del repo y sin servicios):**
+  1. Se pasaron 63 textos de evasión por las dos copias del detector. Siempre dieron el mismo resultado.
+  2. Se pasaron 30 mapas de atributos por `ValidadorTextoPublico`.
+  3. Se probó la resistencia a ReDoS con entradas hostiles de 90 000 a 105 000 caracteres: todas tardaron entre 41 y 266 ms, en tiempo lineal y sin retroceso catastrófico.
+  4. Se escribió un prototipo de las correcciones que se proponen y se midió contra el corpus y textos adicionales.
+- No se leyeron `.env` ni `certs/`. No se ejecutó nada contra servicios reales.
+
+## Hallazgos nuevos
+
+### SEC-I27g-1 · **Medio** · El detector no cubre varios formatos que se escriben sin mala intención, y esos textos llegan al portal
+- **Archivos:** las dos copias de `DetectorCoordenadas`:
+  - en servicio-cientifico: `SEP` en `:57`, `HEMISFERIO_DELANTE` en `:82-84`, `GMS_SIN_SIMBOLOS` en `:86-87`, `GRADOS_EN_PALABRAS` en `:89-90`, `PAR_COLOMBIA` en `:92-93` y `UTM` en `:103-104`;
+  - en consulta-publica: `:47`, `:72`, `:76`, `:79`, `:82` y `:93`.
+- **Problema:** estos textos pasan las dos barreras (el resultado es el mismo en las dos copias):
+
+  | Texto | Por qué pasa |
+  |---|---|
+  | `5.53214    -73.36712` (4 espacios) o `5.53214,` + salto de línea + 4 espacios + `-73.36712` | `SEP` admite como mucho 3 espacios. Es lo típico al pegar desde una hoja de cálculo o desde un texto con sangría |
+  | `5.53214 y -73.36712` | `y` no cuenta como separador |
+  | `5 31 55 n 73 22 10 w` / `n05 31.928 w073 22.027` / `5°31 n` | El hemisferio solo se reconoce en mayúscula |
+  | `5 31' 55" N` (sin el símbolo de grado, que casi ningún teclado tiene) | `GRADOS_MINUTOS` exige `°` |
+  | `05:31:55 N, 073:22:10 W` / `5-31-55 N` | GMS separado con `:` o `-` |
+  | `5 grados, 31 minutos y 55 segundos norte` / `5 gr 31 min N` | Hay una coma después de "grados", o aparece la abreviatura |
+  | `73.367, 5.532` / `POINT(-73.367 5.532)` (longitud primero y 3 decimales: es el orden de GeoJSON, WKT y QGIS) | `PAR_COLOMBIA` solo admite el orden latitud, longitud. Con 4 decimales ya se detecta |
+  | `18 N 612345 1012345` / `18N 612345E 1012345N` / `UTM 18 612345 1012345` | `UTM` exige la zona pegada a la banda y no admite los sufijos E/N |
+  | `18NWL1234567890` / `18N WL 12345 67890` (MGRS, una opción de los Garmin) | No hay patrón |
+  | `Norte 1 012 345 Este 1 045 678` / `X: 1045678 Y: 1012345` / `Easting … Northing …` | `PLANAS` no admite el espacio como separador de miles, ni las etiquetas X/Y ni las inglesas |
+  | `67P7GFXM+QH` / `GFXM+QH Arcabuco` (Plus Code: Google Maps lo muestra en cada lugar y tiene unos 14 m de precisión) | No hay patrón |
+  | `https://www.openstreetmap.org/?mlat=5.532&mlon=-73.367` / `…data=!3d5.53214!4d-73.36712` | `&` y `!4d` no cuentan como separadores. Los enlaces cortos (`maps.app.goo.gl/…`) no se pueden detectar por su forma |
+- **Por qué importa:** es el mismo escenario de SEC-J-02 y SEC-I27-1. Un investigador copia lo que muestra su equipo o el navegador, el texto se guarda en claro en el hallazgo y en el historial append-only (D60), y **se publica en el portal**. El riesgo es menor que el de SEC-I27-1 porque ninguno de estos formatos es una regresión. Pero los cuatro primeros son tan probables como los que se corrigieron.
+- **Corrección:** en las dos copias, dentro de `<reglas-compartidas>`, añadiendo los casos al corpus y actualizando el resumen.
+  ```java
+  // normalizar(): al final, colapsar cualquier racha de espacios (así "SEP" vuelve a bastar)
+  return sb.toString().replaceAll("\\s+", " ");
+
+  /** Hemisferio en minúscula: solo n y w (la "o" y la "e" son conjunciones; la "s" choca con los segundos). */
+  private static final Pattern HEMISFERIO_MINUSCULA = Pattern.compile(
+          "\\b\\d{1,3}(?:\\s{0,2}°\\s{0,2}|\\s{1,2})\\d{1,2}(?:\\s{1,2}\\d{1,2}(?:[.,]\\d+)?)?\\s{0,2}[nw]\\b"
+          + "|\\b[nsw]\\s{0,2}\\d{1,3}(?:[.,]\\d{4,}|\\s{0,2}°\\s{0,2}\\d|\\s{1,2}\\d{1,2}[.,]\\d{1,4})");
+  /** GMS sin "°" pero con minutos ("5 31' 55"), o separado con ":" o "-" y con hemisferio. */
+  private static final Pattern GMS_OTROS = Pattern.compile(
+          "\\b\\d{1,3}\\s{1,2}\\d{1,2}(?:[.,]\\d+)?\\s{0,2}['′’´]\\s{0,2}\\d{1,2}"
+          + "|(?i)\\b\\d{1,3}[:\\-]\\d{2}[:\\-]\\d{2}(?:[.,]\\d+)?\\s{0,2}[nw]\\b"
+          + "|\\b\\d{1,3}[:\\-]\\d{2}[:\\-]\\d{2}(?:[.,]\\d+)?\\s{0,2}[NSEOW]\\b");
+  /** "5 grados, 31 minutos", "5 gr 31 min". Sustituye a GRADOS_EN_PALABRAS. */
+  private static final Pattern GRADOS_EN_PALABRAS = Pattern.compile(
+          "(?iu)\\b\\d{1,3}\\s{0,2}(?:grados?|gr\\.?)\\s{0,2},?\\s{0,2}\\d{1,2}\\s{0,2}(?:minutos?|min\\.?|['′’´])");
+  /** Par de Colombia con la longitud delante (GeoJSON/WKT). */
+  private static final Pattern PAR_COLOMBIA_LON_LAT = Pattern.compile(
+          "[-+]?\\b0?(?:6[6-9]|7\\d|8[0-2])[.,]\\d{3,}" + SEP + "[-+]?(?:\\d|1[0-3])[.,]\\d{3,}\\b");
+  /** Pares con "y" (con 4 decimales, para no marcar "CV 2.345 y -1.234"). */
+  private static final Pattern PAR_CON_Y = Pattern.compile(
+          "[-+]?\\d{1,3}[.,]\\d{4,}\\s{1,3}y\\s{1,3}[-+]\\d{1,3}[.,]\\d{4,}");
+  /** UTM con la zona separada o sufijos E/N, y MGRS. */
+  private static final Pattern UTM = Pattern.compile(
+          "\\b\\d{1,2}\\s?[C-HJ-NP-X]\\s{1,3}\\d{5,7}\\s?[mE]?" + SEP + "\\d{5,8}\\s?[mN]?\\b"
+          + "|\\b\\d{1,2}[C-HJ-NP-X]\\s?[A-HJ-NP-Z]{2}\\s?(?:\\d{4}\\s?\\d{4}|\\d{5}\\s?\\d{5})\\b");
+  /** Planas con el espacio como separador de miles, X/Y y etiquetas inglesas. Sustituye a PLANAS. */
+  private static final Pattern PLANAS = Pattern.compile(
+          "(?iu)\\b(?:norte|este|northing|easting|n|e|x|y)\\s{0,2}[:=]?\\s{0,2}\\d(?:[ .,]?\\d{3}){2}\\b");
+  /** Plus Codes y enlaces de mapas: en un texto público no hay motivo para ninguno de los dos. */
+  private static final Pattern PLUS_CODE_O_ENLACE = Pattern.compile(
+          "(?i)\\b[23456789CFGHJMPQRVWX]{4,8}\\+[23456789CFGHJMPQRVWX]{2,3}\\b"
+          + "|[?&#](?:mlat|mlon|ll|lat|lon|lng|center)=-?\\d|![34]d-?\\d"
+          + "|maps\\.app\\.goo\\.gl|goo\\.gl/maps|osm\\.org/go/|what3words|w3w\\.co");
+  ```
+  **Probado en el scratchpad** (prototipo con estos patrones más SEC-I27g-3, encadenado detrás del detector actual):
+  - Se detectan **69 de 70** positivos: los 41 del corpus más los 29 nuevos de esta revisión, incluidos los de SEC-I27g-3. Solo se escapa `5.53214` + U+2063 + `-73.36712`: al borrar el carácter invisible no queda ningún separador.
+  - Hay **0 falsos positivos en 63 legítimos**: los 37 del corpus y 26 más, como `a las 05:31:55`, `duración 5 12 s`, `CV 2.345 y -1.234`, `Muestra 18N 2 tubos`, `Teléfono 601 3216549`, `precio 1.250.000 pesos` y `Colección ICN 12345 y 67890`.
+  - Para la primera versión de `PAR_CON_Y` y `[nsw]` se encontraron 3 falsos positivos. Con los ajustes de arriba bajaron a 0.
+- **Esfuerzo:** M (dos copias, el corpus y el resumen). **Responsable sugerido:** Juanita. Avisar a Hernando de las reglas nuevas.
+
+### SEC-I27g-2 · **Medio** · Atributos: todavía entran coordenadas planas con las claves `norte`/`este`, claves en camelCase o con punto, y `x`/`y` con el símbolo de grado
+- **Archivos:**
+  - `servicio-cientifico/.../registro/service/ValidadorTextoPublico.java:38-42`: los prefijos y términos no incluyen `norte`, `este`, `northing` ni `easting`.
+  - `:195-196`: la normalización no separa camelCase ni el `.`.
+  - `:133-155`: la búsqueda de pares solo mira el mismo contenedor y solo usa los primeros 64 números con 3 o más decimales.
+  - `:203`: `x`/`y` solo se rechazan si el valor es numérico.
+- **Problema** (con la copia compilada). Todo esto se guarda sin error:
+
+  | Atributos | Por qué pasa |
+  |---|---|
+  | `{"norte": 1012345, "este": 1045678}` o los mismos valores como texto, o `{"northing":…, "easting":…}` | Coordenadas planas MAGNA, como enteros: ni la clave ni el par (escala 0) se marcan. **Una plantilla puede definir `norte`/`este` de tipo NUMERO** (`FichaPlantillaService.java:134` lo permite) |
+  | `{"latInicio": 5.53, "lonInicio": -73.36}`, `{"geoLat": 5.53214}`, `{"latE7": 55321400, "lngE7": -733671200}`, `{"punto.lat": 5.53214}` | `lat_inicio` se rechaza, pero `latInicio` queda como `latinicio` y no coincide. `.` no cuenta como separador. Además, `validarValores` sigue sin llamarse en producción (ARQ-R-3), así que la regla de minúsculas de la plantilla no limita las claves del hallazgo |
+  | `{"x": "5.53214°", "y": "-73.36712°"}` / `{"x": "5.53214 grados", …}` | El valor no es numérico, así que la clave `x` se admite. Cada valor por separado no tiene forma de coordenada y el par no se analiza porque `comoDecimal` falla con el `°`. El punto 3 de la corrección de 27f (revisar el texto concatenado) no se implementó |
+  | `{"inicio": {"v": 5.53214}, "fin": {"v": -73.36712}}` | El par se reparte entre dos objetos hermanos |
+  | 65 números `1000.001` y después `5.53214, -73.36712` en la misma lista o en el mismo objeto | El tope de `:143-145` corta el recorrido antes de llegar al par (solo con intención) |
+- **Por qué importa:** el impacto es el mismo que en SEC-I27-2. La coordenada queda en claro en `hallazgo.atributos` y en el historial que no se puede borrar (D60), fuera de AES-GCM, y `HallazgoResponse` la muestra a `administrador` y `auditor_cientifico`. **No llega al portal**, porque los atributos no viajan en el evento. El primer caso no necesita mala intención: en Colombia es habitual anotar la coordenada plana como "Norte/Este", y el propio detector de texto ya la reconoce (`PLANAS`).
+- **Corrección:**
+  ```java
+  // 1) Separar camelCase y "." antes de normalizar la clave
+  String n = Normalizer.normalize(clave.replaceAll("([a-z0-9])([A-Z])", "$1_$2"), Normalizer.Form.NFKD)
+          .replaceAll("\\p{M}", "").toLowerCase(Locale.ROOT).strip().replaceAll("[_\\-\\s.]+", "_");
+  // 2) Planas: norte/este/northing/easting (y con sufijo de unidad) cuando el valor es numérico
+  private static final Pattern PLANAS_CLAVE = Pattern.compile("^(?:norte|este|northing|easting)(?:_|\\d|$)");
+  return valorNumerico && (… || PLANAS_CLAVE.matcher(n).find());
+  // 3) Clave + valor juntos y texto concatenado del contenedor: "norte 1012345", "x 5.53214°"…
+  verificar(campo, clave + " " + valorComoTexto);                   // en verificarClave
+  verificar(campo, String.join(" ", textosYNumerosDelContenedor));  // en verificarContenedor
+  // 4) Sin tope que deje pasar: guardar solo los que estén en [-180, 180] y rechazar al encontrar el par
+  if (n != null && n.scale() >= 3 && enRango(n, 180)) { if (hayLatitud(precisos, n)) throw …; precisos.add(n); }
+  ```
+  El par repartido entre objetos hermanos se cubre con el punto 3 si se aplica al texto concatenado de **todo** el árbol, igual que hace `DetectorCoordenadas.contiene`.
+- **Esfuerzo:** S. **Responsable sugerido:** Hernando (`registro`) con Juanita (validador).
+
+### SEC-I27g-3 · **Bajo** · La normalización deja caracteres Unicode con los que se puede evadir el detector a propósito
+- **Archivos:** `DetectorCoordenadas.normalizar` y `esEspacioRaro`, en servicio-cientifico `:115-142` y en consulta-publica `:105-133`.
+- **Problema:** pasan (con el mismo resultado en las dos copias):
+  - caracteres de formato (Cf) que no están en la lista: U+2062, U+2063 y U+180E;
+  - marcas sin espacio (Mn): U+034F y el selector de variante U+FE0F, dentro de un número o como separador;
+  - separadores decimales U+00B7 (`5·53214`) y U+066B (`5٫53214`);
+  - comas U+3001, U+060C y U+201A;
+  - dígitos fuera del plano básico, como los osmanya U+104A0 y siguientes, porque el bucle recorre `char` y no puntos de código.
+
+  NFKC ya resuelve los dígitos de ancho completo, los superíndices y los dígitos matemáticos.
+- **Por qué importa:** solo lo aprovecha alguien que quiera evadir el detector, y esa persona puede partir la coordenada entre campos de muchas otras formas. Aun así, borrar estos caracteres sale casi gratis y cierra la familia de trucos de "carácter invisible".
+- **Corrección** (incluida en el prototipo probado de SEC-I27g-1):
+  ```java
+  texto.codePoints().forEach(cp -> {
+      int t = Character.getType(cp);
+      if (t == Character.FORMAT || t == Character.NON_SPACING_MARK || t == Character.ENCLOSING_MARK) return; // borrar
+      if (cp == 0x00B7 || cp == 0x066B) { sb.append('.'); return; }
+      if (cp == 0x3001 || cp == 0x060C || cp == 0x201A) { sb.append(','); return; }
+      if (cp >= 128 && Character.isDigit(cp)) { sb.append((char) ('0' + Character.digit(cp, 10))); return; }
+      sb.appendCodePoint(cp);
+  });
+  ```
+  Opcional: analizar el texto **dos veces**, una borrando los Cf y otra cambiándolos por un espacio, para cubrir `5.53214` + U+2063 + `-73.36712`.
+- **Esfuerzo:** S. **Responsable sugerido:** Juanita.
+
+### SEC-I27g-4 · **Bajo** · La paridad entre las dos copias del detector solo se comprueba dentro de cada módulo
+- **Archivos:** `DetectorCoordenadasParidadTest.java:58-78` (los dos) y `detector-corpus.txt:100` (los dos).
+- **Problema:** cada servicio compara su bloque con el resumen de **su propio** corpus. Si alguien cambia el bloque de una copia y actualiza el resumen solo en el corpus de ese módulo, las dos pruebas siguen en verde y las copias se separan sin que nadie lo note. Ni `ci.yml` ni ningún script comparan los dos corpus.
+- **Por qué importa:** la regresión de SEC-I27-1 salió justo de una diferencia entre dos barreras. Esta prueba existe para evitarlo, pero hoy depende de que se cumpla una convención.
+- **Corrección:** comprobar los dos lados en la propia prueba (solo cuando existe el directorio hermano, para no romper los builds aislados) o añadir un paso en el CI:
+  ```java
+  Path otro = Path.of("..", "servicio-consulta-publica", "src/test/resources/detector-corpus.txt"); // y a la inversa
+  Assumptions.assumeTrue(Files.exists(otro));
+  assertThat(Files.readString(otro)).isEqualTo(Files.readString(Path.of("src/test/resources/detector-corpus.txt")));
+  ```
+  ```yaml
+  - run: cmp servicio-cientifico/src/test/resources/detector-corpus.txt servicio-consulta-publica/src/test/resources/detector-corpus.txt
+  ```
+- **Esfuerzo:** S. **Responsable sugerido:** Juanita.
+
+### Informativos
+- **SEC-I27g-I1 (contrato sin el 409):** `04-contrato-api.md:876` solo documenta el 202 de `POST …/republicar`. Hay que añadir `409 CONFLICTO` ("ya hay una republicación en curso; no se inició otra"). **Esfuerzo:** S.
+- **SEC-I27g-I2 (un tercer detector sin endurecer):** `ubicacion/domain/DetectorCoordenadasEnTexto.java` conserva las reglas antiguas y lo usa `UbicacionServiceImpl.java:94` para `nombreCientifico`. Hoy no hay riesgo, porque `HallazgoService` valida el nombre con el detector unificado antes de llamar a ubicación. Aun así, es una tercera copia que puede dar una falsa sensación de cobertura. Conviene que delegue en el detector unificado o que se elimine si D53 lo permite. **Esfuerzo:** S.
+- **SEC-I27g-I3 (auditoría de la republicación):** el `preferred_username` va al log general (`RepublicadorFotosPublicas.java:82`), no al de auditoría, que tiene retención propia. Basta para SEC-I27-7. Si HU-11 c.3 exige conservarlo, hay que moverlo a un logger de auditoría. La inyección en el log no es realista, porque Keycloak no admite caracteres de control en el nombre de usuario. El usuario también viaja en el sobre de `evidencia.publicada`, pero los consumidores no lo guardan (§7.2), así que no se expone.
+
+## Respuestas por punto del alcance
+| Punto | Resultado |
+|---|---|
+| **Copias equivalentes** | **Sí.** El bloque `<reglas-compartidas>` es idéntico, el corpus también y las pruebas de paridad son iguales salvo el paquete. Al pasar los 63 textos de evasión por las dos copias, **ninguno** dio un resultado distinto. Fuera del bloque solo está `contieneEnBruto`, propio de consulta-publica |
+| **Separadores Unicode** | NBSP, U+2007, U+202F, U+3000, U+2028, ancho cero, guiones Unicode y dígitos de ancho completo, árabes, matemáticos y superíndices: **detectados**. U+2062/2063, U+180E, U+034F, U+FE0F, U+00B7, U+066B y las comas no latinas: **no** (SEC-I27g-3) |
+| **GMS** | Con símbolos, `º`/`˚`, sin símbolos en mayúscula, Garmin y "grados … minutos": detectados. En minúscula, sin `°`, con `:` y "grados, …": no (SEC-I27g-1) |
+| **Coma decimal** | `5,532 73,367`, `5,532; 73,367` y `-4,215; -69,940`: **detectados** |
+| **Partidas en dos atributos** | `{"x":"5.53214","y":"-73.36712"}` y pares en el mismo objeto o lista: **rechazados**. Con `°`, con "grados" o repartidas en objetos hermanos: **no** (SEC-I27g-2). Entre dos campos de texto distintos (por ejemplo `descripcion` y `nombreComun`) ningún detector por forma puede ser completo: es un límite conocido |
+| **Valores negativos** | Latitud sur (Leticia) con 3 decimales y longitud sin signo: detectado. Longitud primero con 3 decimales: **no** (SEC-I27g-1). Con 2 decimales (≈1 km) no se detecta, por diseño |
+| **Garmin / UTM** | Garmin en mayúscula y UTM `18N 612345 1012345`: detectados. Garmin en minúscula, UTM con la zona separada o con sufijos E/N y MGRS: **no** (SEC-I27g-1) |
+| **ReDoS** | Lineal: entre 41 y 266 ms con entradas de 90 000 a 105 000 caracteres. Todos los cuantificadores están acotados |
+| **409** | No filtra nada: el mensaje es fijo, con `ruta` y el código `CONFLICTO`. No dice quién tiene la republicación en curso ni cuántas fotos hay. El conteo solo sale en el 202, y solo para `administrador` |
+| **Log del administrador** | Solo el `preferred_username` y los conteos. Nunca ids de hallazgo junto a datos, bytes ni texto. Los errores por foto solo registran el `evidenciaId` y la clase de la excepción (`:138`) |
+
+## Sobre el falso positivo `{"largo": 1.234, "ancho": 2.345}`
+**Es aceptable como medida temporal, pero conviene afinarlo.** Falla del lado seguro: rechaza con un 400 que explica qué hacer, y no causa ninguna fuga. Sin embargo, no es raro: una balanza de 0,001 g y una medida en cm con 3 decimales en el mismo objeto (`{"peso_g": 1.234, "longitud_cm": 23.456}`) también se rechazan (comprobado). Eso empuja a los investigadores a redondear o a mover datos al texto libre. Se puede afinar sin abrir una vía de evasión:
+- **Dentro de Colombia, 3 decimales o más:** un valor en |lat| ≤ 13,5 y otro en 66 ≤ |lon| ≤ 82. Esto cubre todo el territorio continental e insular, y descarta `1.234`/`2.345` porque ninguno cae en el rango de longitud.
+- **En cualquier otro lugar, 4 decimales o más:** la regla genérica actual.
+
+Es lo mismo que propone el plan ("≥ 4 decimales fuera del rango de Colombia"). Lo que sigue dando falso positivo (dos medidas pequeñas con 4 decimales) es muy raro. **Recomendación:** adoptarlo junto con SEC-I27g-2 y anotar el falso positivo restante en el javadoc y en el corpus.
+
+## Estado de hallazgos previos
+| ID | Estado |
+|---|---|
+| SEC-I27-1, SEC-I27-2, SEC-I27-7, SEC-I27-8 | **Cerrados** (ver Resumen) |
+| SEC-R-2 | **Cerrado en lo que se pidió**: un detector único, paridad, atributos con claves y números, y plantillas. Lo que queda está en SEC-I27g-1 y SEC-I27g-2 |
+| SEC-I27-3 a SEC-I27-6, SEC-I27-I1 a SEC-I27-I4 | Sin cambios: abiertos y aplazados según el veredicto de 27f. `index.html:10` sigue con `%CONNECT_SRC%` en `img-src` (SEC-I27-I1) |
+| SEC-R-1, SEC-R-5, SEC-15 | Sin cambios |
+
+## Bien hecho
+- **La paridad ahora es verificable:** hay un bloque marcado, su resumen SHA-256 y un corpus compartido con falsos positivos conocidos (`?`) documentados en el javadoc. Es la forma correcta de mantener dos copias sin un módulo común (D4). Solo falta compararlas entre módulos (SEC-I27g-4).
+- **La normalización corrige un detalle difícil:** cambia `º`/`˚` por `°` **antes** de NFKC, que de otro modo convertiría `º` en la letra "o".
+- **El error del atributo no repite una clave que parezca coordenada** (`campoDe`), y el mensaje nunca incluye el valor.
+- **SEC-I27-7 está bien resuelto:** hay un `record Resultado` con `yaEnCurso` y un 409 problem+json probado, y el log registra quién pidió la republicación y cuál fue el resultado. El *single-flight* se libera en `finally` y también si el ejecutor rechaza la tarea (`:118-121`).
+- **Patrones sin ReDoS**, con todos los cuantificadores acotados.
+
+## Veredicto (iteración 27, re-verificación del ciclo 27g)
+**APROBADO CON OBSERVACIONES.** No hay hallazgos Críticos ni Altos. Los cuatro hallazgos de 27f que había que corregir antes del PR (SEC-I27-1, SEC-I27-2, SEC-I27-7 y SEC-I27-8) están **cerrados**.
+- **Recomendado antes del PR** (no bloquea; esfuerzo S en cada caso):
+  - de SEC-I27g-1, al menos colapsar los espacios en `normalizar`, el hemisferio en minúscula (`n`/`w`), el GMS sin `°` y el par con la longitud primero;
+  - de SEC-I27g-2, las claves `norte`/`este` y la separación de camelCase.
+- **Puede ir después:** el resto de SEC-I27g-1 (MGRS, Plus Codes y enlaces), SEC-I27g-3, SEC-I27g-4 y los informativos.
+
+### Iteración 27 – hallazgo en CI: SEC-I27-CI-1 (Alto, cerrado)
+- **Archivo:** `DetectorCoordenadas.java` (patrón `PLANAS`, en las dos copias).
+- **Problema:** la letra sola `n`/`e` pegada a 7 cifras se tomaba por coordenada plana. Un UUID que empieza por `e` y 7 dígitos (≈ 2 de cada 1.000) hacía que el evento se descartara en silencio con ack; la ficha no se habría publicado. Se detectó porque `QaEventosInvalidosDlqTest` fallaba al azar en GitHub Actions.
+- **Corrección:** la letra sola exige espacio, `:` o `=` antes del número. Corpus con UUID legítimos y resumen del bloque actualizados en los dos servicios. 0 de 200.000 UUID aleatorios marcados.
+- **Efecto residual aceptado:** una plana escrita sin separador (`e1045678`) ya no se detecta.
+- **Verificación:** `verify` científico 677 (+3 omitidos) y consulta-publica 408, 0 fallos; CI del PR #18 22/22.
