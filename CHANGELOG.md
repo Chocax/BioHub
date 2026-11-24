@@ -6,7 +6,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
 ### Added (cóndor y README, 2026-11-24)
 - El cóndor andino entra a la colección: la lámina IX del *Recueil d'observations de zoologie* de Humboldt y Bonpland (1811, dominio público) es la obra número 20 del carrusel interno, el cielo del portal y el fondo del login.
-- En el login, dos cóndores (ilustración propia, `condor.svg`) planean en círculos detrás de la tarjeta; se ocultan en pantallas pequeñas y con movimiento reducido.
+- En el login, dos cóndores (silueta propia en la pose heráldica del escudo de Bogotá, `condor.svg`) planean en círculos detrás de la tarjeta; se ocultan en pantallas pequeñas y con movimiento reducido.
 - README nuevo: cabecera animada, stack como cartelas, fichas propias en vez de insignias, capturas, arquitectura, concepto artístico y reparto del equipo.
 
 ### Fixed (2026-11-24)
