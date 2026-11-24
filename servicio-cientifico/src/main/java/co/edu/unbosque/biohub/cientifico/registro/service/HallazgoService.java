@@ -115,6 +115,8 @@ public class HallazgoService {
 
         validarComunes(comando.nombreCientifico(), comando.familia(), comando.fechaRecoleccion(),
                 comando.departamento(), comando.descripcion(), comando.nombreComun(), comando.tipoEspecimen());
+        // SEC-R-2: los valores de texto de los atributos tampoco pueden traer coordenadas escritas a mano.
+        validadorTexto.verificarAtributos(comando.atributos());
         exigirTexto("investigador", investigador, 100);
         // HU-01: el tipo de espécimen es obligatorio al registrar, aunque el evento público lo admita vacío.
         exigirTexto("tipoEspecimen", comando.tipoEspecimen(), MAX_TIPO_ESPECIMEN);
@@ -191,12 +193,15 @@ public class HallazgoService {
         validarLongitud("nombreComun", comando.nombreComun(), MAX_NOMBRE);
         validarLongitud("tipoEspecimen", comando.tipoEspecimen(), MAX_TIPO_ESPECIMEN);
         validarLongitud("descripcion", comando.descripcion(), MAX_DESCRIPCION);
+        // BE-R-1 / SEC-R-2: mismas reglas que el publicador, antes de tocar la base: texto o atributos con
+        // coordenadas dan 400 y no dejan nada guardado (el snapshot revisa luego el resultado completo).
         validadorTexto.verificar("nombreCientifico", comando.nombreCientifico());
         validadorTexto.verificar("nombreComun", comando.nombreComun());
         validadorTexto.verificar("familia", comando.familia());
         validadorTexto.verificar("tipoEspecimen", comando.tipoEspecimen());
         validadorTexto.verificar("departamento", comando.departamento());
         validadorTexto.verificar("descripcion", comando.descripcion());
+        validadorTexto.verificarAtributos(comando.atributos());
 
         boolean cambiaPlantilla = comando.nombreCientifico() != null || comando.atributos() != null;
         String especieFinal = comando.nombreCientifico() == null

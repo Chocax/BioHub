@@ -1,7 +1,11 @@
+# levantar.ps1: logs y estado del entorno local
+.biohub-local/
+
 # Java / Maven
 target/
 *.class
 *.log
+logs/
 hs_err_pid*
 
 # Node
@@ -43,3 +47,6 @@ secrets/
 # Certificados de Aiven (CA descargado y truststore convertido; ver docs/equipo/09-despliegue.md)
 ca.pem
 certs/
+
+# Evidencias de hallazgos subidas en desarrollo (RF1): son archivos de usuarios, nunca se versionan
+**/datos/evidencias/

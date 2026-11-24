@@ -45,6 +45,17 @@ class MonitorCargaFilterTest {
     }
 
     @Test
+    @DisplayName("ARQ-R-5: la portada (catálogo, familias y fotos de /especies) también alimenta al monitor")
+    void midePeticionesDeEspecies() throws Exception {
+        for (String ruta : new String[] {"/api/publica/especies", "/api/publica/especies/familias",
+                "/api/publica/especies/fotos/9b1d", "/api/publica/especies/foto"}) {
+            filtro.doFilter(new MockHttpServletRequest("GET", ruta), new MockHttpServletResponse(), new MockFilterChain());
+        }
+        org.mockito.Mockito.verify(monitor, org.mockito.Mockito.times(4)).iniciarPeticion();
+        org.mockito.Mockito.verify(monitor, org.mockito.Mockito.times(4)).terminarPeticion(anyLong());
+    }
+
+    @Test
     @DisplayName("ARQ-06: aunque la petición falle, la medición se cierra (no queda una petición 'en curso' fantasma)")
     void cierraAunqueFalle() {
         MockFilterChain cadena = new MockFilterChain() {
@@ -61,7 +72,8 @@ class MonitorCargaFilterTest {
     @Test
     @DisplayName("ARQ-06: las rutas que no son lecturas públicas (eventos, actuator) no cuentan para la carga")
     void ignoraOtrasRutas() throws Exception {
-        for (String ruta : new String[] {"/actuator/health", "/api/publica/eventos", "/api/otra"}) {
+        for (String ruta : new String[] {"/actuator/health", "/api/publica/eventos", "/api/publica/eventos/recibidos",
+                "/api/publica/ping", "/api/publica/especiesX", "/api/otra"}) {
             filtro.doFilter(new MockHttpServletRequest("GET", ruta), new MockHttpServletResponse(), new MockFilterChain());
         }
         verify(monitor, never()).iniciarPeticion();

@@ -1,0 +1,40 @@
+{
+  "parametros": {
+    "base_url": "http://host.docker.internal:18080",
+    "abuso_req_s": 200,
+    "limite_por_defecto": 60,
+    "limite_b": 120,
+    "t_base_s": 60,
+    "t_abuso_s": 120,
+    "t_post_s": 30,
+    "max_200_abusivo": 180,
+    "commit": "f63c6fa-sin-commit",
+    "red_k6": "bridge-host.docker.internal"
+  },
+  "peticiones": 24562,
+  "iteraciones_descartadas": 0,
+  "abusivo": {
+    "respuestas_200": 120,
+    "respuestas_429": 23881,
+    "sin_retry_after": 0,
+    "otros_estados": 0,
+    "p95_ms": 4.629934
+  },
+  "cumplidores_pct_200": {
+    "b_limite_configurado": 100,
+    "c_limite_por_defecto": 100,
+    "portal": 100
+  },
+  "cumplidores_p95_ms": {
+    "base": 11.526288600000003,
+    "abuso": 10.39484305,
+    "post": 11.5957844,
+    "aumento_en_abuso_ms": -1.1314455500000022
+  },
+  "revocacion": {
+    "pct_200_antes": 100,
+    "pct_401_despues": 100,
+    "aceptadas_tras_revocar": 0
+  },
+  "umbrales_cumplidos": true
+}

@@ -11,12 +11,15 @@ import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import co.edu.unbosque.biohub.consultapublica.service.ErrorCampo;
 import co.edu.unbosque.biohub.consultapublica.service.FichaNoEncontradaException;
+import co.edu.unbosque.biohub.consultapublica.service.FotoNoEncontradaException;
 import co.edu.unbosque.biohub.consultapublica.service.ParametroInvalidoException;
 
 /**
@@ -25,7 +28,7 @@ import co.edu.unbosque.biohub.consultapublica.service.ParametroInvalidoException
  * detalles internos. Acotado a {@link FichasPublicasController}: no altera el 401/403 de Spring Security
  * ni los demás controladores.
  */
-@RestControllerAdvice(assignableTypes = FichasPublicasController.class)
+@RestControllerAdvice(assignableTypes = {FichasPublicasController.class, EspeciesPublicasController.class})
 public class ConsultaPublicaExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ConsultaPublicaExceptionHandler.class);
@@ -42,6 +45,12 @@ public class ConsultaPublicaExceptionHandler {
                 "NO_ENCONTRADO", req, null);
     }
 
+    @ExceptionHandler(FotoNoEncontradaException.class)
+    ResponseEntity<ProblemaResponse> fotoNoEncontrada(FotoNoEncontradaException e, HttpServletRequest req) {
+        return respuesta(HttpStatus.NOT_FOUND, "No encontrado", "La foto solicitada no existe.",
+                "NO_ENCONTRADO", req, null);
+    }
+
     /** mysql-lectura caída (o sin conexiones) y dato fuera de caché. */
     @ExceptionHandler(DataAccessException.class)
     ResponseEntity<ProblemaResponse> baseDeDatos(DataAccessException e, HttpServletRequest req) {
@@ -49,6 +58,15 @@ public class ConsultaPublicaExceptionHandler {
         return respuesta(HttpStatus.SERVICE_UNAVAILABLE, "Servicio no disponible",
                 "El servicio no está disponible en este momento. Intenta de nuevo.",
                 "SERVICIO_NO_DISPONIBLE", req, null);
+    }
+
+    /**
+     * Un 401/403 de {@code @PreAuthorize} no es un error interno: se devuelve a Spring Security para que lo resuelva
+     * {@code ProblemaSeguridadHandler} (problem+json). Sin esto lo capturaría el manejador genérico como 500.
+     */
+    @ExceptionHandler({AccessDeniedException.class, AuthenticationException.class})
+    void seguridad(RuntimeException e) {
+        throw e;
     }
 
     @ExceptionHandler(Exception.class)

@@ -28,7 +28,10 @@ export const FICHA_COMUN = {
   departamentoCodigo: '05',
 };
 
-const resumen = ({ tipoEspecimen, fechaRecoleccion, descripcion, ubicacionProtegida, ...r }) => r;
+export const FOTO_ID_PELIGRO = '9b1d4c2e-7a3f-4d5b-8c6e-1f2a3b4c5d6e';
+// La especie en peligro trae fotoId (la foto responde 404 en el arnés); la otra no trae (no se pide nada).
+const resumen = ({ tipoEspecimen, fechaRecoleccion, descripcion, ubicacionProtegida, ...r }) =>
+  ({ ...r, fotoId: r.id === ID_PELIGRO ? FOTO_ID_PELIGRO : null });
 
 export function pagina(fichas) {
   return {
@@ -63,12 +66,19 @@ export async function simularApi(page, { modo = 'normal' } = {}) {
         headers: { 'Cache-Control': 'no-store' },
       });
     }
+    if (url.pathname.endsWith('/api/publica/especies/familias')) {
+      return route.fulfill(json(200, { familias: ['Bufonidae'] }));
+    }
+    if (url.pathname.includes('/api/publica/especies/fotos/')) {
+      return route.fulfill({ status: 404, body: '' }); // sin foto: el portal muestra la ilustración
+    }
     const m = url.pathname.match(/\/api\/publica\/fichas\/([^/]+)$/);
     if (m) {
       const ficha = [FICHA_PELIGRO, FICHA_COMUN].find((f) => f.id === m[1]);
       return route.fulfill(ficha ? json(200, ficha) : json(404, problema(404, 'NO_ENCONTRADO', 'La ficha solicitada no existe.', url.pathname)));
     }
-    if (url.pathname.endsWith('/api/publica/fichas')) {
+    // El catálogo agrupado (D65) responde con la misma forma: cada ficha de prueba es una especie distinta.
+    if (url.pathname.endsWith('/api/publica/fichas') || url.pathname.endsWith('/api/publica/especies')) {
       if (modo === 'vacio') return route.fulfill(json(200, pagina([])));
       const q = (url.searchParams.get('q') ?? '').toLowerCase();
       const todas = [FICHA_PELIGRO, FICHA_COMUN];

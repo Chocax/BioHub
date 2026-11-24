@@ -390,6 +390,8 @@ Reglas del cliente interno (derivan de las reglas de negocio 5 y 11):
 
 ## 5. Sistema de diseño
 
+> **Actualización 2026-11-16 (D64, Santiago).** Las dos webs pasaron a los sistemas visuales de `docs/diseño front/DESIGNS/`: "galería" en la interna (`web-interna/src/estilos/galeria.css`) y cielo con blanco y verde en la pública (`web-publica/src/estilos/tokens.css` y `cielo.css`). Los nombres `--c-*` de esta sección se conservan en la pública y apuntan a la paleta nueva, así que los componentes de Juanita no cambian. La tipografía pasa a Fraunces (títulos) e Inter (texto), servidas desde el propio sitio con `@fontsource`: sigue sin haber fuentes externas ni CDN. Las reglas de contraste, de estado con texto + icono + color, de foco y de responsive de esta sección siguen vigentes.
+
 ### 5.1 Paleta (contraste calculado según WCAG 2.1, fórmula de luminancia relativa)
 
 Texto normal: mínimo 4,5:1. Texto grande (>= 24 px o 19 px negrita): 3:1. Componentes e iconos esenciales: 3:1.

@@ -51,7 +51,7 @@ public class HallazgoController {
 
     /** Registra un hallazgo de campo (HU-01). */
     @PostMapping
-    @PreAuthorize("hasAnyRole('investigador_campo', 'cientifico_alto_rango', 'administrador')")
+    @PreAuthorize("hasAnyRole('investigador_campo', 'cientifico_alto_rango')")
     public ResponseEntity<RegistroHallazgoResponse> registrar(@RequestBody RegistrarHallazgoRequest peticion,
                                                               @RequestHeader("Idempotency-Key") String claveIdempotencia,
                                                               @AuthenticationPrincipal Jwt jwt) {
@@ -70,7 +70,7 @@ public class HallazgoController {
      * Reclasifica o corrige un hallazgo existente (HU-03). Exige rol científico y justificación.
      */
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('cientifico_alto_rango', 'administrador')")
+    @PreAuthorize("hasAnyRole('investigador_campo', 'cientifico_alto_rango')")
     public RegistroHallazgoResponse reclasificar(@PathVariable UUID id,
                                                  @RequestBody ReclasificarHallazgoRequest peticion,
                                                  @AuthenticationPrincipal Jwt jwt) {
@@ -97,8 +97,11 @@ public class HallazgoController {
         return HallazgoResponse.de(hallazgo);
     }
 
-    /** {@code preferred_username} del JWT; es el mismo valor por el que filtra la búsqueda interna. */
-    private static String usuario(Jwt jwt) {
+    /**
+     * {@code preferred_username} del JWT; es el mismo valor por el que filtra la búsqueda interna. Sirve como ID del
+     * usuario (HU-11 c.3) porque en el realm es único y no se puede cambiar (D59).
+     */
+    static String usuario(Jwt jwt) {
         String nombre = jwt.getClaimAsString("preferred_username");
         return nombre != null ? nombre : jwt.getSubject();
     }

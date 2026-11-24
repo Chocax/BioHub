@@ -43,7 +43,7 @@ De los 28 "Fuera de mi alcance", según el código actual:
 - Parece parcial (5): RF14, RF17, RF19, RNF12, ASR9.
 - Sin código (22): RF1-RF9, RF15, RF16, RNF2, RNF3, RNF4, RNF8, RNF10, RNF11, ASR2, ASR3, ASR5, ASR7, ASR8.
 
-Historias HU-01..HU-13 (sección 5): Juanita tiene 3 (HU-06, HU-07, HU-13), las tres Parcial. De las otras 10, 8 no tienen código (HU-01, 02, 03, 04, 05, 08, 09, 12) y 2 están parciales (HU-10, HU-11).
+Historias HU-01..HU-13 (sección 5): Juanita tiene 3 (HU-06, HU-07, HU-13), HU-06 y HU-13 Cumple (iteración 22), HU-07 Parcial (falta el montaje de 16j). De las otras 10, 8 no tienen código (HU-01, 02, 03, 04, 05, 08, 09, 12) y 2 están parciales (HU-10, HU-11).
 
 Requisitos técnicos de la iteración 15 (IT-01..IT-04, sección 6): 4, todos "No cumple" por ahora. No suman a los 41.
 
@@ -152,14 +152,14 @@ Criterios: "x/n" = criterios de aceptación del SRS con evidencia / total.
 | HU-03 | Reclasificación de hallazgos | 3 | RF4, RF9 | H | 0/2 | Fuera de mi alcance | Sin código de registro. Mis consumidores del evento `hallazgo.reclasificado` ya existen (`CPT/eventos/ConsumidorHallazgosIntegracionTest`). |
 | HU-04 | Asignación obligatoria de equipos | 3 | RF5, RF6 | N | 0/3 | Fuera de mi alcance | Sin código: solo ping. |
 | HU-05 | Auditoría histórica de cambios | 5 | RF7, RF8, RF9, RNF10, ASR7 | H | 0/3 | Fuera de mi alcance | Sin código. |
-| HU-06 | Portal de consulta pública con ubicación protegida | 5 | RF10, RF11, RNF1, RNF5, RNF7, RNF13, ASR1, ASR4 | J | 2/3 (c.1 buscar por nombre, familia y departamento; c.2 ocultar coordenadas). Falta c.3 (< 2 s medido) | Parcial | Tests: `CPT/controller/BusquedaFichasIntegracionTest`, `SinCoordenadasIntegracionTest`; `WP/pruebas/Ficha.test.jsx`, `Inicio.test.jsx`. Sin prueba de carga. |
+| HU-06 | Portal de consulta pública con ubicación protegida | 5 | RF10, RF11, RNF1, RNF5, RNF7, RNF13, ASR1, ASR4 | J | 3/3 (c.1 buscar por nombre, familia y departamento; c.2 ocultar coordenadas; c.3 medido el 2026-11-15: p95 en caché fría con 10.000 fichas de 14,2 ms con 1 VU y 58,6 ms con 10 VUs, CG-02) | Cumple | Tests: `CPT/controller/BusquedaFichasIntegracionTest`, `SinCoordenadasIntegracionTest`; `WP/pruebas/Ficha.test.jsx`, `Inicio.test.jsx`. Sin prueba de carga. Carga: `pruebas-carga/k6/busqueda-publica-fria.js`, `resultados/hu06-*.json` (iteración 22). |
 | HU-07 | Mapa interactivo con coordenadas exactas para alto rango | 8 | RF12, RF13, RNF9, ASR6 | J | 3/3 en backend (c.1 rol, c.2 validación central, c.3 descifrado en memoria). La pantalla existe pero no está montada | Parcial | `CIT/controller/MapaApiTest`, `service/PoliticaAccesoUbicacionTest`, `qa/QaCifradoYReposoTest`; `WI/pruebas/PaginaMapa.test.jsx`. `web-interna/src/App.jsx` no referencia `WI/` (montaje pendiente de Santiago, D17). |
 | HU-08 | Endpoint de API con rate limiting | 8 | RF14, RNF11, RNF12, RNF13, ASR8, ASR9 | S | 0/3 (c.3 parcial) | Fuera de mi alcance | `ApiKeyRateLimitFilter` es un stub. Mis datos `/api/publica/**` sí existen y están sin coordenadas (HU-08.J). |
 | HU-09 | Reportes mensuales de presión | 13 | RF15, RF16, RNF3, ASR3 | N | 0/3 | Fuera de mi alcance | Sin código de reportes. |
 | HU-10 | Registro y asignación de roles | 5 | RF17, RF19 | S | Parcial (roles y usuarios en Keycloak; c.2 y c.3 sin prueba propia) | Fuera de mi alcance | Parece parcial. |
 | HU-11 | Autenticación segura | 3 | RF18, RF9 | S | c.1 sí; c.2 con diferencia (A5: realm tolera 5 intentos); c.3 no (no hay registro) | Fuera de mi alcance | Parece parcial. |
 | HU-12 | Emisión y revocación de API Keys | 5 | RF14, RNF11 | S | 0/3 | Fuera de mi alcance | Sin código (stub). |
-| HU-13 | Búsqueda y filtrado interno | 5 | RF12, RF13 | J | 2/3 (c.1 filtros combinables; c.2 coordenadas solo por rol). Falta c.3 (< 3 s con volumen alto, medido) | Parcial | `CIT/controller/BusquedaHallazgosApiTest`, `service/ValidadorConsultaTest`, `qa/QaInyeccionYLimitesInternosTest`; `WI/pruebas/PaginaBusqueda.test.jsx`. Pantalla sin montar en la navegación. Sin prueba de volumen (plan CG-08). |
+| HU-13 | Búsqueda y filtrado interno | 5 | RF12, RF13 | J | 3/3 (c.1 filtros combinables; c.2 coordenadas solo por rol; c.3 medido el 2026-11-15: p95 ≤ 28,2 ms con 10.000 hallazgos cifrados, alto rango con size 20/50/100 e investigador, descifrados = size, CG-08 y HB-23) | Cumple | `CIT/controller/BusquedaHallazgosApiTest`, `service/ValidadorConsultaTest`, `qa/QaInyeccionYLimitesInternosTest`; `WI/pruebas/PaginaBusqueda.test.jsx`. Pantalla sin montar en la navegación. Sin prueba de volumen (plan CG-08). Rendimiento: `CIT/ubicacion/rendimiento/BusquedaInterna10kRendimientoTest` (`-Drendimiento=true`). Pantalla aún sin montar en la navegación (16j, Santiago), pero los criterios no lo exigen. |
 
 Refinadas por Juanita en `01-requisitos.md`: HU-UBI-01..03 (técnicas, apoyan RNF9/ASR6/RF11-RF12), HU-06.1..06.6, HU-07.1..07.3, HU-13.1..13.3 y HU-08.J. Su estado sigue el de la HU madre; HU-07.3 (auditoría de accesos) solo existe como log (`CI/service/AuditoriaAccesoUbicacion.java`, probado en `CIT/controller/AuditoriaYSinFiltracionesTest`).
 
@@ -188,7 +188,7 @@ No vienen del SRS. Son trabajo de ingeniería para esta iteración (quitar la VP
 | RNF7 | Parcial | Prueba con >= 5 personas (supuesto de `01`) y registro del porcentaje. |
 | RNF9, ASR6 | Parcial | SEC-J-03 (descartar con ack los eventos con coordenadas, no a la DLQ), SEC-J-02 (detector de coordenadas en texto libre), SEC-J-06 (`UBICACION_CLAVES` y `UBICACION_CLAVE_ACTIVA` en `.env.example` y `deploy/`), y decidir A2 (KeyStore vs variables). |
 | RNF13 | Parcial | Playwright o prueba manual documentada en Chrome, Firefox, Edge y Safari (WP-10, WP-11). |
-| HU-06, HU-07, HU-13 | Parcial | Lo anterior más: medición de HU-13 c.3 (< 3 s con 10.000 hallazgos, CG-08) y que Santiago monte las rutas de `web-interna/src/ubicacion/` en la navegación. |
+| HU-07 | Parcial | Que Santiago monte las rutas de `web-interna/src/ubicacion/` en la navegación (16j). Mientras tanto, el arnés de D58 cubre WI-01..WI-15 con E2E. HU-06 y HU-13 pasan a Cumple (iteración 22). |
 
 ## Actualización: parte de Santiago (2026-11-05)
 
@@ -196,11 +196,32 @@ Esta matriz es una línea base de otra rama: la tabla de arriba no se reescribi�
 
 | Requisito | Estado | Código | Pruebas |
 |---|---|---|---|
-| HU-08, RF14 (control), RNF11, ASR8 | Cumple | `api-gateway/.../filtro/ApiKeyRateLimitFilter.java`, `infrastructure/limite/`, `ApiExternaController` | `ApiKeyRateLimitFilterTest`, `GatewayIntegracionTest`, Bruno `gateway/` |
+| HU-08, RF14 (control), RNF11, ASR8 | Cumple, con evidencia de carga (2026-11-14) | `api-gateway/.../filtro/ApiKeyRateLimitFilter.java`, `infrastructure/limite/`, `ApiExternaController` | `ApiKeyRateLimitFilterTest`, `GatewayIntegracionTest`, Bruno `gateway/`; k6 `pruebas-carga/k6/gateway-limite-api-externa.js` (`resultados/asr8-gateway*.json`, `10-verificacion-sad.md`) |
 | HU-12 | Cumple | `ServicioApiKeys`, `ConsumidoresController`, `infrastructure/credenciales/` | `ServicioApiKeysTest`, `ConsumidoresControllerTest`, `GatewayIntegracionTest` |
 | RNF12, ASR9 | Cumple | `ProxyService.reenviarApiExterna`, `RutasGateway.PREFIJO_API_EXTERNA` | `ProxyServiceTest`, Bruno `gateway/` |
 | HU-10, RF17, RF19 | Cumple en backend; falta pantalla | `ServicioUsuarios`, `KeycloakAdminAdapter`, `RevocacionTokenFilter` | `KeycloakAdminAdapterIntegracionTest`, `ServicioUsuariosTest`, `GatewayIntegracionTest` |
 | HU-11 c.1, c.2, RF18 | Cumple | `realm-biohub.json` (`failureFactor: 3`), `SecurityConfig` | `KeycloakAdminAdapterIntegracionTest` |
-| HU-11 c.3 | Depende de Hernando | Guardar el `sub` en cada acción | Pendiente |
-| SEC-02 | Parcial | Gateway hecho; falta `denyAll` en los 4 servicios | `MatrizAccesoGatewayTest` |
+| HU-11 c.3 | Cumple (D59) | `preferred_username`, único e inmutable en el realm, en `creado_por`, `autor` y `subido_por` | `EvidenciasMySqlTest` (`subidoPor`), pruebas de registro |
+| SEC-02 | Cumple | `denyAll` en el gateway y en los 4 servicios, `@PreAuthorize` por endpoint | `MatrizAccesoGatewayTest`, `ArquitecturaSeguridadTest`, `TodosLosEndpointsExigenRolTest` |
+| SEC-J-04 (apoya RF11, RF12) | Cumple en el gateway; falta usarlo en `MapaHallazgos.jsx` | `TeselasController`, `ServicioTeselas`, `infrastructure/teselas/OrigenTeselasHttp` (D56) | `TeselasControllerTest`, `ServicioTeselasTest`, `OrigenTeselasHttpTest`; de punta a punta contra OSM |
 | RNF13 en `web-interna`, login y navegación | Pendiente | Las pantallas van al final | Pendiente |
+
+## Actualización: revisión general antes del front (2026-11-16)
+
+Revisión de `develop` completo contra el SRS y el SAD. Se completó lo que faltaba de las partes de Hernando y Nicolás.
+Estado verificado con código y pruebas, más un recorrido de punta a punta con los 5 servicios, el gateway, Keycloak,
+RabbitMQ, Redis y MySQL:
+
+| Requisito | Estado | Código | Pruebas |
+|---|---|---|---|
+| HU-01, RF1, RNF4 (evidencias) | Cumple en backend | `EvidenciaController`, `EvidenciaService`, `LimpiadorMetadatos`, `AlmacenEvidenciasDisco` (D62) | `EvidenciasMySqlTest`, `LimpiadorMetadatosTest`; de punta a punta por el gateway (multipart) |
+| HU-01 c.1 y c.3, HU-02, RF2, RF3, ASR5 | Cumple en backend | `HallazgoService`, `FichaPlantillaService` | Pruebas de registro y de punta a punta |
+| HU-03, RF4, RF9 | Cumple en backend; roles según D63 | `HallazgoController` | Pruebas de registro y de punta a punta (investigador sí, auditor y administrador no) |
+| HU-05, RF7, RF8, RNF10, ASR7 | Cumple; el bloqueo en la base aplica en Aiven tras el paso 5 de `09` §4.3 (D60) | `HistorialController`, `03-registro-historial-append-only.sql.example` | `MigracionesRegistroTest`, `HistorialAppendOnlyScriptTest` |
+| HU-04, RF5, RF6 | Cumple en backend | `EquipoTrabajoService` (custodio `investigador_campo`, activo) | `EquipoTrabajoServiceTest`; de punta a punta (un analista como custodio da 400) |
+| HU-09, RF15, RF16, RNF3, ASR3 | Cumple en backend (D61) | `SolicitudesReporteService`, `CalculadorIndicePresion`, `ColaSolicitudesReporte` | `SolicitudesReporteIntegracionTest` (MySQL y RabbitMQ reales), `CalculadorIndicePresionTest` |
+| Comunicación entre servicios (SAD §4.8, SD-04) | Cumple | Eventos `hallazgo.*` a consulta pública y reportes | De punta a punta: la ficha pública y la base analítica reflejan el alta y la reclasificación; DLQ vacías |
+| RNF9 en la base y en los logs | Cumple | — | Ninguna coordenada en texto plano en `cientifico`, `consulta_publica` ni `reportes`, ni en los logs de los 5 servicios |
+
+Pendiente: las pantallas de `web-interna` que usan estos endpoints (RNF6, RNF7, RNF8 y RNF13 en la web interna), y que el dueño de Aiven corra el paso 5 de `09` §4.3.
+

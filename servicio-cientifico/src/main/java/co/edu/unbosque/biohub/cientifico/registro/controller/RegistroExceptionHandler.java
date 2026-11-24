@@ -20,7 +20,9 @@ import co.edu.unbosque.biohub.cientifico.registro.service.DatosHallazgoInvalidos
 import co.edu.unbosque.biohub.cientifico.registro.service.IdempotencyKeyConflictException;
 import co.edu.unbosque.biohub.cientifico.eventos.service.EventoNoPublicadoException;
 import co.edu.unbosque.biohub.cientifico.registro.service.HallazgoNoEncontradoException;
+import co.edu.unbosque.biohub.cientifico.registro.service.EvidenciaNoEncontradaException;
 import co.edu.unbosque.biohub.cientifico.registro.service.PlantillaNoEncontradaException;
+import co.edu.unbosque.biohub.cientifico.registro.service.RepublicacionEnCursoException;
 import co.edu.unbosque.biohub.cientifico.registro.service.UbicacionDelHallazgoNoRegistradaException;
 
 /**
@@ -73,6 +75,30 @@ public class RegistroExceptionHandler {
         return noEncontrado(e.getMessage(), "HALLAZGO_NO_ENCONTRADO", peticion);
     }
 
+    @ExceptionHandler(EvidenciaNoEncontradaException.class)
+    public ResponseEntity<ProblemaRegistroResponse> evidenciaNoEncontrada(EvidenciaNoEncontradaException e,
+                                                                          WebRequest peticion) {
+        return noEncontrado(e.getMessage(), "EVIDENCIA_NO_ENCONTRADA", peticion);
+    }
+
+    /** El archivo pasa del máximo de multipart (spring.servlet.multipart.max-file-size). */
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<ProblemaRegistroResponse> archivoDemasiadoGrande(WebRequest peticion) {
+        String mensaje = "El archivo supera el tamaño máximo permitido.";
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(new ProblemaRegistroResponse(TIPO_VALIDACION, "Archivo demasiado grande",
+                        HttpStatus.PAYLOAD_TOO_LARGE.value(), mensaje, ruta(peticion), "ARCHIVO_DEMASIADO_GRANDE",
+                        List.of(new ErrorCampoRegistro("archivo", mensaje))));
+    }
+
+    /** Falta el campo {@code archivo} o la petición no es multipart. */
+    @ExceptionHandler({org.springframework.web.multipart.support.MissingServletRequestPartException.class,
+            org.springframework.web.multipart.MultipartException.class})
+    public ResponseEntity<ProblemaRegistroResponse> archivoAusente(WebRequest peticion) {
+        return validacion("archivo", "Adjunta el archivo en el campo 'archivo'.", "DATOS_INVALIDOS", peticion);
+    }
+
     @ExceptionHandler(PlantillaNoEncontradaException.class)
     public ResponseEntity<ProblemaRegistroResponse> plantillaNoEncontrada(PlantillaNoEncontradaException e,
                                                                           WebRequest peticion) {
@@ -121,6 +147,16 @@ public class RegistroExceptionHandler {
                 .body(new ProblemaRegistroResponse("https://biohub/errores/no-disponible", "Servicio no disponible",
                         HttpStatus.SERVICE_UNAVAILABLE.value(), "No se pudo publicar el evento.", ruta(peticion),
                         "EVENTO_NO_PUBLICADO", null));
+    }
+
+    /** Ya hay una republicación de fotos públicas en curso (SEC-I27-7). */
+    @ExceptionHandler(RepublicacionEnCursoException.class)
+    public ResponseEntity<ProblemaRegistroResponse> republicacionEnCurso(RepublicacionEnCursoException e,
+                                                                         WebRequest peticion) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(new ProblemaRegistroResponse(TIPO_CONFLICTO, "Conflicto", HttpStatus.CONFLICT.value(),
+                        e.getMessage(), ruta(peticion), "CONFLICTO", null));
     }
 
     private static ResponseEntity<ProblemaRegistroResponse> validacion(String campo, String mensaje, String codigo,

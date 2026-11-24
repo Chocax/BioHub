@@ -1,21 +1,30 @@
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const sim = vi.hoisted(() => ({ fitBounds: vi.fn(), eventosTeselas: null, propsMapa: null, propsTeselas: null }));
+const sim = vi.hoisted(() => ({ fitBounds: vi.fn(), propsMapa: null, propsTeselas: null }));
+
+vi.mock('../componentes/TeselasGateway.jsx', () => ({
+  default: (p) => {
+    sim.propsTeselas = p;
+    return <div data-testid="teselas" />;
+  },
+}));
 
 vi.mock('react-leaflet', () => ({
   MapContainer: ({ children, ...p }) => {
     sim.propsMapa = p;
     return <div data-testid="mapa-leaflet">{children}</div>;
   },
-  TileLayer: (p) => {
-    sim.propsTeselas = p;
-    sim.eventosTeselas = p.eventHandlers;
-    return <div data-testid="teselas" />;
-  },
+  // Leaflet entrega Enter sobre un marcador como `keydown` (no como `click`): el simulado lo reenvía igual.
   Marker: ({ position, eventHandlers, title }) => (
-    <button type="button" data-testid="marcador" data-posicion={JSON.stringify(position)} onClick={() => eventHandlers.click({ target: { getElement: () => null } })}>
+    <button
+      type="button"
+      data-testid="marcador"
+      data-posicion={JSON.stringify(position)}
+      onClick={() => eventHandlers.click({ target: { getElement: () => null } })}
+      onKeyDown={(e) => eventHandlers.keydown?.({ originalEvent: e.nativeEvent, target: { getElement: () => null } })}
+    >
       {title}
     </button>
   ),
@@ -88,8 +97,15 @@ describe('PaginaMapa: alto rango', () => {
     expect(sim.propsTeselas.maxZoom).toBe(12);
     expect(sim.propsTeselas.attribution).toMatch(/OpenStreetMap<\/a> contributors/);
     expect(sim.propsTeselas.attribution).toContain('https://www.openstreetmap.org/copyright');
-    expect(sim.propsTeselas.url).toBe('https://tile.openstreetmap.org/{z}/{x}/{y}.png');
-    expect(sim.fitBounds).toHaveBeenCalledWith([[5.1, -73.1]], expect.objectContaining({ maxZoom: 12 }));
+    expect(sim.propsTeselas.cliente).toBe(cliente); // las teselas salen por el cliente (gateway), no por OSM
+    expect(sim.fitBounds).toHaveBeenCalledWith([[5.1, -73.1]], expect.objectContaining({ maxZoom: 8, padding: [32, 32] }));
+  });
+
+  it('con varios hallazgos el ajuste automático usa maxZoom 10', async () => {
+    const cliente = clienteFalso(() => mapa([feature('a', -73.1, 5.1), feature('b', -74.1, 4.1)]));
+    render(<PaginaMapa cliente={cliente} roles={ALTO} />);
+    await screen.findAllByTestId('marcador');
+    expect(sim.fitBounds).toHaveBeenCalledWith(expect.any(Array), expect.objectContaining({ maxZoom: 10, padding: [32, 32] }));
   });
 
   it('ignora features con coordenadas inválidas', async () => {
@@ -207,6 +223,21 @@ describe('PaginaMapa: alto rango', () => {
     expect(screen.getByText('Selecciona un marcador para ver el detalle.')).toBeInTheDocument();
   });
 
+  it('Enter o Espacio sobre un marcador (keydown de Leaflet) abre el detalle; otras teclas no (02 §Teclado)', async () => {
+    const cliente = clienteFalso(() => mapa([feature('a', -73.1234567, 5.1234567)]));
+    render(<PaginaMapa cliente={cliente} roles={ALTO} />);
+    const marcador = await screen.findByTestId('marcador');
+    // fireEvent.keyDown no genera el click nativo del <button> simulado: solo cuenta el manejador keydown.
+    fireEvent.keyDown(marcador, { key: 'a' });
+    expect(screen.getByText('Selecciona un marcador para ver el detalle.')).toBeInTheDocument();
+    fireEvent.keyDown(marcador, { key: 'Enter' });
+    expect(within(screen.getByRole('complementary', { name: 'Detalle del hallazgo' })).getByText('5.12346')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByText('Selecciona un marcador para ver el detalle.')).toBeInTheDocument();
+    fireEvent.keyDown(marcador, { key: ' ' });
+    expect(within(screen.getByRole('complementary', { name: 'Detalle del hallazgo' })).getByText('5.12346')).toBeInTheDocument();
+  });
+
   it('no deja coordenadas en el título de la pestaña, ni en atributos de la página', async () => {
     const cliente = clienteFalso(() => mapa([feature('a', -73.1234567, 5.1234567)]));
     const u = userEvent.setup();
@@ -218,12 +249,22 @@ describe('PaginaMapa: alto rango', () => {
     expect(conAtributo).toHaveLength(0);
   });
 
+  it('pasa el cliente y alSesionVencida a las teselas: un 401 de tesela cierra la sesión', async () => {
+    const cliente = clienteFalso(() => mapa([feature('a', -73.1, 5.1)]));
+    const alSesionVencida = vi.fn();
+    render(<PaginaMapa cliente={cliente} roles={ALTO} alSesionVencida={alSesionVencida} />);
+    await screen.findByTestId('marcador');
+    expect(sim.propsTeselas.cliente).toBe(cliente);
+    act(() => sim.propsTeselas.alSesionVencida());
+    expect(alSesionVencida).toHaveBeenCalledTimes(1);
+  });
+
   it('teselas caídas (más de 3 errores): aviso y cambio a la vista Lista con las coordenadas', async () => {
     const cliente = clienteFalso(() => mapa([feature('a', -73.1234567, 5.1234567)]));
     render(<PaginaMapa cliente={cliente} roles={ALTO} />);
     await screen.findByTestId('marcador');
     act(() => {
-      for (let i = 0; i < 4; i++) sim.eventosTeselas.tileerror();
+      for (let i = 0; i < 4; i++) sim.propsTeselas.alErrorTesela();
     });
     expect(await screen.findByText('No se pudo cargar el mapa base. Los hallazgos siguen disponibles en la vista Lista.')).toBeInTheDocument();
     expect(screen.queryByTestId('mapa-leaflet')).toBeNull();

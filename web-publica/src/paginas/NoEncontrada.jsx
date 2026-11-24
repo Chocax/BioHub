@@ -22,7 +22,7 @@ export default function NoEncontrada({ tipo = 'pagina' }) {
   useTitulo(t.pestana);
   useEffect(() => refH1.current?.focus(), []);
   return (
-    <div className="pagina-404">
+    <div className="pagina-404 contenedor">
       <h1 tabIndex={-1} ref={refH1}>{t.titulo}</h1>
       <p>{t.ayuda}</p>
       <Link to="/" className="boton boton-primario">Ir al buscador</Link>

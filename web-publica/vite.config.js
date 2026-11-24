@@ -2,7 +2,7 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
 /**
- * SEC-J-07: la CSP vive como <meta> en index.html. `%CONNECT_SRC%` se reemplaza por el origen de la API
+ * SEC-J-07: la CSP vive como <meta> en index.html. `%CONNECT_SRC%` (en connect-src e img-src: las fotos públicas vienen de la API) se reemplaza por el origen de la API
  * (VITE_API_URL, el mismo que usa src/api/cliente.js). En `vite dev` se quita la meta porque el
  * refresco en caliente necesita scripts en línea; la CSP aplica al build y al preview.
  */
@@ -19,8 +19,8 @@ function cspPlugin(modo) {
     transformIndexHtml: {
       order: 'pre',
       handler(html, ctx) {
-        if (ctx.server) return html.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>\s*/s, '');
-        return html.replace('%CONNECT_SRC%', origen);
+        if (ctx.server) return html.replace(/<meta\s+http-equiv="Content-Security-Policy"[^>]*>\s*/s, '');
+        return html.replaceAll('%CONNECT_SRC%', origen);
       },
     },
   };

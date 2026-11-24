@@ -26,7 +26,7 @@
 | API Gateway como único punto de entrada (§4.5, ASR8, ASR9) | `api-gateway/.../ProxyController.java`, `ProxyService.java`, `GatewayProperties` | Implementada (enrutamiento) | Rutas por variable (`SERVICIO_*_URL`); servicios en `127.0.0.1` (D7). API Keys y rate limit ausentes (ARQ-03) |
 | Eventos en topología broker (§4.8) | `cientifico/eventos/service/PublicadorEventos.java` (publisher confirms, persistente); `consultapublica/config/RabbitConfig.java`, `reportes/config/RabbitConfig.java` (cola + DLQ propias) | Implementada (infraestructura) | Ningún productor real publica `hallazgo.*` todavía (ARQ-07) |
 | Keycloak, OAuth 2.0/OIDC, PKCE, token de 5 min (§5.2, §7.2.1) | `infra/keycloak/realm-biohub.json` (`accessTokenLifespan: 300`, `bruteForceProtected: true`); `KeycloakJwtAuthenticationConverter` y `SecurityConfig` en cada servicio | Implementada | `failureFactor: 5` frente a los 3 intentos de HU-11 (ARQ-21) |
-| Datos (§4.5): Científico y Equipos comparten la BD transaccional (esquemas propios); Consulta Pública, Reportes y Gateway con BD propia | `docker-compose.yml`: 4 MySQL (transaccional, lectura, analítica, gateway); `infra/mysql/transaccional/01-esquemas-y-usuarios.sh` | Implementada en local | Con Aiven depende de P-A1 (§8) |
+| Datos (§4.5): Científico y Equipos comparten la BD transaccional (esquemas propios); Consulta Pública, Reportes y Gateway con BD propia | `docker-compose.yml`: 4 MySQL (transaccional, lectura, analítica, gateway); `infra/mysql/initdb/01-usuarios.sh` (antes `infra/mysql/transaccional/01-esquemas-y-usuarios.sh`) | Implementada en local | Con Aiven depende de P-A1 (§8) |
 
 ---
 
@@ -252,6 +252,53 @@ Supuesto de trabajo: `r` ≈ 60–150 ms desde Bogotá hacia una región de Nort
 
 ---
 
+## Revisión general antes del front (2026-11-16)
+
+| Elemento del SAD | Estado | Evidencia |
+|---|---|---|
+| SD-08 reporte mensual (§7.2.8): solicitud registrada, publicada en el broker, 202, proceso en segundo plano, consulta de estado, PDF y CSV | **Implementado** (D61) | `SolicitudesReporteIntegracionTest`, con MySQL y RabbitMQ reales |
+| ASR3: el reporte nunca toca la base transaccional | **Cumple** | Solo lee `reportes` (alimentada por eventos), y el cruce se agrega en SQL |
+| §4.5: evidencias en un volumen de archivos del Servicio Científico | **Implementado** (D62) | `AlmacenEvidenciasDisco` (Adapter del puerto `AlmacenEvidencias`) |
+| ASR7 y §5.2, restricción a nivel de base de datos (solo INSERT y SELECT sobre el historial) | **Cumple en Aiven** tras el paso 5 de `09` §4.3 (D60) | `MigracionesRegistroTest`, `HistorialAppendOnlyScriptTest` |
+| §4.8 y SD-04, propagación por eventos | **Cumple** | De punta a punta con los 5 servicios: alta y reclasificación visibles en la consulta pública y en reportes; DLQ vacías |
+| §5.3, escalado con Compose y NGINX | Solo para la consulta pública (`pruebas-carga/compose-carga.yml`) | No hay un compose con todos los servicios (D34): se corren en el equipo de cada integrante |
+
+## Parte de Santiago: gateway (iteraciones 16 y 19, 2026-11-14)
+
+Las tablas de §3 y §5 son la línea base del 2026-11-04 y no se reescriben. Estado actual de lo que es de Santiago:
+
+| ID | Estado | Evidencia |
+|---|---|---|
+| **ASR8** (RNF11) | **Cumple, con evidencia de carga** | Filtro `ApiKeyRateLimitFilter` con ventana fija en Redis (D46) y límite por consumidor configurable por API. k6 `pruebas-carga/k6/gateway-limite-api-externa.js`, resultados abajo |
+| **ASR9** (RNF12) | **Cumple** | URL estable `/api/v1/externa/fichas/**`, reescrita a `/api/publica/fichas/**` (D45). Destinos por variable (`SERVICIO_*_URL`). `ProxyServiceTest` y Bruno `gateway/` |
+| ARQ-03 | **Cerrado** | API Keys con hash (D47), límite en Redis con respaldo en memoria (D46), 429 + `Retry-After`, límite por IP del portal. `GatewayIntegracionTest`, `ApiKeyRateLimitFilterTest` |
+| ARQ-20 | **Cerrado** | Circuit breaker por destino (D52). `CircuitoServiciosTest`, `ProxyServiceTest`, `GatewayIntegracionTest` |
+| ARQ-21 | **Cerrado** | `failureFactor: 3` en el realm. `KeycloakAdminAdapterIntegracionTest` |
+| ARQ-24 | **Abierto, condicionado** | No hay compose de servicios (D34). Las condiciones para cuando exista están en `11-seguridad-y-acceso.md` §6 |
+| ASR1, barrera de rate limit | **Disponible** | El portal ya tiene 120 por minuto por IP. Ojo: la prueba de ASR1 va directo a NGINX y no pasa por el gateway. Si el pico x60 pasara por el gateway desde una sola IP, recibiría 429, y eso es lo esperado (D16) |
+
+### Evidencia de carga de ASR8 (HU-08 c.2 y HU-12 c.2)
+
+Entorno desechable local (D30): gateway y consulta-publica con perfil `local`, con MySQL 8.4 (`sql_require_primary_key`), Redis 7.4 y Keycloak 26.8.1 con el realm real. k6 2.3.0 en Docker. Commit base `f63c6fa` más los cambios de esta iteración (`-sin-commit` en el JSON). Fases: base de 60 s, abuso de 120 s y post de 30 s.
+
+- El consumidor A abusa con el límite por defecto (60/min).
+- B tiene un límite configurado de 120/min y pide a 1 req/s.
+- C usa el límite por defecto y pide a 0,5 req/s.
+- El portal pide a 1 req/s sin key.
+- D pide a 0,5 req/s, y el administrador revoca su key a los 20 s del abuso.
+
+| Corrida | Peticiones | A: 200 (máx. permitido) | A: 429 (sin `Retry-After`) | A: otros | B / C / portal en 200 | p95 cumplidores base → abuso | D tras revocar |
+|---|---|---|---|---|---|---|---|
+| `resultados/asr8-gateway.json` (A a 20 req/s) | 2.962 | 120 (180) | 2.281 (0) | 0 | 100 % / 100 % / 100 % | 21,4 → 13,4 ms | 100 % 401, 0 aceptadas |
+| `resultados/asr8-gateway-abuso200.json` (A a 200 req/s) | 24.562 | 120 (180) | 23.881 (0) | 0 | 100 % / 100 % / 100 % | 11,5 → 10,4 ms | 100 % 401, 0 aceptadas |
+
+**Lectura:**
+
+- A recibe exactamente 60 respuestas 200 por cada ventana de un minuto. El abuso no sube la latencia de los demás: el p95 de abuso queda por debajo del de base, porque la primera ventana incluye el calentamiento.
+- La revocación se aplica desde la petición siguiente.
+- No se descartó ninguna iteración, y no hubo ningún 5xx.
+- **Límite de la prueba:** los cinco clientes salen de la misma IP (k6). Por eso D va a 0,5 req/s, por debajo del bloqueo por IP de 20 keys inválidas por minuto. Ese bloqueo afectaría a consumidores legítimos detrás de la misma NAT, y es una consecuencia aceptada (`04` §9).
+
 ## Iteración 15h – verificación final (2026-11-04)
 
 **Autor:** arquitecto-software (tarea 15h) · **Base:** `8cab133` + working tree **sin commit** (refactor de patrones en `servicio-cientifico` y `servicio-consulta-publica`, `pruebas-carga/`). Todo lo que se cita del working tree es evidencia **provisional hasta que se haga commit** (misma regla que `trazabilidad.md`).
@@ -326,3 +373,11 @@ Umbrales: ASR1 (SRS §2.2.1) = pico ≥ 60 veces el promedio, ≥ 95 % de petici
 
 ### 15h.5 Decisiones nuevas
 - **D42** (criterio de evidencia de carga para ASR1 y ASR4) y **D43** (el re-cifrado es la única excepción a la cadena del Decorator, verificada con ArchUnit): ver `03-arquitectura.md`, tabla de Decisiones.
+
+## Iteración 16 – cierre de ARQ propios de Juanita (2026-11-04)
+
+| ID | Estado | Evidencia | Observación |
+|---|---|---|---|
+| ARQ-28 | **Cerrado en ubicacion**; **Parcial en consulta-publica** (aeb67d8) | `EstadoConservacion` movido a `ubicacion.domain`; auditoría como puerto `domain.AuditoriaAccesoUbicacion` implementado por `infrastructure.AuditoriaAccesoUbicacionLog`; `MonitorCarga` recibe `service.UmbralesDegradacion` y ya no importa `config`; `layeredArchitecture()` en `ArquitecturaUbicacionTest` y `ArquitecturaConsultaPublicaTest` | Queda **ARQ-28b** (Bajo, deuda aceptada por el Tech Lead): `consultapublica/infrastructure/BusquedaFichasJdbc` depende de `service.CriterioBusquedaPublica` y de los DTO de `service.vista`. La regla ArchUnit permite solo esas dos dependencias y falla ante cualquier otra. Cerrarlo exige mover el criterio a `domain` y devolver records de dominio (~8 clases, M) |
+| ARQ-29 | **Cerrado** (25d2175, D53) | `ModuloRegistroNoDependeDeUbicacionInternaTest` prohíbe todo `cientifico.ubicacion` en `registro` (escaneo de fuentes + ArchUnit con `allowEmptyShould`, `registro` solo tiene `package-info`); `eventos/domain/package-info.java` corregido; nota D53 en `04` §6 | Hernando: integrar solo publicando `HallazgoRegistrado`/`HallazgoReclasificado` |
+| ARQ-33 | **Cerrado** (81f4e28) | Comentario de `application-aiven.yml` en los dos servicios: `VERIFY_IDENTITY` por defecto; `09` ya describía la topología D39 | — |

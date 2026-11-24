@@ -54,6 +54,22 @@ public class EvidenciaHallazgo {
     @Column(name = "sha256", nullable = false, length = 64, columnDefinition = "char(64)")
     private String sha256;
 
+    /** Usuario que subió el archivo (HU-11 c.3), con el mismo identificador que el autor del historial (D59). */
+    @Column(name = "subido_por", length = 100)
+    private String subidoPor;
+
+    /** Si el portal público puede mostrarla (D65). Solo fotografías; por defecto, no. */
+    @Column(name = "publica", nullable = false)
+    private boolean publica;
+
+    /** Miniatura JPEG para el portal (D66): se genera una sola vez al hacerla pública. {@code null} si aún no existe. */
+    @Column(name = "ruta_miniatura", length = 500)
+    private String rutaMiniatura;
+
+    /** Instante del último cambio de visibilidad (D66): ordena los eventos {@code evidencia.*}. */
+    @Column(name = "publica_cambio_en")
+    private Instant publicaCambioEn;
+
     @Column(name = "creado_en", insertable = false, updatable = false)
     private Instant creadoEn;
 
@@ -62,8 +78,15 @@ public class EvidenciaHallazgo {
 
     @SuppressWarnings("java:S107")
     public EvidenciaHallazgo(UUID hallazgoId, String nombre, TipoEvidencia tipo, String contentType,
-                             long tamanoBytes, String ruta, String sha256) {
-        this.id = UUID.randomUUID();
+                             long tamanoBytes, String ruta, String sha256, String subidoPor) {
+        this(UUID.randomUUID(), hallazgoId, nombre, tipo, contentType, tamanoBytes, ruta, sha256, subidoPor);
+    }
+
+    /** Con el id ya elegido: el archivo se guarda en disco con ese id antes de insertar la fila. */
+    @SuppressWarnings("java:S107")
+    public EvidenciaHallazgo(UUID id, UUID hallazgoId, String nombre, TipoEvidencia tipo, String contentType,
+                             long tamanoBytes, String ruta, String sha256, String subidoPor) {
+        this.id = id;
         this.hallazgoId = hallazgoId;
         this.nombre = nombre;
         this.tipo = tipo;
@@ -71,6 +94,7 @@ public class EvidenciaHallazgo {
         this.tamanoBytes = tamanoBytes;
         this.ruta = ruta;
         this.sha256 = sha256;
+        this.subidoPor = subidoPor;
     }
 
     public UUID getId() {
@@ -105,8 +129,43 @@ public class EvidenciaHallazgo {
         return sha256;
     }
 
+    public String getSubidoPor() {
+        return subidoPor;
+    }
+
     public Instant getCreadoEn() {
         return creadoEn;
+    }
+
+    public boolean isPublica() {
+        return publica;
+    }
+
+    public String getRutaMiniatura() {
+        return rutaMiniatura;
+    }
+
+    public Instant getPublicaCambioEn() {
+        return publicaCambioEn;
+    }
+
+    /** Solo una fotografía puede ser pública: un audio no se muestra en el portal. */
+    public void marcarPublica(boolean valor, Instant cambioEn) {
+        if (valor && tipo != TipoEvidencia.FOTOGRAFIA) {
+            throw new IllegalStateException("Solo una fotografía puede ser pública");
+        }
+        this.publica = valor;
+        this.publicaCambioEn = cambioEn;
+    }
+
+    /** Fija la ruta de la miniatura ya guardada en disco (D66). */
+    public void registrarMiniatura(String ruta) {
+        this.rutaMiniatura = ruta;
+    }
+
+    /** Fija el instante de cambio de una foto que ya era pública antes de D66 (migración). */
+    public void fijarCambioEn(Instant cambioEn) {
+        this.publicaCambioEn = cambioEn;
     }
 
     /** Tipo de evidencia admitida por HU-01. */

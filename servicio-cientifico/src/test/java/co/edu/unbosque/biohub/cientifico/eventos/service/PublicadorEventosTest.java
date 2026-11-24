@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -14,6 +15,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -135,5 +137,114 @@ class PublicadorEventosTest {
 
         assertThatThrownBy(() -> publicador.publicar("prueba.ping", "admin1", Map.of()))
                 .isInstanceOf(EventoNoPublicadoException.class);
+    }
+
+    // ---- SEC-J-13 / D54: hallazgo.* nunca lleva coordenadas ----
+
+    @Test
+    void hallazgoConClaveDeCoordenadasSeRechazaSinPublicar() {
+        for (String clave : new String[] {"latitud", "Longitud", "lat", "lng", "coordenadas", "geometry"}) {
+            assertThatThrownBy(() -> publicador.publicar("hallazgo.registrado", "admin1", Map.of(clave, 5.5)))
+                    .as(clave).isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("hallazgo.* no puede llevar coordenadas (D14)");
+        }
+        verify(template, never()).invoke(any(RabbitOperations.OperationsCallback.class));
+    }
+
+    @Test
+    void hallazgoConCoordenadasAnidadasSeRechaza() {
+        Map<String, Object> datos = Map.of("detalle", Map.of("sitio", List.of(Map.of("Latitud", 5.5))));
+
+        assertThatThrownBy(() -> publicador.publicar("hallazgo.reclasificado", "admin1", datos))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(template, never()).invoke(any(RabbitOperations.OperationsCallback.class));
+    }
+
+    @Test
+    void hallazgoConCoordenadasEnTextoSeRechazaYElMensajeNoFiltraElValor() {
+        for (String texto : List.of("colectado en 5.53214, -73.36712", "5°31'55\"N 73°22'02\"W", "lat: 5.53 lon: -73.36")) {
+            assertThatThrownBy(() -> publicador.publicar("hallazgo.registrado", "admin1",
+                    Map.of("descripcion", texto)))
+                    .as(texto).isInstanceOf(IllegalArgumentException.class)
+                    .satisfies(e -> assertThat(e.getMessage()).doesNotContain("5.53"));
+        }
+        verify(template, never()).invoke(any(RabbitOperations.OperationsCallback.class));
+    }
+
+    @Test
+    void hallazgoSinCoordenadasSePublica() {
+        EventoSobre evento = publicador.publicar("hallazgo.registrado", "admin1", Map.of(
+                "hallazgoId", "7b1e0d0e-5d6c-4b0e-9a55-1f2a6f0c1111", "version", 1,
+                "nombreCientifico", "Atelopus ebenoides", "fechaRecoleccion", "2026-03-14",
+                "estadoConservacion", "EN_PELIGRO", "departamento", "15",
+                "descripcion", "Anfibio de páramo, altitud entre 3.200, 3.500 msnm, medía 12,5 cm"));
+
+        assertThat(evento.tipo()).isEqualTo("hallazgo.registrado");
+        verify(operaciones).waitForConfirmsOrDie(5000L);
+    }
+
+    @Test
+    void otrosTiposNoSeRevisanPorEstaGuarda() {
+        // La guarda es solo para hallazgo.*: "prueba.ping" conserva el comportamiento anterior
+        EventoSobre evento = publicador.publicar("prueba.ping", "admin1", Map.of("lat", 5.5));
+
+        assertThat(evento.tipo()).isEqualTo("prueba.ping");
+    }
+
+    // ---- D66: evidencia.* pasa por la misma guarda, salvo jpegBase64 ----
+
+    private static Map<String, Object> fotoPublicada(String campoExtra, Object valorExtra) {
+        Map<String, Object> datos = new java.util.LinkedHashMap<>(Map.of(
+                "evidenciaId", "7b1e0d0e-5d6c-4b0e-9a55-1f2a6f0c2222",
+                "hallazgoId", "7b1e0d0e-5d6c-4b0e-9a55-1f2a6f0c1111",
+                "cambioEn", "2026-11-21T10:15:30.123456Z",
+                "sha256", "a".repeat(64), "ancho", 1200, "alto", 800,
+                "jpegBase64", "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/"));
+        if (campoExtra != null) {
+            datos.put(campoExtra, valorExtra);
+        }
+        return datos;
+    }
+
+    @Test
+    void evidenciaPublicadaNormalSePublicaSinEscanearElJpegBase64() {
+        // El Base64 puede contener '+', '/', dígitos y letras que casualmente parecerían coordenadas si se leyera como texto
+        Map<String, Object> datos = fotoPublicada("jpegBase64", "5.53214, -73.36712 5°31'55\"N lat: 5.5");
+
+        EventoSobre evento = publicador.publicar("evidencia.publicada", "inv1", datos);
+
+        assertThat(evento.tipo()).isEqualTo("evidencia.publicada");
+        verify(operaciones).waitForConfirmsOrDie(5000L);
+    }
+
+    @Test
+    void evidenciaRetiradaSePublica() {
+        EventoSobre evento = publicador.publicar("evidencia.retirada", "inv1", Map.of(
+                "evidenciaId", "7b1e0d0e-5d6c-4b0e-9a55-1f2a6f0c2222",
+                "hallazgoId", "7b1e0d0e-5d6c-4b0e-9a55-1f2a6f0c1111", "cambioEn", "2026-11-21T10:15:30.123456Z"));
+
+        assertThat(evento.tipo()).isEqualTo("evidencia.retirada");
+    }
+
+    @Test
+    void evidenciaConCoordenadasEnCualquierOtroCampoSeRechazaSinPublicar() {
+        assertThatThrownBy(() -> publicador.publicar("evidencia.publicada", "inv1", fotoPublicada("nota", "5.53214, -73.36712")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("evidencia.* no puede llevar coordenadas (D14)");
+        assertThatThrownBy(() -> publicador.publicar("evidencia.publicada", "inv1", fotoPublicada("latitud", 5.5)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> publicador.publicar("evidencia.retirada", "inv1", Map.of("sha256", "lat: 5.5")))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(template, never()).invoke(any(RabbitOperations.OperationsCallback.class));
+    }
+
+    @Test
+    void elIdentificadorYLaFechaDeUnaFotoNoDisparanLaGuarda() {
+        // UUID, ISO-8601 con microsegundos y SHA-256 en hexadecimal no son coordenadas
+        for (int i = 0; i < 50; i++) {
+            Map<String, Object> datos = fotoPublicada("sha256", java.util.UUID.randomUUID().toString().replace("-", "")
+                    + java.util.UUID.randomUUID().toString().replace("-", ""));
+            assertThat(publicador.publicar("evidencia.publicada", "inv1", datos).tipo()).isEqualTo("evidencia.publicada");
+        }
     }
 }

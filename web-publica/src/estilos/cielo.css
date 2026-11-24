@@ -1,0 +1,179 @@
+/*
+ * Estructura y acabados del portal (Cora + Ecosia). Misma distribución que la web interna: barra mínima, héroe
+ * pintado, palabra "BioHub" monumental con follaje, contenido sobre blanco, panel pintado con tarjeta flotante y
+ * viñetas circulares. Cambia el tono: cielo y luz en vez de galería.
+ */
+body { background: var(--c-fondo); -webkit-font-smoothing: antialiased; }
+h1, h2, h3 { font-family: var(--serif); font-weight: 350; letter-spacing: -.015em; }
+img { max-width: 100%; display: block; }
+.contenedor { max-width: 1200px; }
+
+/* ---------- barra */
+.encabezado-publico {
+  position: absolute; inset: 0 0 auto 0; z-index: 10; display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 14px clamp(16px, 3vw, 32px); background: transparent; color: #fff;
+}
+.marca { display: inline-flex; align-items: center; gap: 10px; color: #fff; text-decoration: none; font: 500 20px/1 var(--serif); }
+.monograma { width: 32px; height: 32px; }
+.lema { margin: 0; font-size: 13px; opacity: .92; }
+@media (max-width: 600px) { .lema { display: none; } }
+
+/* ---------- héroe de cielo */
+.cielo { position: relative; overflow: hidden; min-height: min(100vh, 900px); display: grid; place-items: center; padding: 96px 16px 64px; background: var(--cielo); color: #fff; }
+.cielo__pintura { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation: deriva 40s ease-in-out infinite alternate; }
+.cielo::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(9, 66, 108, .35), rgba(17, 123, 200, .05) 45%, rgba(9, 66, 108, .25)); pointer-events: none; }
+.cielo__contenido { position: relative; z-index: 2; width: min(880px, 100%); text-align: center; display: grid; justify-items: center; gap: 14px; }
+.cielo__eyebrow { margin: 0; font: 600 12px/1.4 var(--fuente); letter-spacing: .16em; text-transform: uppercase; }
+.cielo__titulo { margin: 0; font: 300 clamp(38px, 6.2vw, 72px)/1.04 var(--serif); letter-spacing: -.025em; text-shadow: 0 2px 24px rgba(9, 66, 108, .35); }
+.cielo__titulo em { font-style: italic; }
+.cielo__bajada { margin: 0 0 10px; max-width: 58ch; font-size: 17px; line-height: 1.55; text-shadow: 0 1px 12px rgba(9, 66, 108, .45); }
+.cielo__buscador { width: 100%; text-align: left; animation: aparecer .9s cubic-bezier(.2, .7, .1, 1) both .2s; }
+.cielo__mariposa { position: absolute; z-index: 1; width: 38px; top: 22%; left: 12%; animation: volar 16s ease-in-out infinite; }
+@keyframes deriva { from { transform: scale(1.01); } to { transform: scale(1.06) translate(-1%, .5%); } }
+@keyframes aparecer { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+@keyframes volar {
+  0% { transform: translate(0, 0) rotate(-6deg); } 25% { transform: translate(30vw, -30px) rotate(8deg); }
+  50% { transform: translate(60vw, 40px) rotate(-4deg); } 75% { transform: translate(25vw, 70px) rotate(6deg); }
+  100% { transform: translate(0, 0) rotate(-6deg); }
+}
+@keyframes aletear { from { transform: scaleX(1); } to { transform: scaleX(.35); } }
+
+/* El buscador es la tarjeta blanca que flota sobre el cielo (Cora) con la píldora de búsqueda (Ecosia) */
+.buscador { color: var(--c-texto); border-radius: var(--r-md); box-shadow: var(--sombra-2); padding: 22px 24px 18px; margin: 0; }
+.buscador-titulo { font: 400 22px/1.2 var(--serif); margin: 0 0 12px; }
+.campo label { font-weight: 600; font-size: 14px; }
+.campo input, .campo select { border: 1px solid var(--c-borde-campo); border-radius: 12px; transition: border-color .2s, box-shadow .2s; }
+.campo input:focus, .campo select:focus { outline: none; border-color: var(--cielo); box-shadow: 0 0 0 4px rgba(17, 123, 200, .18); }
+.filtros summary { color: var(--cielo-profundo); }
+
+/* ---------- botones y chips */
+.boton { border-radius: var(--r-pill); border-width: 1px; padding: 10px 22px; font-weight: 600; transition: transform .15s, background-color .2s, box-shadow .2s; }
+.boton:hover { transform: translateY(-1px); }
+.boton-primario { background: var(--noche); border-color: var(--noche); }
+.boton-primario:hover { background: var(--c-primario-hover); box-shadow: 0 6px 18px rgba(9, 66, 108, .28); }
+.boton-secundario { color: var(--noche); border-color: var(--cielo-claro); }
+.boton-secundario:hover { background: var(--c-info-fondo); }
+.chip { letter-spacing: .02em; }
+.chip-en-peligro { background: #fde9e7; color: #a12a22; border-color: var(--baya); }
+.chip-no-amenazada { background: var(--lima); color: #33400c; border-color: #9fb342; }
+
+/* ---------- franja con la palabra BioHub (misma pieza que en la web interna) */
+.franja-marca { position: relative; overflow: hidden; height: clamp(150px, 24vw, 330px); background: var(--niebla); }
+.franja-marca__palabra {
+  position: absolute; left: 50%; bottom: -.17em; transform: translateX(-50%); margin: 0; white-space: nowrap; user-select: none;
+  font: 500 clamp(140px, 25vw, 380px)/.84 var(--serif); letter-spacing: -.035em; color: var(--noche);
+}
+.franja-marca__follaje { position: absolute; bottom: -2px; width: clamp(160px, 22vw, 340px); }
+.franja-marca__follaje--izq { left: -2%; }
+.franja-marca__follaje--der { right: -2%; }
+
+/* ---------- resultados */
+.resultados-titulo { font: 300 34px/1.1 var(--serif); margin: 28px 0 18px; }
+.tarjeta-enlace {
+  border-radius: var(--r-md); border: 1px solid var(--c-borde); box-shadow: none; padding: 20px 22px; gap: 6px;
+  transition: transform .25s cubic-bezier(.2, .7, .1, 1), box-shadow .25s, border-color .25s;
+}
+.tarjeta-enlace:hover { transform: translateY(-3px); box-shadow: var(--sombra-1); border-color: var(--cielo-claro); }
+.tarjeta-titulo { font: 400 21px/1.2 var(--serif); color: var(--noche); text-decoration: none; }
+.tarjeta-comun { font-size: 14px; }
+.esqueleto { background: linear-gradient(90deg, #edf3f8, #f8fbfd, #edf3f8); background-size: 200% 100%; }
+.estado-vacio { border: 1px solid var(--c-borde); border-radius: var(--r-md); background: var(--niebla); }
+.paginacion { margin-top: 8px; }
+.aviso-ubicacion-breve { text-align: center; margin: 24px 0 8px; }
+
+/* ---------- panel pintado con tarjeta flotante */
+.lienzo-publico { position: relative; overflow: hidden; min-height: clamp(460px, 74vh, 720px); display: grid; place-items: center; padding: 56px 16px; margin-top: 56px; }
+.lienzo-publico__pintura { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation: deriva 36s ease-in-out infinite alternate; }
+.lienzo-publico__tarjeta { position: relative; z-index: 1; width: min(560px, 100%); background: #fff; border-radius: var(--r-md); padding: 32px 30px; box-shadow: var(--sombra-2); color: var(--c-texto); }
+.lienzo-publico__tarjeta .cielo__eyebrow { color: var(--cielo-profundo); }
+.lienzo-publico__tarjeta h2 { font: 300 clamp(28px, 3.4vw, 38px)/1.1 var(--serif); margin: 10px 0 14px; color: var(--noche); }
+.lienzo-publico__tarjeta p { margin: 0; color: var(--c-texto-suave); line-height: 1.6; }
+
+/* ---------- viñetas circulares */
+.claves { text-align: center; padding-top: 72px; padding-bottom: 88px; }
+.claves__titulo { font: 300 clamp(34px, 4.6vw, 54px)/1.05 var(--serif); margin: 0 0 40px; color: var(--noche); }
+.claves__titulo em { font-style: italic; }
+.claves__lista { list-style: none; padding: 0; margin: 0; display: grid; gap: 36px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.claves__lista li { display: grid; justify-items: center; gap: 10px; }
+.claves__lista h3 { font: 400 23px/1.2 var(--serif); margin: 6px 0 0; color: var(--noche); }
+.claves__lista p { margin: 0; color: var(--c-texto-suave); max-width: 32ch; }
+.claves__circulo { width: 180px; height: 180px; border-radius: 50%; overflow: hidden; outline: 6px solid var(--lima); outline-offset: 4px; }
+.claves__circulo img { width: 100%; height: 100%; object-fit: cover; transition: transform 1.2s cubic-bezier(.2, .7, .1, 1); }
+.claves__lista li:hover .claves__circulo img { transform: scale(1.1); }
+
+/* ---------- ficha y 404 con la barra transparente: se les da cielo arriba */
+.ficha.contenedor, .pagina-404.contenedor, main > .contenedor[aria-busy], main > div.contenedor:only-child { padding-top: 120px; }
+main:has(> .ficha), main:has(> .pagina-404), main:has(> div.contenedor:only-child) {
+  background: linear-gradient(180deg, var(--cielo) 0, var(--cielo-claro) 96px, var(--niebla) 96px, #fff 520px);
+}
+.ficha-cabecera h1 { font: 300 clamp(38px, 5vw, 60px)/1.04 var(--serif); }
+.ficha-comun { font-family: var(--serif); font-size: 22px; }
+.fila-dato { padding: 10px 0; }
+.aviso-ubicacion { border-left: 0; border: 1px solid #b9d7ee; border-radius: var(--r-md); background: var(--c-info-fondo); }
+.aviso-ubicacion h3 { font: 400 22px/1.2 var(--serif); }
+
+/* ---------- pie */
+.pie-publico {
+  display: grid; gap: 32px 40px; grid-template-columns: minmax(240px, 1.4fr) repeat(3, minmax(160px, 1fr));
+  padding: 56px clamp(16px, 4vw, 56px) 28px; background: var(--noche); color: #d8e6f2; font-size: 13.5px; line-height: 1.6;
+}
+.pie-publico p { margin: 0 0 8px; }
+.pie-publico a { color: #fff; text-decoration: none; display: block; margin-bottom: 6px; }
+.pie-publico a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.pie-publico__logo { display: inline-flex; align-items: center; gap: 10px; font: 500 24px/1 var(--serif); color: #fff; margin-bottom: 14px; }
+.pie-publico__logo .monograma { width: 40px; height: 40px; color: var(--lima); }
+.pie-publico__marca p { max-width: 38ch; }
+.pie-publico__titulo { font: 600 11px/1.4 var(--fuente); letter-spacing: .16em; text-transform: uppercase; color: var(--lima); margin-bottom: 12px !important; }
+.pie-publico__legal { grid-column: 1 / -1; border-top: 1px solid rgba(216, 230, 242, .2); padding-top: 18px; margin: 8px 0 0 !important; font-size: 12px; color: #a9c3da; }
+@media (max-width: 900px) { .pie-publico { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .pie-publico { grid-template-columns: 1fr; } }
+
+/* ---------- héroe: las pinturas se alternan con un fundido lento */
+.cielo__pintura { opacity: 0; transition: opacity 3s ease-in-out; }
+.cielo__pintura[data-activa="true"] { opacity: 1; }
+
+/* ---------- catálogo por especie: tarjeta con foto */
+.catalogo-cabecera { text-align: center; margin: 40px 0 6px; }
+.catalogo-cabecera .cielo__eyebrow { color: var(--cielo-profundo); }
+.catalogo-cabecera__titulo { font: 300 clamp(34px, 4.6vw, 52px)/1.05 var(--serif); margin: 6px 0 8px; color: var(--noche); }
+.catalogo-cabecera__titulo em { font-style: italic; }
+.catalogo-cabecera__bajada { margin: 0 auto; max-width: 54ch; color: var(--c-texto-suave); }
+.tarjeta-especie .tarjeta-enlace { padding: 0; overflow: hidden; gap: 0; height: 100%; }
+.tarjeta-foto { aspect-ratio: 4 / 3; overflow: hidden; background: var(--lino); }
+.tarjeta-foto img { width: 100%; height: 100%; object-fit: cover; transition: transform 1.2s cubic-bezier(.2, .7, .1, 1); }
+.tarjeta-especie .tarjeta-enlace:hover .tarjeta-foto img { transform: scale(1.06); }
+.tarjeta-cuerpo { display: grid; gap: 6px; padding: 16px 20px 20px; justify-items: start; }
+.tarjeta-registros { font-size: 12.5px; color: var(--cielo-profundo); font-weight: 600; }
+.foto-especie--vacia {
+  display: grid; place-items: center;
+  background: linear-gradient(160deg, #d9ecf8 0%, #f3f8fb 55%, #e9f3d2 100%);
+}
+.foto-especie--vacia { align-content: center; justify-items: center; gap: 6px; }
+.foto-especie__aviso { font-size: 12.5px; color: var(--c-texto-suave); text-align: center; padding: 0 8px; }
+.foto-especie__reintento { font: inherit; font-size: 13px; background: none; border: 0; padding: 4px 8px; color: var(--cielo-profundo); text-decoration: underline; cursor: pointer; border-radius: 4px; }
+.foto-especie--cargando { background: var(--lino); }
+.foto-especie__ilustracion { width: 26%; max-width: 90px; height: auto; opacity: .85; }
+
+/* ---------- ficha: foto al lado del nombre y otros registros */
+.ficha-cabecera--con-foto { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 380px); gap: 28px; align-items: center; }
+.ficha-foto { aspect-ratio: 4 / 3; border-radius: var(--r-md); overflow: hidden; background: var(--lino); box-shadow: var(--sombra-2); }
+.ficha-foto img { width: 100%; height: 100%; object-fit: cover; }
+@media (max-width: 720px) { .ficha-cabecera--con-foto { grid-template-columns: 1fr; } }
+.otros-registros { margin: 40px 0 72px; }
+.otros-registros h2 { font: 300 30px/1.1 var(--serif); color: var(--noche); margin: 0 0 16px; }
+.otros-registros ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.otros-registros .chip, .otros-registros [class*="chip"] { white-space: nowrap; flex: none; }
+.otros-registros a {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px; border-radius: var(--r-md);
+  border: 1px solid var(--c-borde); background: #fff; color: var(--c-texto); text-decoration: none;
+  transition: border-color .2s, transform .2s;
+}
+.otros-registros a:hover { border-color: var(--cielo-claro); transform: translateY(-2px); }
+.otros-registros__lugar { font-weight: 500; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cielo__pintura, .lienzo-publico__pintura, .cielo__mariposa { animation: none; }
+}
+
+/* Aleteo de la mariposa (en el CSS y no dentro del SVG: la CSP no admite <style> en línea) */
+.ala { transform-origin: 32px 24px; transform-box: view-box; animation: aletear .35s ease-in-out infinite alternate; }

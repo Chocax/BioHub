@@ -16,7 +16,7 @@ function CeldaCoordenadas({ h, altoRango }) {
 }
 
 /** Tabla de hallazgos (apilada en pantallas pequeñas por CSS). Columna "Acción" solo para alto rango. */
-export function TablaHallazgos({ hallazgos, altoRango, onVerEnMapa, cargando = false }) {
+export function TablaHallazgos({ hallazgos, altoRango, onVerEnMapa, onVerDetalle, cargando = false }) {
   const [verPorQue, setVerPorQue] = useState(false);
   const idPorQue = useId();
   return (
@@ -44,7 +44,14 @@ export function TablaHallazgos({ hallazgos, altoRango, onVerEnMapa, cargando = f
         <tbody>
           {hallazgos.map((h) => (
             <tr key={h.id}>
-              <td data-etiqueta="Especie"><i lang="la">{h.nombreCientifico}</i></td>
+              <td data-etiqueta="Especie">
+                {onVerDetalle ? (
+                  <button type="button" className="ub-boton ub-boton--enlace ub-ver-detalle" onClick={() => onVerDetalle(h.id)}
+                    aria-label={`Abrir la ficha del hallazgo: ${h.nombreCientifico}`}>
+                    <i lang="la">{h.nombreCientifico}</i>
+                  </button>
+                ) : <i lang="la">{h.nombreCientifico}</i>}
+              </td>
               <td data-etiqueta="Fecha">{fechaCorta(h.fechaRecoleccion)}</td>
               <td data-etiqueta="Investigador">{h.investigador}</td>
               <td data-etiqueta="Departamento / Región">{[h.departamento, h.region].filter(Boolean).join(' / ')}</td>

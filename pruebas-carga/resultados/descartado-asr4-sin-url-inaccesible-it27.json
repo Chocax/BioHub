@@ -1,0 +1,27 @@
+{
+  "parametros": {
+    "R": 300,
+    "EV": 0,
+    "DUR": "120s",
+    "CIENTIFICA": false,
+    "replicas": "2",
+    "cpus_por_replica": "2",
+    "commit": "14f140c-sin-commit",
+    "red_k6": "biohub_default",
+    "fecha": "2026-11-22T16:15:19.616Z",
+    "entorno": "anfitrion compartido (16 CPU); loadavg 1/5/15 min antes: 7.72 7.83 4.48; otros procesos: libvirt qemu biohub-backend ~4 CPU, ollama; k6 y NGINX en el mismo equipo; jar con 27g",
+    "cache": "fria"
+  },
+  "publica": {
+    "peticiones": 36000,
+    "p50": 0,
+    "p90": 0,
+    "p95": 0,
+    "p99": 0,
+    "max": 0,
+    "fallos_no200_pct": 100,
+    "errores_5xx_pct": 100
+  },
+  "cientifica": null,
+  "iteraciones_descartadas": 0
+}

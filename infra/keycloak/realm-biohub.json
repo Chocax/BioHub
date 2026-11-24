@@ -1,9 +1,11 @@
 {
   "realm": "biohub",
   "displayName": "BioHub",
+  "loginTheme": "biohub",
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,
+  "editUsernameAllowed": false,
   "resetPasswordAllowed": false,
   "rememberMe": false,
   "loginWithEmailAllowed": true,

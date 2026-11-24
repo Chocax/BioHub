@@ -30,6 +30,21 @@ class MigracionesUbicacionTest extends BaseUbicacionMySqlTest {
         assertThat(versiones).contains("20261026.1000", "20261026.1010");
     }
 
+    /** DB-J22-1: la migración con ANALYZE TABLE corre en MySQL 8.4 y deja estadísticas reales del catálogo. */
+    @Test
+    void analyzeDelCatalogoSeAplicoYDejoEstadisticas() {
+        assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success = 1", String.class))
+                .contains("20261121.1010");
+        // Sin ANALYZE el optimizador veía ~1 fila en ubicacion_departamento; con él, el tamaño real del catálogo.
+        jdbc.execute("SET SESSION information_schema_stats_expiry = 0");
+        Long filas = jdbc.queryForObject("SELECT TABLE_ROWS FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()"
+                + " AND TABLE_NAME = 'ubicacion_departamento'", Long.class);
+        assertThat(filas).isBetween(20L, 60L);
+        Long cardinalidad = jdbc.queryForObject("SELECT MAX(CARDINALITY) FROM information_schema.STATISTICS"
+                + " WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ubicacion_departamento'", Long.class);
+        assertThat(cardinalidad).isGreaterThan(5L);
+    }
+
     @Test
     void elCatalogoTiene33DepartamentosY6Regiones() {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM ubicacion_departamento", Integer.class)).isEqualTo(33);

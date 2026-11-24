@@ -37,6 +37,18 @@ class MigracionesRegistroTest extends BaseRegistroMySqlTest {
     }
 
     @Test
+    @DisplayName("D66: la migración agrega ruta_miniatura y publica_cambio_en, ambas opcionales")
+    void columnasDeLaMiniaturaPublica() {
+        List<String> columnas = jdbc.queryForList(
+                "SELECT CONCAT(column_name, ':', is_nullable, ':', column_type) FROM information_schema.columns"
+                        + " WHERE table_schema = DATABASE() AND table_name = 'hallazgo_evidencia'"
+                        + " AND column_name IN ('ruta_miniatura', 'publica_cambio_en') ORDER BY column_name", String.class);
+        assertThat(columnas).containsExactly("publica_cambio_en:YES:datetime(6)", "ruta_miniatura:YES:varchar(500)");
+        assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success = 1", String.class))
+                .contains("20261121.1000");
+    }
+
+    @Test
     @DisplayName("el id del hallazgo es BINARY(16), como acordamos con ubicacion (doc 05 seccion 6)")
     void elIdEsBinario16() {
         String tipo = jdbc.queryForObject(

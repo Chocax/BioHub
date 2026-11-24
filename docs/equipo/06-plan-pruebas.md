@@ -239,7 +239,7 @@ Niveles usados en las tablas: **U** unitario, **I** integración (Testcontainers
 | HU-07.1 validación en cada petición | MP-10 | I |
 | HU-07.1 descifrado solo en memoria | MP-13, DB-06, LG-02 | I, SEG |
 | HU-07.1 filtros, vacío, inválidos, truncado, omitidos | MP-14..MP-21 | I |
-| HU-07.2 pantalla de mapa | WC-02..WC-06, WI-05..WI-09, WI-13, WI-14 | U, E2E |
+| HU-07.2 pantalla de mapa | WC-02..WC-06, WI-05..WI-09, WI-13, WI-14, WC-09..WC-14, WI-15 | U, E2E |
 | HU-07.1 texto especial y bordes de coordenadas | MP-20, MP-21 | SEG, I |
 | HU-07.3 auditoría (Could) | MP-22, MP-23 | I |
 | HU-13.1 filtros combinables, orden, paginación | HB-01..HB-06, HB-10, HB-11 | I |
@@ -635,7 +635,7 @@ Casos sobre componentes (Vitest + Testing Library, `fetch` y rol simulados) llev
 | WI-02 | Búsqueda sin permiso | (M) `investigador1`; la respuesta trae por error coordenadas | Columna "Restringido"; DOM sin centinelas | E2E | HU-13.3 |
 | WI-03 | Sin resultados | (M) vacío | "No hay hallazgos que coincidan con los filtros" | E2E | HU-13.3 |
 | WI-04 | Sesión vencida | (M) 401 | Redirige al login (flujo de Santiago) sin dejar datos previos en pantalla | E2E | HU-13.3 |
-| WI-05 | Mapa con marcadores | (M) 3 features | 3 marcadores; al pulsar: especie, fecha, coordenadas; zoom máximo 12; teselas solo de OSM | E2E | HU-07.2 |
+| WI-05 | Mapa con marcadores | (M) 3 features | 3 marcadores; al pulsar: especie, fecha, coordenadas; zoom máximo 12; teselas solo de `/api/gateway/teselas/` con `Authorization: Bearer`, ninguna petición a OSM (SEC-J-04, D56) | E2E | HU-07.2 |
 | WI-06 | Mapa sin permiso | (M) `investigador1` abre `/ubicacion/mapa` | Pantalla "No tienes permiso…"; 0 peticiones a `/mapa` (verificado en red) | E2E | HU-07.2 |
 | WI-07 | Mapa vacío | (M) `features=[]` | "No hay hallazgos para los filtros seleccionados" | E2E | HU-07.2 |
 | WI-08 | Truncado | (M) `truncado:true,total:1500` | Aviso de afinar filtros | E2E | HU-07.2 |
@@ -645,6 +645,13 @@ Casos sobre componentes (Vitest + Testing Library, `fetch` y rol simulados) llev
 | WI-12 | Error 5xx/red en búsqueda y mapa | (M) 500, 503, abort | Mensaje en español con reintento; sin trazas | E2E | UX |
 | WI-13 | Login real local con Keycloak (R) **[BLOQ: montaje de Santiago]** | `cientifico1` y `investigador1` en Compose local | Mapa accesible solo al primero; el segundo ve I3 | E2E | HU-07.2/HU-10 |
 | WI-14 | Teselas en nivel alto | Acercar al máximo | No se piden teselas de nivel > 12 (riesgo R6) | E2E | `03` R6 |
+| WC-09 | Teselas por el gateway con Bearer (SEC-J-04) | Cliente real con `fetch` simulado; montar el mapa | Toda petición a `{apiUrl}/api/gateway/teselas/{z}/{x}/{y}.png` con `Authorization: Bearer`, `Accept: image/png`, `credentials: omit`; 0 a `openstreetmap` | U | `11` §7, `04` §8.1 |
+| WC-10 | `getBlob` 200/400/401/403/429/502/503/sin red/corte/abort | `fetch` simulado | Blob en 200; `ErrorApi{status,codigo}` en errores; `status 0` sin red o corte; `AbortError` se propaga; sin token: 401 sin llamar | U | `04` §8.1 |
+| WC-11 | Aborto de tesela no es error | Desmontar, cambiar zoom o `tileunload` con descargas en curso; respuesta o 401 tardíos | Señal abortada; sin `tileerror`, sin object URL, sin `alSesionVencida`; object URL revocado en carga, fallo y descarte | U | `11` §7 |
+| WC-12 | 401 de tesela | Varias teselas con 401; 403/429/5xx/0 | `alSesionVencida` una vez por capa; los otros estados no cierran sesión | U | `11` §7 |
+| WC-13 | Umbral del mapa base | Más de `MAX_ERRORES_TESELAS` fallos (incluidos 429 repetidos) | Aviso "No se pudo cargar el mapa base" una vez y paso a Lista; abortos no cuentan | U | `02` estados del mapa |
+| WC-14 | Ciclo de vida de la capa | StrictMode (doble montaje); cambio de `cliente` entre renders | Una sola capa viva; descargas del montaje/cliente anterior abortadas | U | `11` §7 |
+| WI-15 | Teselas por el gateway en navegador real (R) **[PENDIENTE: gateway + `web-interna` montados]** | Abrir el mapa con `cientifico1`, registrar la red | Teselas `200 image/png` desde el gateway con Bearer; 0 peticiones a `tile.openstreetmap.org`; 429 tras >600/min muestra el aviso | E2E | SEC-J-04 |
 
 ## P10. Pruebas de usabilidad
 | ID | Descripción | Datos / pasos | Esperado | Nivel | Criterio |
@@ -713,3 +720,56 @@ Total bloqueados o condicionados: **14 firmes/autorización + 10 de carga por he
 
 ## P13. Actualización QA 15h (2026-11-04)
 WP-14 (texto malicioso en datos) y WP-08 (sin tokens ni almacenamiento, sin `Authorization`) quedaron automatizados en `web-publica/e2e/portal.spec.js` (bloque "QA 15h"; Chromium y Firefox). Siguen sin automatizar: CF-06, WP-15, WP-16, WP-18, CG-02/06/07/08/09/10 y parcialmente LG-01/02, WP-10/12/13. Detalle y resultados en `07-reporte-qa.md`, iteración 15h.
+
+## P14. Actualización QA 21c: casos WI-* automatizados en el arnés (2026-11-15)
+Las E2E de `web-interna/src/ubicacion/e2e/*.e2e.js` corren sobre el arnés de desarrollo (D58, `src/ubicacion/dev/arnes.html`) en **modo simulado**: sesión y roles falsos, gateway interceptado con `page.route`, sin Keycloak ni backend. Se ejecutan con `npm run test:e2e` (Chromium, Firefox y WebKit; `E2E_SIN_WEBKIT=1` omite WebKit). Total: 39 pruebas por motor (busqueda 15, mapa 21, seguridad 3). Lo que dicen los casos WI-* de este documento sobre "Keycloak real" o "navegador real con gateway" **no** queda cubierto por esto: sigue siendo manual (abajo). Resultados y calidad de las pruebas en `07-reporte-qa.md`, iteración 21c.
+
+| Caso | Estado | Spec (`src/ubicacion/e2e/`) | Qué verifica la E2E y qué le falta |
+|---|---|---|---|
+| WI-01 | Automatizado | `busqueda.e2e.js` | Columna de coordenadas con valores, filtros (especie, fechas, departamento) enviados a la API, paginación que conserva filtros, tamaño de página, foco en el resumen. Complementa WC-07 (validación de fechas y especie sin llamar a la API) |
+| WI-02 | Automatizado | `busqueda.e2e.js` | Cuatro roles sin permiso ven "Restringido" y el DOM no contiene los centinelas aunque la API las envíe; usuario sin rol recibe 403 y ve el acceso denegado |
+| WI-03 | Automatizado | `busqueda.e2e.js` | Estado vacío y "Limpiar filtros" |
+| WI-04 | Automatizado en simulado; **redirección real pendiente** | `busqueda.e2e.js`, `mapa.e2e.js` | 401 de búsqueda, de mapa y de teselas, y token no renovable: la UI quita los datos y llama a `alSesionVencida`. El arnés solo muestra "Se pidió iniciar sesión de nuevo (N)": que `keycloak.login()` redirija de verdad es parte de WI-13 |
+| WI-05 | Automatizado | `mapa.e2e.js` | 3 marcadores, detalle al pulsar, Enter abre el detalle y Esc lo cierra devolviendo el foco, "Saltar el mapa" y vista Lista, filtros del mapa. Espacio sobre el marcador solo está en Vitest (`PaginaMapa.test.jsx`) |
+| WI-06 | Automatizado | `mapa.e2e.js` | Cuatro roles y "sin rol": acceso denegado con el foco en el título, 0 peticiones al gateway. Complementa WC-02 y WC-03 |
+| WI-07, WI-08 | Automatizado | `mapa.e2e.js` | Estado vacío; aviso de truncado y de omitidos |
+| WI-09 | Automatizado | `busqueda.e2e.js` | "Ver en el mapa" abre un solo marcador (`hallazgoId` en la petición, no en la URL del navegador) y "Ver todos" vuelve a 3 |
+| WI-10 | Automatizado | `seguridad.e2e.js` | Recorrido búsqueda, mapa, detalle y lista: URL, título, `localStorage`, `sessionStorage`, cookies y consola sin centinelas |
+| WI-11 | Parcial | todos los specs | Los 3 motores (Chromium, Firefox, WebKit) corren las 39 pruebas, WebKit y Firefox verificados en la imagen oficial de Playwright. Siguen pendientes Edge y la matriz de versiones (manual, `02` §8) |
+| WI-12 | Automatizado | `busqueda.e2e.js`, `mapa.e2e.js` | 500, 503 y sin red con "Reintentar" que recupera; 400 sin "Reintentar"; sin códigos técnicos en pantalla |
+| **WI-13** | **Pendiente de ejecución en navegador real** | (ninguno) | Login real con `cientifico1` e `investigador1` contra el Keycloak del Compose local. Guía manual en `src/ubicacion/README.md`, pasos 1 a 4 y 8. El modo simulado no lo reemplaza |
+| WI-14 | Automatizado | `mapa.e2e.js` | El botón "+" se deshabilita en 12, el teclado y el doble clic no superan 12 y ninguna tesela pedida tiene `z` mayor que 12 |
+| **WI-15** | **Parte automatizada; parte manual pendiente de ejecución en navegador real** | `seguridad.e2e.js`, `mapa.e2e.js` | Automatizado: ninguna petición a `*.openstreetmap.org` ni fuera de `localhost`, cada tesela va a `/api/gateway/teselas/{z}/{x}/{y}.png` con `Bearer`, se pide con `fetch` y no con `<img src>`, `cache: 'no-store'` solo desde el zoom 9 (opción de `fetch` observada con un espía, igual en los tres motores), 429/503/sin red muestran el aviso y pasan a Lista sin respaldo a OSM. **Pendiente manual** (README, pasos 5, 6 y 9): contra el gateway real, con la pestaña Red sin "Disable cache": 200 `image/png` desde el gateway, que las teselas de zoom 9 o más nunca aparezcan como `(disk cache)` ni `(memory cache)`, `about:cache` en Firefox sin esas URL y el 429 real tras más de 600 teselas por minuto. Playwright desactiva la caché HTTP mientras hay rutas interceptadas, así que la caché real no es observable en E2E |
+| WC-03, WC-07, WC-12, WC-13 | También en navegador | `mapa.e2e.js`, `busqueda.e2e.js` | Repetidos en las E2E (403 del mapa, validación de fechas y especie, 401 de teselas, mapa base caído). WC-12 ("una sola vez") tiene una aserción débil: ver BUG-J21-2 en `07-reporte-qa.md` |
+
+**Conteo actualizado.** De los 14 casos WI-*, 12 tienen E2E automatizada en el arnés (WI-01..WI-10, WI-12, WI-14, más la parte automatizable de WI-15 y WI-11 parcial); WI-13 y la parte manual de WI-15 quedan **pendientes de ejecución en navegador real**; WI-11 sigue siendo manual para Edge. El bloqueo "falta el montaje de Santiago" de P8 ya no impide ejecutar el resto en navegador: el arnés lo hace posible sin tocar `App.jsx`.
+
+**Cómo correrlas.** En `web-interna`: `npx playwright install chromium firefox webkit` (en Linux con WebKit: `--with-deps`), luego `npm run test:e2e`. Requieren los puertos libres 5175 (Vite, `--strictPort`) y no necesitan el 8080: la URL del gateway solo se usa como origen interceptado. Fuera de CI `reuseExistingServer` reutiliza lo que ya escuche en 5175 (la config lo avisa); si fuera un `vite` iniciado con otro `VITE_API_URL`, las pruebas no encontrarían sus rutas interceptadas. Con `.env.development` (8080) no hay problema.
+
+## P15. Actualización QA iteración 27: fotos públicas por evento (D66), detector endurecido (27g) y carga ASR1/ASR4 (2026-11-22)
+
+Trazabilidad: HU-06.1/HU-06.4 (RNF1, RNF5, ASR1, ASR4), 04 §4.4, §7.6 y §13.10, D42 y D66. "Automatizado" = prueba de `mvn verify` o Vitest/Playwright; "En vivo" = ejecutado a mano contra gateway + científico + consulta-publica locales (perfil `local`, nunca `aiven`); resultados en `07-reporte-qa.md`, iteración 27.
+
+| ID | Descripción (precondiciones, pasos, datos) | Resultado esperado | Tipo | Cubre |
+|---|---|---|---|---|
+| FP-01 | Hallazgo con foto JPEG de 3000x2000 px y 3,7 MB con EXIF/GPS; `PUT .../evidencias/{id}/publica` `{publica:true}` | La miniatura (1200 px de ancho como máximo, <= 600 KB, sin EXIF ni GPS) se genera una sola vez; `GET /especies/fotos/{fotoId}` devuelve 200 `image/jpeg` con `ETag` = sha256 de los bytes | En vivo + `FotosPublicasEventosMySqlTest` | D66, 04 §4.4, RNF9 |
+| FP-02 | Tras FP-01, mirar la cola `consulta-publica.fotos` y su DLQ | 1 evento `evidencia.publicada` publicado y confirmado; DLQ en 0; `reportes.eventos` no recibe eventos `evidencia.*` | En vivo + `ConsumidorFotosIntegracionTest` | 04 §7.6 |
+| FP-03 | `PUT ... publica` con `{publica:false}` | Evento `evidencia.retirada`; la foto da 404 y `fotoId` pasa a `null` en el catálogo (sin esperar el TTL de 30 s) | En vivo | 04 §7.6 |
+| FP-04 | `GET /api/publica/especies` con una especie con foto y otra sin foto | Cada elemento trae `fotoId` (UUID o `null`); nunca coordenadas ni investigador | Bruno `19` + en vivo | 04 §4.4 |
+| FP-05 | `GET /especies/fotos/{fotoId}` con: UUID válido, UUID en mayúsculas, `no-es-un-uuid`, `%20`, UUID inexistente, UUID de foto retirada, `POST`, sufijo `/extra` | 200 (válido y mayúsculas); 400 `PARAMETRO_INVALIDO` campo `fotoId` y `no-store`; 404 `NO_ENCONTRADO` y `no-store`; sin método permitido o ruta inexistente por el gateway: 401 | Bruno `20`, `21` + en vivo | 04 §4.4 |
+| FP-06 | Ruta de compatibilidad `GET /especies/foto?nombre=`: nombre válido con foto, sin foto, `<script>`, vacío o ausente, nombre con dígitos | 200 con `max-age=300`; 404; 400 `PARAMETRO_INVALIDO` campo `nombre` en los tres últimos | Bruno `22` + en vivo | 04 §4.4 |
+| FP-07 | Ninguna ruta de foto sin rol en científico: `GET /api/cientifico/publico/especies/foto` sin token y con token de investigador | 401 sin token; 404 con token (la ruta ya no existe); `SecurityConfig` del científico no tiene `permitAll` salvo `actuator/health` | En vivo + `ArquitecturaSeguridadTest` | D66, SEC-R-2 |
+| FP-08 | CORS de la foto: `GET` por el gateway con `Origin: http://localhost:5174`, con un origen no permitido y `OPTIONS` previo | `Access-Control-Allow-Origin` solo para el origen permitido, `Vary: Origin`; origen ajeno: 403; el navegador (Chromium y Firefox) muestra la foto | En vivo | Pendiente de integración 27c |
+| FP-09 | CSP `img-src` de la web-publica construida contra el gateway real | Con `blob:` la portada muestra las fotos (`naturalWidth` > 0, sin avisos en consola); sin `blob:` (control) Chromium las bloquea con violación de CSP | En vivo | Pendiente de integración 27c, SEC-I27-8 |
+| FP-10 | Republicación: `POST /api/cientifico/admin/fotos-publicas/republicar` sin token, con investigador, alto rango y auditor, con `GET`, con administrador una vez y 8 veces en paralelo | 401; 403; 403; 403; 405; 202 `{fotos:n}`; en paralelo 1 respuesta 202 y 7 respuestas 409 `CONFLICTO` en problem+json | En vivo + `RepublicadorFotosPublicasTest` | SEC-I27-7 |
+| FP-11 | Foto de audio marcada como pública | 400 `DATOS_INVALIDOS` campo `publica` | En vivo | 04 §13.9 |
+| FP-12 | `GET /api/publica/fichas?familia=` (vacío), con espacios, y `/especies?familia=` | 200, mismo total que sin filtro y `filtrosIgnorados` vacío | Bruno `23` + en vivo | QA-R-5, 04 §1 |
+| DT-01 | Registrar hallazgo con coordenadas escritas en `descripcion`: `5.532, 73.367`, `5°31N 73°22W`, `N 05° 31.926' W 073° 22.027'`, `lat 5.53214 lon -73.36712`, `5,53214 / -73,36712`, `UTM 18N 645000 612000` | 400 `DATOS_INVALIDOS` en los 6 casos | En vivo + corpus `detector-corpus.txt` | SEC-I27-1, D14 |
+| DT-02 | Coordenadas en `nombreComun` y en `atributos` (`latitud`, `lat`/`lon`, par `"5.53214,-73.36712"`, claves `x`/`y` con números en rango) | 400 `DATOS_INVALIDOS` en los 4 casos | En vivo + `DetectorCoordenadasTest` | SEC-I27-2 |
+| DT-03 | Texto legítimo: `altitud 2.500 m, longitud 12 cm, 3 individuos el 2026-11-01`, `25.5 g y 12.75 cm`, `temperatura 12.5 C, pH 7.2`, atributo `temperatura_agua: 12.5` | 201 en los 4 casos (sin falsos positivos) | En vivo + corpus | SEC-I27-1 |
+| DT-04 | Falsos positivos conocidos: `long. 12 cm`, `lat 3`, atributos `{"largo":1.234,"ancho":2.345}` | 400 (el detector los rechaza; decisión pendiente del grupo, ver plan 00 it. 27) | En vivo | Decisión de Hernando |
+| DT-05 | Paridad de las dos copias del detector (científico y consulta-publica) | Corpus idéntico (`cmp`) y `DetectorCoordenadasParidadTest` en verde en los dos módulos | Automatizado | SEC-I27-1 |
+| CG-ASR4 | `carga-cientifica-simultanea.js` con `CIENTIFICA=0` y `CIENTIFICA=1`, R=300 req/s, 30 eventos/s, 120 s, 2 réplicas | p95 público <= 2 s, 0 respuestas 5xx, eventos procesados = publicados, DLQ en 0 | Carga (k6) | ASR4, RNF5, D42 |
+| CG-ASR1P | `consulta-publica-portada.js` (14 peticiones por visita) y `consulta-publica-pico.js` (fichas), pico x60, 1 y 2 réplicas, caché fría y caliente, contrafactual con caché de fotos en NGINX | Al menos 95 % sin 5xx, estabilización < 5 min, p95 < 2 s; la degradación se activa (`modoDegradado`) cuando una réplica no alcanza | Carga (k6) | ASR1, RNF1, D42 |
+
+**Casos no automatizados en `mvn verify`:** FP-08 y FP-09 (CORS real y CSP con `blob:` contra el gateway y el build de web-publica) y las partes "En vivo" de FP-01 a FP-07, FP-10 y DT-01 a DT-04 se ejecutaron a mano; el E2E de Playwright de web-publica simula la API con `page.route`, así que no detecta un `fotoId` falso, un CORS ausente ni una CSP sin `blob:`. Candidato a automatizar: un E2E de web-publica contra gateway y consulta-publica reales (los scripts quedaron en el scratchpad de la sesión de QA, no en el repo).

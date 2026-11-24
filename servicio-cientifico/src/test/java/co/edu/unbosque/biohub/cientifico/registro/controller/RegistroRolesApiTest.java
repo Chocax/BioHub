@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -96,17 +97,26 @@ class RegistroRolesApiTest {
     }
 
     @Test
-    void investigadorLeeFichaPeroSoloCientificoLaConfigura() throws Exception {
+    void investigadorYAltoRangoConfiguranFichaPeroAuditorNo() throws Exception {
         given(plantillas.exigirVigente("Atelopus-ebenoides"))
                 .willReturn(new co.edu.unbosque.biohub.cientifico.registro.domain.FichaPlantilla(
                         "Atelopus-ebenoides", 1, List.of(), "cientifico1"));
+        given(plantillas.guardarVersion(eq("Atelopus-ebenoides"), any(), eq("usuario-prueba")))
+                .willReturn(new co.edu.unbosque.biohub.cientifico.registro.domain.FichaPlantilla(
+                        "Atelopus-ebenoides", 2, List.of(), "usuario-prueba"));
         String url = "/api/cientifico/fichas/Atelopus-ebenoides/atributos";
 
         mvc.perform(get(url).with(rol("investigador_campo"))).andExpect(status().isOk());
         mvc.perform(put(url).with(rol("investigador_campo")).contentType(MediaType.APPLICATION_JSON)
                         .content("[]"))
+                .andExpect(status().isOk());
+        mvc.perform(put(url).with(rol("cientifico_alto_rango")).contentType(MediaType.APPLICATION_JSON)
+                        .content("[]"))
+                .andExpect(status().isOk());
+        mvc.perform(put(url).with(rol("auditor_cientifico")).contentType(MediaType.APPLICATION_JSON)
+                        .content("[]"))
                 .andExpect(status().isForbidden());
-        verify(plantillas, never()).guardarVersion(anyString(), any(), anyString());
+        verify(plantillas, times(2)).guardarVersion(eq("Atelopus-ebenoides"), any(), eq("usuario-prueba"));
     }
 
     @Test

@@ -28,8 +28,15 @@ public abstract class BaseRegistroMySqlTest {
     protected static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.4")
             .withDatabaseName("cientifico").withUsername("test").withPassword("test");
 
+    protected static final java.nio.file.Path CARPETA_EVIDENCIAS;
+
     static {
         MYSQL.start();
+        try {
+            CARPETA_EVIDENCIAS = java.nio.file.Files.createTempDirectory("biohub-evidencias-");
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     @DynamicPropertySource
@@ -40,6 +47,8 @@ public abstract class BaseRegistroMySqlTest {
         // Ubicación necesita una llave para arrancar; se genera aquí y solo vive en la prueba.
         r.add("biohub.ubicacion.cifrado.claves", () -> "v1:" + llaveDePrueba());
         r.add("biohub.ubicacion.cifrado.clave-activa", () -> "v1");
+        // Evidencias (RF1) en una carpeta temporal, nunca dentro del repositorio.
+        r.add("biohub.registro.evidencias.directorio", () -> CARPETA_EVIDENCIAS.toString());
     }
 
     private static String llaveDePrueba() {

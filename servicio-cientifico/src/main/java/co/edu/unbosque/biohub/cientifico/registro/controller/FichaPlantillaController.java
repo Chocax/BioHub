@@ -34,7 +34,7 @@ public class FichaPlantillaController {
 
     /** Guarda los atributos de una especie como versión nueva de su plantilla. */
     @PutMapping("/{nombreCientifico}/atributos")
-    @PreAuthorize("hasAnyRole('cientifico_alto_rango', 'administrador')")
+    @PreAuthorize("hasAnyRole('investigador_campo', 'cientifico_alto_rango')")
     public PlantillaResponse configurar(@PathVariable String nombreCientifico,
                                         @RequestBody List<AtributoPlantilla> atributos,
                                         @AuthenticationPrincipal Jwt jwt) {

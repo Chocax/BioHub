@@ -156,7 +156,7 @@ Ruta en el gateway: `GET {gateway}/api/publica/fichas`. Ruta interna: `GET http:
 | Parámetro | Tipo | Obligatorio | Validación |
 |---|---|---|---|
 | `q` | texto | No | 2–100 caracteres. Busca en nombre científico y nombre común |
-| `familia` | texto | No | 1–100 caracteres; coincidencia exacta sin distinguir mayúsculas ni tildes |
+| `familia` | texto | No | 1–100 caracteres; vacío o solo espacios = ausente (§1); coincidencia exacta sin distinguir mayúsculas ni tildes |
 | `departamento` | texto | No | Código DANE o nombre oficial (§1) |
 | `page` | entero | No | ≥ 0; por defecto 0 |
 | `size` | entero | No | 1–50; por defecto 20 |
@@ -244,6 +244,26 @@ Ruta en el gateway: `GET {gateway}/api/publica/fichas/{id}`. Ruta interna: `GET 
   "codigo": "NO_ENCONTRADO" }
 ```
 **429** y **503**: como en §4.1 (si la ficha está en caché se sirve aunque mysql-lectura esté caída).
+
+### 4.4 Catálogo por especie, familias y foto pública (D65)
+Sin autenticación, como §4.1. Nunca traen coordenadas ni el investigador.
+
+| Método y ruta | Respuesta |
+|---|---|
+| `GET /api/publica/especies?q=&familia=&departamento=&page=&size=` | Una fila por `nombreCientifico`, con los mismos filtros, validaciones y modo degradado de §4.1 (`size` de 1 a 50). `Cache-Control: public, max-age=30` |
+| `GET /api/publica/especies/familias` | `{ "familias": ["Asteraceae", "Bufonidae", …] }`: las familias con registros públicos, en orden y sin repetir (tope 500) |
+| `GET /api/publica/especies/fotos/{fotoId}` (D66) | **200** `image/jpeg` (a lo sumo 1200 px, sin metadatos), `Cache-Control: public, max-age=31536000, immutable`, `nosniff`, `ETag` = sha256. **404** si no existe o ya no es pública. **400** si `fotoId` no es un UUID. Es la ruta que usa el portal |
+| `GET /api/publica/especies/foto?nombre=Ara%20macao` | Se mantiene por compatibilidad: la foto pública más reciente de la especie, servida desde la base de lectura. `Cache-Control: public, max-age=300`. **404** si no hay. **400** si `nombre` no es un nombre científico (letras, espacios, `.`, `'` y `-`, de 2 a 150) |
+
+Elemento del catálogo:
+```json
+{ "nombreCientifico": "Atelopus ebenoides", "nombreComun": "Rana arlequín de Boyacá", "familia": "Bufonidae",
+  "estadoConservacion": "EN_PELIGRO", "registros": 2, "departamentos": ["Boyacá", "Cundinamarca"],
+  "regiones": ["Andina"], "ultimaRecoleccion": "2026-05-02", "fichaId": "3f2a9c1e-…", "fotoId": "9b1d…" }
+```
+`nombreComun`, `familia`, `estadoConservacion` y `fichaId` son los del registro más reciente; `fichaId` se abre con §4.2. `fotoId` es la foto pública más reciente de la especie, o `null` si no tiene: el portal solo pide `/especies/fotos/{fotoId}` cuando no es `null`. En modo degradado el catálogo puede devolver `fotoId: null` y `familias` vacías.
+
+**Fotos (D66):** consulta-publica no llama al Servicio Científico. Las miniaturas le llegan por el evento `evidencia.publicada` (§7.6) y las sirve desde `foto_publica` en `mysql-lectura`.
 
 ## 5. Endpoints internos (servicio-cientifico, módulo ubicacion)
 
@@ -499,6 +519,7 @@ publicador.publishEvent(new HallazgoReclasificado(hallazgoId, version, nombreCie
 - `estadoConservacion` viaja como texto (`EN_PELIGRO`, `NO_AMENAZADA`, `SIN_EVALUAR`) para que `eventos.domain` no dependa de ubicacion. Un valor desconocido produce `UbicacionInvalidaException` (campo `estadoConservacion`).
 - Los eventos de dominio llevan las coordenadas **solo en memoria** (su `toString()` las enmascara); no se serializan ni van al broker. El `@TransactionalEventListener(AFTER_COMMIT)` que arma el `EventoSobre` público de §7 es de registro y **no debe copiar** `latitud`/`longitud`.
 - La llamada directa a `UbicacionService` sigue siendo válida y tiene el mismo contrato; nada de lo anterior cambia las validaciones de la tabla.
+- **Nota (D53, ARQ-29, iteración 16): la llamada directa a `UbicacionService` está PROHIBIDA para `registro`.** El texto anterior se conserva solo como referencia del contrato de `UbicacionService`. `registro` no puede importar nada de `co.edu.unbosque.biohub.cientifico.ubicacion`; solo publica `HallazgoRegistrado`/`HallazgoReclasificado` con `ApplicationEventPublisher`. Lo verifica ArchUnit en `ModuloRegistroNoDependeDeUbicacionInternaTest` (falla el build). Además, `PublicadorEventos.publicar` rechaza con `IllegalArgumentException` cualquier `hallazgo.*` con coordenadas (D54, SEC-J-13); `latitud` y `longitud` de `HallazgoRegistrado` llevan `@JsonIgnore`.
 
 ## 7. Eventos `hallazgo.*` (los publica registro, los consumen consulta-publica y reportes)
 
@@ -608,7 +629,7 @@ JSON Schema (draft 2020-12) de `datos`, para que Hernando valide en sus pruebas:
 ### 7.5 Comportamiento del consumidor (consulta-publica)
 | Caso | Resultado |
 |---|---|
-| Evento válido con `version` mayor que la guardada, o hallazgo nuevo | INSERT/UPDATE de la ficha; se invalidan su caché y la de las búsquedas; ack |
+| Evento válido con `version` mayor que la guardada, o hallazgo nuevo | INSERT/UPDATE de la ficha; se invalida solo su caché (`fichas::<id>`); búsquedas, catálogo y familias se renuevan por TTL (60 s) (iteración 27); ack |
 | Mismo evento repetido, o `version` igual o menor | Se ignora (ack, sin cambios) |
 | `reclasificado`/`actualizado` antes que `registrado` | Se crea la ficha con ese snapshot; el `registrado` posterior (versión menor) se ignora |
 | `datos` con una clave de coordenadas, o texto con forma de coordenadas en cualquier campo (SEC-J-01/02/03) | **Se descarta con ack: NO va a la DLQ** (la DLQ es un almacén persistente fuera del cifrado y guardaría las coordenadas). No se crea ni cambia ninguna ficha. Se registra un **incidente de seguridad** (log ERROR `INCIDENTE SEC-J-03`) con solo el `id` del evento y el tipo, sin ningún valor. Se analiza el cuerpo de todo mensaje de la cola, también con JSON roto o routing key distinta. El responsable del publicador debe corregirlo y republicar |
@@ -624,6 +645,36 @@ Obligaciones del publicador (Hernando):
 
 Nicolás (reportes) recibe los mismos eventos por su cola `reportes.eventos` y puede ignorar los campos que no use.
 
+### 7.6 Eventos `evidencia.*`: fotos públicas (D66)
+| Elemento | Valor |
+|---|---|
+| Exchange | `biohub.eventos` (el mismo), mismo sobre (§7.2), mismas propiedades AMQP y verificación de `user_id` que §7.1 |
+| Tipos y routing key | `evidencia.publicada`, `evidencia.retirada` |
+| Cola | `consulta-publica.fotos` (durable, DLX `biohub.eventos.dlx`, DLQ `consulta-publica.fotos.dlq`), enlazada con `evidencia.#`. `reportes.eventos` **no** la recibe. Límite del mensaje: **1 MB** solo en esta cola (las demás siguen en 64 KB) |
+| Cuándo | `publicada`: después del commit de `PUT …/evidencias/{id}/publica` con `publica=true`, al arrancar si faltaba la miniatura de una foto pública, y en la republicación de administrador. `retirada`: después del commit con `publica=false` o si se borra la evidencia o el hallazgo |
+
+`datos` de `evidencia.publicada`:
+| Campo | Tipo | Reglas |
+|---|---|---|
+| `evidenciaId` | UUID | Obligatorio. Es el `fotoId` del portal |
+| `hallazgoId` | UUID | Obligatorio. La especie sale de `ficha_publica` con este id |
+| `cambioEn` | ISO-8601 UTC | Obligatorio. Instante del cambio de visibilidad; ordena los eventos |
+| `sha256` | hex, 64 | Obligatorio. Hash de la miniatura (no del original) |
+| `ancho`, `alto` | entero 1..1200 | Obligatorio |
+| `jpegBase64` | string Base64 | Obligatorio. JPEG de a lo sumo 600 KB decodificado |
+
+`datos` de `evidencia.retirada`: `evidenciaId`, `hallazgoId`, `cambioEn`.
+
+Comportamiento del consumidor (consulta-publica):
+| Caso | Resultado |
+|---|---|
+| `publicada` con `cambioEn` mayor que el guardado, o foto nueva | UPSERT en `foto_publica` (`publica = true`, bytes, sha256, tamaño, `cambio_en`); se invalida la caché del catálogo y de la foto de esa especie; ack |
+| `retirada` con `cambioEn` mayor | `publica = false` y se borran los bytes; se invalida lo mismo; ack |
+| `cambioEn` igual o menor (repetido o desordenado) | Se ignora; ack |
+| `jpegBase64` que no decodifica, no empieza por `FF D8`, pasa de 600 KB, no coincide con `sha256` o trae segmentos `APP1` (Exif/XMP) o `APP13` | DLQ; no se guarda nada |
+| Coordenadas en cualquier campo **salvo** `jpegBase64` (que no es texto) | Descarte con ack e incidente, como §7.5 |
+| Sobre inválido, origen o `user_id` incorrecto, más de 1 MB | DLQ, como §7.5 |
+
 ## 8. Rutas del gateway para la parte de Juanita (las implementa o confirma Santiago)
 | Ruta | Destino | JWT | Acción |
 |---|---|---|---|
@@ -632,6 +683,25 @@ Nicolás (reportes) recibe los mismos eventos por su cola `reportes.eventos` y p
 | `/api/v1/externa/fichas/**` (API externa, D16) | consulta-publica, **reescribiendo** a `/api/publica/fichas/**` | No (API Key) | **Hecho.** Ver §9 |
 | CORS | – | – | `Access-Control-Expose-Headers: Retry-After` **hecho**. **Falta** el origen de web-publica en Vercel cuando exista |
 | Cabeceras de respuesta | – | – | **Hecho.** `Cache-Control` pasa sin filtrar, salvo en la API externa, donde `public` pasa a `private` (D47) |
+| `GET /api/gateway/teselas/{z}/{x}/{y}.png` (fondo del mapa, SEC-J-04, D56) | El gateway, que la pide a OSM | Sí, uno de los 5 roles | **Hecho.** Ver §8.1. **Hecho en el front:** `MapaHallazgos.jsx` ya lo usa, con `CapaTeselasGateway` y `cliente.getBlob` (`11-seguridad-y-acceso.md` §7) |
+
+### 8.1 Teselas del mapa
+
+- **Entrada:** `z` entre 0 y 12, y `x`, `y` entre 0 y 2^z − 1, en el esquema XYZ de OSM. Solo `GET`, con `Authorization: Bearer <JWT>`.
+- **200:** la imagen (`image/png`) con `Cache-Control: max-age=86400, private`.
+- **Errores:**
+
+| Estado | Código | Cuándo |
+|---|---|---|
+| 400 | `PARAMETRO_INVALIDO` | La tesela no existe o el zoom pasa de 12 |
+| 401 | – | Sin token |
+| 403 | `ROL_INSUFICIENTE` | El usuario no tiene ninguno de los 5 roles |
+| 429 | `LIMITE_EXCEDIDO` | Más de 600 teselas en un minuto; trae `Retry-After` |
+| 502 | `TESELA_NO_DISPONIBLE` | El origen respondió algo que no es una imagen |
+| 502 | – | El origen no responde |
+| 503 | `SERVICIO_NO_DISPONIBLE` | Circuito abierto o descargas saturadas; trae `Retry-After` |
+
+- **Privacidad:** el gateway no reenvía nada del navegador al origen, ni IP, ni token, ni cookies, ni Referer. Tampoco escribe z/x/y en el log.
 
 ## 9. API externa (HU-08, RF14, RNF11, RNF12)
 
@@ -698,7 +768,7 @@ servicio con `@PreAuthorize` (defensa en profundidad, RNF6).
 ## 13. Endpoints
 
 ### 13.1 `POST /api/cientifico/hallazgos` — registrar un hallazgo (HU-01)
-Roles: `investigador_campo`, `cientifico_alto_rango`, `administrador`.
+Roles: `investigador_campo`, `cientifico_alto_rango` (D63: el administrador no crea ni edita datos científicos).
 
 ```json
 {
@@ -740,7 +810,7 @@ devuelve `409 CLAVE_IDEMPOTENCIA_REUTILIZADA`. La clave se persiste con restricc
 reintentos concurrentes. El departamento se valida contra el catálogo antes de guardar.
 
 ### 13.2 `PUT /api/cientifico/hallazgos/{id}` — reclasificar (HU-03)
-Roles: `cientifico_alto_rango`, `administrador`.
+Roles: `investigador_campo`, `cientifico_alto_rango` (D63).
 
 Mismo cuerpo que el alta **sin** `latitud`/`longitud`, más `justificacion` (obligatoria, ≤ 1000). Los
 campos nulos no se tocan. Devuelve `{ "hallazgoId": "...", "version": n }` con la versión nueva.
@@ -753,7 +823,7 @@ Roles: `investigador_campo`, `cientifico_alto_rango`, `auditor_cientifico`, `adm
 Devuelve el hallazgo **sin coordenadas**.
 
 ### 13.4 `PUT /api/cientifico/fichas/{nombreCientifico}/atributos` — configurar la plantilla (HU-02)
-Roles: `cientifico_alto_rango`, `administrador`.
+Roles: `investigador_campo`, `cientifico_alto_rango` (D63).
 
 Se envía la lista completa tal como debe quedar; cada llamada crea una **versión nueva** de la plantilla
 y las anteriores no se tocan, de modo que los hallazgos ya registrados no se alteran.
@@ -783,7 +853,36 @@ Cada fila: `campo`, `valorPrevio`, `valorNuevo`, `justificacion`, `autor`, `fech
 Devuelve **solo los campos que cambiaron**, que es lo que el auditor necesita resaltar. El orden de los
 parámetros no importa. `400` si ambos son iguales; `404` si alguna versión no existe.
 
-### 13.9 `POST /api/cientifico/hallazgos/{id}/versiones/{version}/republicar-evento`
+### 13.9 Evidencias del hallazgo: fotografías y audios (RF1, HU-01 c.2, D62)
+
+| Método y ruta | Roles | Respuesta |
+|---|---|---|
+| `POST /api/cientifico/hallazgos/{id}/evidencias` | `investigador_campo`, `cientifico_alto_rango` | `multipart/form-data` con el campo `archivo`. **201** con la evidencia nueva y `Location`; **200** si el mismo archivo ya estaba (no se duplica) |
+| `GET /api/cientifico/hallazgos/{id}/evidencias` | los 4 que consultan el hallazgo (todos menos `analista_ambiental`) | Lista en orden de subida |
+| `GET /api/cientifico/hallazgos/{id}/evidencias/{evidenciaId}` | los mismos | El archivo, siempre como adjunto (`Content-Disposition: attachment`), con `nosniff` y `no-store` |
+
+Evidencia: `{ id, nombre, tipo: FOTOGRAFIA|AUDIO, contentType, tamanoBytes, sha256, subidoPor, publica, creadoEn }`. Nunca trae la ruta en disco.
+
+`PUT /api/cientifico/hallazgos/{id}/evidencias/{evidenciaId}/publica` con `{ "publica": true|false }` (roles `investigador_campo` y `cientifico_alto_rango`) decide si la foto sale en el portal (D65). Por defecto ninguna es pública. Un audio no puede ser público (**400**).
+
+- **Formatos** (se reconocen por el contenido, no por la extensión): JPEG y PNG (fotos); WAV, MP3, OGG y FLAC (audio). WEBP, HEIC, MP4 y M4A no: pueden traer la ubicación del teléfono y no se limpian.
+- **Metadatos:** todo archivo se reescribe antes de guardarse, porque las fotos y las grabaciones pueden traer las coordenadas GPS (RNF9). Fotos: se quitan EXIF, XMP, IPTC, MPF y comentarios, y todo lo que venga pegado después del fin de imagen (el video de una "foto en movimiento", imágenes secundarias). Audio: solo se conserva el sonido (WAV: `fmt`, `fact` y `data`; MP3: solo las tramas de audio; FLAC: `STREAMINFO` y `SEEKTABLE`; OGG Vorbis u Opus de una sola pista: comentarios vacíos). Un archivo que no se puede recorrer completo responde 400. Lo que se descarga es la versión limpia.
+- **Tamaño:** máximo 9 MB por archivo (el cuerpo máximo del gateway es 10 MB con el sobre multipart).
+- **Errores:** `400 DATOS_INVALIDOS` (vacío, formato no admitido, imagen dañada o sin el campo `archivo`), `413 ARCHIVO_DEMASIADO_GRANDE`, `404 HALLAZGO_NO_ENCONTRADO`, `404 EVIDENCIA_NO_ENCONTRADA` (también si la evidencia es de otro hallazgo), `403`.
+- El front sube el hallazgo primero (13.1) y luego cada archivo con el `hallazgoId` que recibió.
+
+### 13.10 Galería de especies, listas para autocompletar y foto pública (D65)
+
+| Método y ruta | Roles | Respuesta |
+|---|---|---|
+| `GET /api/cientifico/especies?q=&familia=&page=&size=` | todos menos `analista_ambiental` | Página de especies (`size` de 1 a 48, por defecto 12): las de los hallazgos vigentes más las que solo tienen ficha. `q` busca en nombre científico y común |
+| `GET /api/cientifico/especies/sugerencias` | los 5 roles | `{ especies: [{ nombreCientifico, nombreComun, familia }], familias: [...], investigadores: [...] }` (tope 1000 cada una) |
+| ~~`GET /api/cientifico/publico/especies/foto?nombre=`~~ | — | **Eliminada (D66).** Las fotos públicas salen por el evento `evidencia.publicada` (§7.6) |
+| `POST /api/cientifico/admin/fotos-publicas/republicar` | `administrador` | **202** `{ "fotos": n }`. Vuelve a publicar `evidencia.publicada` de todas las fotos marcadas como públicas (genera las miniaturas que falten). Es idempotente del lado del consumidor. Sirve para migrar y para recuperar eventos perdidos |
+
+Especie: `{ nombreCientifico, nombreComun, familia, estadoConservacion, categoriaUicn, registros, departamentos, ultimaRecoleccion, fichaVersion, atributosFicha, foto: { hallazgoId, evidenciaId, publica } | null }`. La foto prefiere una pública; si no hay, la más reciente. Se descarga con §13.9.
+
+### 13.11 `POST /api/cientifico/hallazgos/{id}/versiones/{version}/republicar-evento`
 Solo `administrador`. Republica a RabbitMQ el evento a partir del snapshot inmutable de esa versión y
 responde `202` con el sobre publicado. Responde `404` si no existe esa versión. Esta operación permite
 recuperación manual; el outbox transaccional queda como trabajo pendiente.
@@ -811,22 +910,65 @@ recuperación manual; el outbox transaccional queda como trabajo pendiente.
 1. Los repositorios no exponen ninguna operación de modificación ni de borrado.
 2. Un `CHECK` impide guardar una versión ≥ 2 sin justificación, y un `UNIQUE` impide repetir una versión.
 
-**Lo que todavía NO está garantizado:** el criterio 2 de HU-05 pide bloquear *físicamente* `UPDATE` y
-`DELETE`. La vía habitual —triggers— se probó y **no es viable**: MySQL con binary logging exige
-`SUPER` para crearlos (ERROR 1419) y ningún usuario del proyecto tiene `SUPER` ni `TRIGGER` (doc 05
-§11). Se comprobó contra MySQL 8.4 real: la migración fallaba y el servicio no arrancaba, así que se
-retiró.
+3. **En la base de datos (D60, desde 2026-11-16):** `cientifico_app` no tiene `UPDATE` ni `DELETE` sobre esas dos
+   tablas. Lo aplica `deploy/aiven/03-registro-historial-append-only.sql.example`, que es un paso obligatorio del
+   aprovisionamiento de Aiven (`09-despliegue.md` §4.3, paso 5). Un `UPDATE` o `DELETE` sobre el historial falla con
+   `ERROR 1142` aunque se use la credencial de la aplicación (HU-05 c.2, RNF10).
 
-Queda la vía de permisos, pero choca con el aprovisionamiento actual: `cientifico_app` tiene
-`UPDATE, DELETE` sobre `cientifico`.*, y en MySQL los privilegios **se suman**, de modo que no se
-puede restar el permiso a dos tablas concretas. Hay que bajar el permiso de base y devolverlo tabla
-por tabla.
+Los triggers no sirven: MySQL con binary logging exige `SUPER` para crearlos (ERROR 1419) y ningún usuario del
+proyecto lo tiene. Por eso se usan permisos.
 
-La propuesta está escrita y **probada** en `deploy/aiven/03-registro-historial-append-only.sql.example`;
-`MigracionesRegistroTest` crea un usuario con ese reparto y verifica que `UPDATE` y `DELETE` sobre el
-historial fallan mientras el resto sigue funcionando.
+**Pruebas:** `MigracionesRegistroTest` crea un usuario con ese reparto y comprueba que el historial rechaza
+`UPDATE` y `DELETE` mientras el resto sigue funcionando. `HistorialAppendOnlyScriptTest` hace fallar el build si una
+migración crea una tabla que no está en el script: cada tabla nueva tiene que decidir si es historial o si lleva su
+línea de permisos.
 
-> **Decisión pendiente del equipo:** aplicarlo tiene un costo, cada tabla nueva con escritura necesitará
-> su línea en ese script, mientras que hoy el aprovisionamiento es por base para no tener que tocarlo.
-> Mientras no se aplique, la inmutabilidad protege contra un error de programación, pero no contra
-> alguien que use la credencial de la aplicación.
+**Límite:** en el MySQL local de Docker el usuario de la aplicación también hace las migraciones y tiene todos los
+permisos, así que el bloqueo solo aplica en Aiven, donde hay un usuario de aplicación y otro de migración.
+
+## 16. Inventario de equipos de campo (HU-04, RF5, RF6) — `servicio-equipos`
+
+Todo exige rol `administrador`. Errores en problem+json: `400 PARAMETRO_INVALIDO`, `404 NO_ENCONTRADO`,
+`409 CONFLICTO`, `403 ROL_INSUFICIENTE`, `503 SERVICIO_NO_DISPONIBLE` (no se pudo consultar al gateway).
+
+| Método y ruta | Cuerpo | Respuesta |
+|---|---|---|
+| `POST /api/equipos` | `{ codigoInventario, nombre, categoria, descripcion? }` | 201 + equipo. 409 si el código ya existe |
+| `GET /api/equipos?estado&custodioId&page&size` | – | 200 + `{ content, page, size, total, totalPaginas }`. Los dos filtros se combinan |
+| `GET /api/equipos/{id}` | – | 200 + equipo |
+| `PUT /api/equipos/{id}/asignacion` | `{ custodioId }` (el `id` de Keycloak) | 200 + equipo `ASIGNADO`. 400 si el custodio no existe, está inactivo o **no es `investigador_campo`** (HU-04 c.1) |
+| `PUT /api/equipos/{id}/estado` | `{ estado: DISPONIBLE|MANTENIMIENTO|BAJA }` | 200 + equipo; libera al custodio |
+
+Equipo: `{ id, codigoInventario, nombre, categoria, descripcion, estado, custodioId, custodioUsuario, asignadoEn,
+creadoEn, actualizadoEn }`. `ASIGNADO` es el estado "En expedición" de HU-04 c.2: el front lo muestra con ese texto.
+Para validar al custodio, el servicio llama a `GET /api/gateway/usuarios/{id}` con el JWT del administrador.
+
+## 17. Reportes (HU-09, RF15, RF16) — `servicio-reportes`
+
+Roles: `analista_ambiental` y `administrador`. Todo se calcula sobre la base analítica, alimentada por los eventos
+`hallazgo.*`; nunca se consulta la base del Servicio Científico (ASR3).
+
+### 17.1 Reporte mensual asíncrono de presión sobre los ecosistemas (SD-08, D61)
+
+| Método y ruta | Respuesta |
+|---|---|
+| `POST /api/reportes/solicitudes` con `{ "periodo": "2026-03" }` | **202 Accepted** + `Location` + la solicitud en `PENDIENTE`. El reporte se genera en segundo plano (HU-09 c.1) |
+| `GET /api/reportes/solicitudes` | Las 20 más recientes |
+| `GET /api/reportes/solicitudes/{id}` | Estado: `PENDIENTE`, `EN_PROCESO`, `LISTO` o `FALLIDO`. Con `LISTO` trae `resumen` |
+| `GET /api/reportes/solicitudes/{id}/csv` · `/pdf` | El archivo (HU-09 c.3). **409 `REPORTE_NO_LISTO`** si todavía no está listo. Se arma al descargar desde el resumen guardado, así que un reporte viejo sale con el formato vigente. El CSV va para Excel en español: separador `;`, coma decimal, UTF-8 con BOM y encabezados legibles (`Departamento;Hallazgos;En peligro;…;Zona en alerta`) |
+
+Solicitud: `{ id, periodo, estado, origen: MANUAL|PROGRAMADO, solicitadoPor, solicitadoEn, iniciadoEn, terminadoEn,
+error, resumen }`. `resumen` es `{ periodo, totalHallazgos, totalEnPeligro, departamentos, zonasEnAlerta: [...],
+indices: [{ departamento, hallazgos, enPeligro, especies, proporcionEnPeligro, promedioEnPeligroPrevio, crecimiento,
+indice, nivel, alerta }] }`, ordenado del departamento más presionado al menos. La fórmula está en D61.
+
+- `periodo` en formato `AAAA-MM`, entre 2000 y el mes actual: si no, 400 `PARAMETRO_INVALIDO`.
+- El front consulta el estado cada 1 o 2 segundos hasta `LISTO` o `FALLIDO` y entonces muestra los botones de descarga.
+- El primer día de cada mes, a las 3 a. m. de Bogotá, el servicio pide solo el reporte del mes anterior
+  (`origen: PROGRAMADO`, `solicitadoPor: sistema`), una sola vez por mes (HU-09 "programar").
+
+### 17.2 Consultas inmediatas (las de antes)
+
+`GET /api/reportes/resumen`, `GET /api/reportes/hallazgos` y `GET /api/reportes/exportar/{csv|pdf}`, con los filtros
+opcionales `departamento`, `familia`, `estado`, `desde` y `hasta`. Responden en el momento con conteos por
+departamento, familia y estado. Sirven para explorar; el reporte mensual de HU-09 es el de 17.1.

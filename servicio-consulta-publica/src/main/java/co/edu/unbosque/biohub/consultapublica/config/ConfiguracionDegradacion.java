@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 
 import co.edu.unbosque.biohub.consultapublica.service.MonitorCarga;
+import co.edu.unbosque.biohub.consultapublica.service.UmbralesDegradacion;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.binder.MeterBinder;
 
@@ -25,10 +26,17 @@ import io.micrometer.core.instrument.binder.MeterBinder;
 @EnableConfigurationProperties(PropiedadesPublica.class)
 public class ConfiguracionDegradacion {
 
+    /** Entrega a {@link MonitorCarga} solo los umbrales, sin que el servicio conozca {@code config} (ARQ-28). */
+    @Bean
+    UmbralesDegradacion umbralesDegradacion(PropiedadesPublica propiedades) {
+        return propiedades.degradacion();
+    }
+
     @Bean
     FilterRegistrationBean<MonitorCargaFilter> monitorCargaFilter(MonitorCarga monitor) {
         FilterRegistrationBean<MonitorCargaFilter> registro = new FilterRegistrationBean<>(new MonitorCargaFilter(monitor));
-        registro.addUrlPatterns("/api/publica/fichas", "/api/publica/fichas/*");
+        registro.addUrlPatterns("/api/publica/fichas", "/api/publica/fichas/*", "/api/publica/especies",
+                "/api/publica/especies/*");
         registro.setOrder(Ordered.HIGHEST_PRECEDENCE + 10); // antes que la seguridad: mide la petición completa
         return registro;
     }

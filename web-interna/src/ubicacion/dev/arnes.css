@@ -1,0 +1,12 @@
+/* Estilos mínimos del arnés de desarrollo (no se usan en la aplicación). */
+body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; background: #f4f8f4; color: #1b2a1f; }
+.arnes-cabecera { background: #fff; border-bottom: 1px solid #cfd8d1; padding: .5rem 1rem; }
+.arnes-aviso { margin: .25rem 0; padding: .5rem .75rem; background: #fff3cd; border: 2px dashed #8a6d00; border-radius: 6px; }
+.arnes-barra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+.arnes-sesion { margin: .25rem 0; font-size: .9rem; }
+.arnes-nav { display: flex; gap: .5rem; }
+.arnes-nav button { font: inherit; padding: .375rem .875rem; border: 1px solid #6b7d6f; border-radius: 6px; background: #fff; color: #1b2a1f; cursor: pointer; min-height: 44px; }
+.arnes-nav button[aria-current='page'] { background: #2e7d32; border-color: #2e7d32; color: #fff; }
+.arnes-nav button:focus-visible { outline: 3px solid #1565c0; outline-offset: 2px; }
+.arnes-contenido { max-width: 72rem; margin: 0 auto; padding: 0 1rem 2rem; }
+.arnes-error { color: #b71c1c; font-weight: 600; }

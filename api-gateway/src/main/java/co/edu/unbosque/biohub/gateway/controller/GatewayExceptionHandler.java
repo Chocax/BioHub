@@ -22,6 +22,8 @@ import co.edu.unbosque.biohub.gateway.service.ConflictoException;
 import co.edu.unbosque.biohub.gateway.service.CuerpoDemasiadoGrandeException;
 import co.edu.unbosque.biohub.gateway.service.DatosRechazadosException;
 import co.edu.unbosque.biohub.gateway.service.IdentidadNoDisponibleException;
+import co.edu.unbosque.biohub.gateway.service.LimiteExcedidoException;
+import co.edu.unbosque.biohub.gateway.service.TeselaNoDisponibleException;
 import co.edu.unbosque.biohub.gateway.service.RecursoNoEncontradoException;
 import co.edu.unbosque.biohub.gateway.service.RutaNoEncontradaException;
 
@@ -46,6 +48,24 @@ public class GatewayExceptionHandler {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.segundosParaReintentar()))
                 .body(problema);
+    }
+
+    /** Cupo superado dentro de un controlador (p. ej. teselas por usuario): mismo formato que el filtro. */
+    @ExceptionHandler(LimiteExcedidoException.class)
+    public ResponseEntity<ProblemDetail> limiteExcedido(LimiteExcedidoException ex) {
+        ProblemDetail problema = conCodigo(HttpStatus.TOO_MANY_REQUESTS, "Demasiadas peticiones",
+                "Superaste el límite de peticiones. Intenta de nuevo en unos segundos.", "LIMITE_EXCEDIDO");
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.segundosParaReintentar()))
+                .body(problema);
+    }
+
+    /** El servidor de teselas respondió, pero no con una imagen válida. */
+    @ExceptionHandler(TeselaNoDisponibleException.class)
+    public ProblemDetail teselaNoDisponible(TeselaNoDisponibleException ex) {
+        log.warn("Tesela no disponible: {}", ex.getMessage());
+        return conCodigo(HttpStatus.BAD_GATEWAY, "Mapa no disponible",
+                "No se pudo cargar el fondo del mapa en este momento.", "TESELA_NO_DISPONIBLE");
     }
 
     @ExceptionHandler(CuerpoDemasiadoGrandeException.class)

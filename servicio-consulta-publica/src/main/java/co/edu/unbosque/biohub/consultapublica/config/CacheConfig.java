@@ -25,6 +25,8 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import co.edu.unbosque.biohub.consultapublica.service.vista.FichaPublicaResponse;
 import co.edu.unbosque.biohub.consultapublica.service.vista.PaginaFichasResponse;
+import co.edu.unbosque.biohub.consultapublica.service.vista.FamiliasResponse;
+import co.edu.unbosque.biohub.consultapublica.service.vista.PaginaEspeciesResponse;
 import co.edu.unbosque.biohub.consultapublica.infrastructure.CacheErrorHandlerTolerante;
 import co.edu.unbosque.biohub.consultapublica.infrastructure.CacheManagerTolerante;
 import io.lettuce.core.ClientOptions;
@@ -48,6 +50,9 @@ public class CacheConfig implements CachingConfigurer {
 
     public static final String FICHAS = "fichas";
     public static final String BUSQUEDAS = "busquedas";
+    /** Catálogo agrupado por especie y lista de familias (D65): se invalidan junto con las búsquedas. */
+    public static final String ESPECIES = "especies";
+    public static final String FAMILIAS = "familias";
 
     private final CacheErrorHandler errores = new CacheErrorHandlerTolerante();
 
@@ -71,6 +76,10 @@ public class CacheConfig implements CachingConfigurer {
                         SerializationPair.fromSerializer(new Jackson2JsonRedisSerializer<>(mapper, FichaPublicaResponse.class))))
                 .withCacheConfiguration(BUSQUEDAS, base.entryTtl(ttlBusquedas).serializeValuesWith(
                         SerializationPair.fromSerializer(new Jackson2JsonRedisSerializer<>(mapper, PaginaFichasResponse.class))))
+                .withCacheConfiguration(ESPECIES, base.entryTtl(ttlBusquedas).serializeValuesWith(
+                        SerializationPair.fromSerializer(new Jackson2JsonRedisSerializer<>(mapper, PaginaEspeciesResponse.class))))
+                .withCacheConfiguration(FAMILIAS, base.entryTtl(ttlBusquedas).serializeValuesWith(
+                        SerializationPair.fromSerializer(new Jackson2JsonRedisSerializer<>(mapper, FamiliasResponse.class))))
                 .build();
         redis.afterPropertiesSet(); // al envolverlo, Spring ya no lo inicializa: sin esto se perdería la configuración por caché
         return new CacheManagerTolerante(redis, errores);

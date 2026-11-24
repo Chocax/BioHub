@@ -14,8 +14,8 @@ import co.edu.unbosque.biohub.consultapublica.soporte.CacheRota;
 class InvalidadorCacheFichasTest {
 
     @Test
-    void evictaLaFichaYVaciaLasBusquedas() {
-        CacheManager cm = new ConcurrentMapCacheManager("fichas", "busquedas");
+    void unHallazgoEvictaSoloSuFichaYDejaLosListadosConSuTtl() {
+        CacheManager cm = new ConcurrentMapCacheManager("fichas", "busquedas", "especies", "familias");
         UUID id = UUID.randomUUID();
         UUID otro = UUID.randomUUID();
         cm.getCache("fichas").put(id.toString(), "a");
@@ -27,8 +27,27 @@ class InvalidadorCacheFichasTest {
 
         assertThat(cm.getCache("fichas").get(id.toString())).isNull();
         assertThat(cm.getCache("fichas").get(otro.toString())).isNotNull();
-        assertThat(cm.getCache("busquedas").get("q=x")).isNull();
-        assertThat(cm.getCache("busquedas").get("q=y")).isNull();
+        assertThat(cm.getCache("busquedas").get("q=x")).isNotNull();
+        assertThat(cm.getCache("busquedas").get("q=y")).isNotNull();
+    }
+
+    @Test
+    void unaFotoVaciaSoloElCatalogo() {
+        CacheManager cm = new ConcurrentMapCacheManager("fichas", "busquedas", "especies", "familias");
+        UUID id = UUID.randomUUID();
+        cm.getCache("fichas").put(id.toString(), "a");
+        cm.getCache("busquedas").put("q=x", "r1");
+        cm.getCache("especies").put("p=0", "e1");
+        cm.getCache("especies").put("p=1", "e2");
+        cm.getCache("familias").put("false", "f");
+
+        new InvalidadorCacheFichas(cm).invalidarCatalogoPorFoto(id);
+
+        assertThat(cm.getCache("especies").get("p=0")).isNull();
+        assertThat(cm.getCache("especies").get("p=1")).isNull();
+        assertThat(cm.getCache("fichas").get(id.toString())).isNotNull();
+        assertThat(cm.getCache("busquedas").get("q=x")).isNotNull();
+        assertThat(cm.getCache("familias").get("false")).isNotNull();
     }
 
     @Test
@@ -45,5 +64,7 @@ class InvalidadorCacheFichasTest {
             }
         };
         assertThatCode(() -> new InvalidadorCacheFichas(roto).invalidar(UUID.randomUUID())).doesNotThrowAnyException();
+        assertThatCode(() -> new InvalidadorCacheFichas(roto).invalidarCatalogoPorFoto(UUID.randomUUID()))
+                .doesNotThrowAnyException();
     }
 }

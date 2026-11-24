@@ -1,0 +1,934 @@
+{
+  "parametros": {
+    "caso": "HU-06 c.3 / CG-02 (RNF5)",
+    "fase": "B",
+    "vus": 10,
+    "busquedas": 100,
+    "seed": 3,
+    "run": "3",
+    "fichas_sembradas": 10000,
+    "cache": "vaciada (biohub:publica:*) justo antes de la fase",
+    "base_url": "http://nginx:8080",
+    "replicas": "1",
+    "cpus_por_replica": "2",
+    "memoria_por_replica": "1024MiB",
+    "commit": "5ac5e67-sin-commit",
+    "red_k6": "biohub_default",
+    "fecha": "2026-11-15T21:25:33.859Z",
+    "nota": null
+  },
+  "peticiones": 100,
+  "respuestas_no_200": 0,
+  "respuestas_5xx": 0,
+  "exito_200_pct": 100,
+  "busquedas_vacias": 0,
+  "respuestas_degradadas": 0,
+  "latencia_ms": {
+    "avg": 30.356467019999997,
+    "min": 8.644885,
+    "p50": 27.359661000000003,
+    "p90": 43.451074999999996,
+    "p95": 58.617646449999995,
+    "p99": 82.53437017000024,
+    "max": 128.065675
+  },
+  "resultados_por_busqueda": {
+    "min": 9,
+    "p50": 320,
+    "max": 10000
+  },
+  "devueltos_por_busqueda": {
+    "min": 9,
+    "max": 50
+  },
+  "umbrales": {
+    "p95_menor_igual_2000_ms": true,
+    "cero_5xx": true,
+    "todas_200": true,
+    "sin_modo_degradado": true,
+    "ninguna_vacia": true
+  },
+  "umbrales_cumplidos": true,
+  "por_categoria": {
+    "q_genero": {
+      "busquedas": 10,
+      "p50": 33.020973,
+      "p95": 51.17745209999998,
+      "max": 58.557984
+    },
+    "q_epiteto": {
+      "busquedas": 12,
+      "p50": 21.8477515,
+      "p95": 44.12560939999998,
+      "max": 59.788659
+    },
+    "q_genero_epiteto": {
+      "busquedas": 12,
+      "p50": 21.0218865,
+      "p95": 30.4481781,
+      "max": 31.436494
+    },
+    "q_prefijo": {
+      "busquedas": 8,
+      "p50": 32.7912905,
+      "p95": 35.6364801,
+      "max": 36.170368
+    },
+    "q_nombre_comun": {
+      "busquedas": 6,
+      "p50": 26.954871500000003,
+      "p95": 45.12841575,
+      "max": 45.625412
+    },
+    "familia": {
+      "busquedas": 8,
+      "p50": 21.012512,
+      "p95": 35.124651549999996,
+      "max": 36.781813
+    },
+    "departamento": {
+      "busquedas": 8,
+      "p50": 22.3011955,
+      "p95": 30.543567999999997,
+      "max": 32.256412
+    },
+    "q_familia": {
+      "busquedas": 8,
+      "p50": 27.9441255,
+      "p95": 34.5415104,
+      "max": 34.649092
+    },
+    "q_departamento": {
+      "busquedas": 8,
+      "p50": 28.4104295,
+      "p95": 41.78541355,
+      "max": 42.194279
+    },
+    "familia_departamento": {
+      "busquedas": 6,
+      "p50": 29.9530035,
+      "p95": 38.961546999999996,
+      "max": 39.677096
+    },
+    "pagina_profunda": {
+      "busquedas": 8,
+      "p50": 45.223414,
+      "p95": 76.07447065,
+      "max": 82.074458
+    },
+    "q_numero_ficha": {
+      "busquedas": 4,
+      "p50": 30.152144999999997,
+      "p95": 114.39927309999996,
+      "max": 128.065675
+    },
+    "q_2_letras_like": {
+      "busquedas": 2,
+      "p50": 19.66271,
+      "p95": 27.8909492,
+      "max": 28.805198
+    }
+  },
+  "busquedas": [
+    {
+      "id": "000",
+      "categoria": "q_familia",
+      "qs": "q=amazonicus&familia=Felidae&page=0&size=10",
+      "ms": 27.35675,
+      "total": 17,
+      "devueltos": 10
+    },
+    {
+      "id": "001",
+      "categoria": "familia_departamento",
+      "qs": "familia=Dactyloidae&departamento=Caldas&page=0&size=50",
+      "ms": 39.677096,
+      "total": 15,
+      "devueltos": 15
+    },
+    {
+      "id": "002",
+      "categoria": "q_epiteto",
+      "qs": "q=andicola&page=0&size=10",
+      "ms": 31.310387,
+      "total": 320,
+      "devueltos": 10
+    },
+    {
+      "id": "003",
+      "categoria": "q_nombre_comun",
+      "qs": "q=coral%20tropical&page=0&size=30",
+      "ms": 45.625412,
+      "total": 16,
+      "devueltos": 16
+    },
+    {
+      "id": "004",
+      "categoria": "familia",
+      "qs": "familia=Ursidae&page=3&size=50",
+      "ms": 36.781813,
+      "total": 500,
+      "devueltos": 50
+    },
+    {
+      "id": "005",
+      "categoria": "familia",
+      "qs": "familia=Bromeliaceae&page=0&size=20",
+      "ms": 21.635825,
+      "total": 500,
+      "devueltos": 20
+    },
+    {
+      "id": "006",
+      "categoria": "q_prefijo",
+      "qs": "q=tanga&page=2&size=10",
+      "ms": 34.286584,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "007",
+      "categoria": "q_genero",
+      "qs": "q=tangara&page=0&size=50",
+      "ms": 42.156802,
+      "total": 500,
+      "devueltos": 50
+    },
+    {
+      "id": "008",
+      "categoria": "q_familia",
+      "qs": "q=oophaga&familia=Dendrobatidae&page=0&size=30",
+      "ms": 22.000107,
+      "total": 500,
+      "devueltos": 30
+    },
+    {
+      "id": "009",
+      "categoria": "q_genero",
+      "qs": "q=tremarctos&page=0&size=10",
+      "ms": 21.742943,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "010",
+      "categoria": "departamento",
+      "qs": "departamento=Meta&page=2&size=10",
+      "ms": 23.451101,
+      "total": 303,
+      "devueltos": 10
+    },
+    {
+      "id": "011",
+      "categoria": "q_epiteto",
+      "qs": "q=lacustris&page=1&size=30",
+      "ms": 31.028083,
+      "total": 320,
+      "devueltos": 30
+    },
+    {
+      "id": "012",
+      "categoria": "q_familia",
+      "qs": "q=riparius&familia=Asteraceae&page=0&size=30",
+      "ms": 22.540016,
+      "total": 16,
+      "devueltos": 16
+    },
+    {
+      "id": "013",
+      "categoria": "familia_departamento",
+      "qs": "familia=Hylidae&departamento=Cesar&page=0&size=30",
+      "ms": 23.783867,
+      "total": 30,
+      "devueltos": 30
+    },
+    {
+      "id": "014",
+      "categoria": "q_prefijo",
+      "qs": "q=pod&page=1&size=10",
+      "ms": 34.644974,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "015",
+      "categoria": "q_epiteto",
+      "qs": "q=nebulosus&page=3&size=50",
+      "ms": 17.643922,
+      "total": 340,
+      "devueltos": 50
+    },
+    {
+      "id": "016",
+      "categoria": "q_prefijo",
+      "qs": "q=quer&page=0&size=20",
+      "ms": 29.554092,
+      "total": 500,
+      "devueltos": 20
+    },
+    {
+      "id": "017",
+      "categoria": "q_prefijo",
+      "qs": "q=ooph&page=1&size=50",
+      "ms": 36.170368,
+      "total": 500,
+      "devueltos": 50
+    },
+    {
+      "id": "018",
+      "categoria": "q_departamento",
+      "qs": "q=montanus&departamento=23&page=0&size=50",
+      "ms": 27.058142,
+      "total": 10,
+      "devueltos": 10
+    },
+    {
+      "id": "019",
+      "categoria": "pagina_profunda",
+      "qs": "page=185&size=50",
+      "ms": 59.751233,
+      "total": 10000,
+      "devueltos": 50
+    },
+    {
+      "id": "020",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=rhinella%20aureus&page=0&size=30",
+      "ms": 29.070818,
+      "total": 17,
+      "devueltos": 17
+    },
+    {
+      "id": "021",
+      "categoria": "q_prefijo",
+      "qs": "q=atel&page=1&size=10",
+      "ms": 33.863543,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "022",
+      "categoria": "departamento",
+      "qs": "departamento=Vichada&page=2&size=50",
+      "ms": 32.256412,
+      "total": 303,
+      "devueltos": 50
+    },
+    {
+      "id": "023",
+      "categoria": "q_nombre_comun",
+      "qs": "q=frailej%C3%B3n%20andino&page=0&size=30",
+      "ms": 20.074538,
+      "total": 17,
+      "devueltos": 17
+    },
+    {
+      "id": "024",
+      "categoria": "q_numero_ficha",
+      "qs": "q=carga001&page=0&size=10",
+      "ms": 23.347961,
+      "total": 100,
+      "devueltos": 10
+    },
+    {
+      "id": "025",
+      "categoria": "q_numero_ficha",
+      "qs": "q=carga005&page=0&size=30",
+      "ms": 36.956329,
+      "total": 100,
+      "devueltos": 30
+    },
+    {
+      "id": "026",
+      "categoria": "departamento",
+      "qs": "departamento=27&page=1&size=10",
+      "ms": 16.701252,
+      "total": 303,
+      "devueltos": 10
+    },
+    {
+      "id": "027",
+      "categoria": "familia",
+      "qs": "familia=Podocarpaceae&page=1&size=30",
+      "ms": 32.047066,
+      "total": 500,
+      "devueltos": 30
+    },
+    {
+      "id": "028",
+      "categoria": "q_2_letras_like",
+      "qs": "q=pu&page=2&size=30",
+      "ms": 28.805198,
+      "total": 500,
+      "devueltos": 30
+    },
+    {
+      "id": "029",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=hyloxalus%20aureus&page=0&size=20",
+      "ms": 29.639556,
+      "total": 17,
+      "devueltos": 17
+    },
+    {
+      "id": "030",
+      "categoria": "q_genero",
+      "qs": "q=boana&page=0&size=10",
+      "ms": 27.343223,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "031",
+      "categoria": "q_prefijo",
+      "qs": "q=atelo&page=1&size=30",
+      "ms": 28.091996,
+      "total": 500,
+      "devueltos": 30
+    },
+    {
+      "id": "032",
+      "categoria": "q_genero",
+      "qs": "q=leptodactylus&page=3&size=30",
+      "ms": 28.400063,
+      "total": 500,
+      "devueltos": 30
+    },
+    {
+      "id": "033",
+      "categoria": "departamento",
+      "qs": "departamento=08&page=1&size=20",
+      "ms": 14.405079,
+      "total": 304,
+      "devueltos": 20
+    },
+    {
+      "id": "034",
+      "categoria": "q_familia",
+      "qs": "q=leptodactylus&familia=Leptodactylidae&page=0&size=10",
+      "ms": 28.531501,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "035",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=quercus%20purpureus&page=0&size=30",
+      "ms": 15.417219,
+      "total": 17,
+      "devueltos": 17
+    },
+    {
+      "id": "036",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=oophaga%20andicola&page=0&size=20",
+      "ms": 21.553829,
+      "total": 16,
+      "devueltos": 16
+    },
+    {
+      "id": "037",
+      "categoria": "pagina_profunda",
+      "qs": "page=465&size=20",
+      "ms": 42.462576,
+      "total": 10000,
+      "devueltos": 20
+    },
+    {
+      "id": "038",
+      "categoria": "pagina_profunda",
+      "qs": "page=161&size=50",
+      "ms": 46.898283,
+      "total": 10000,
+      "devueltos": 50
+    },
+    {
+      "id": "039",
+      "categoria": "q_departamento",
+      "qs": "q=santanderi&departamento=27&page=0&size=30",
+      "ms": 24.707468,
+      "total": 11,
+      "devueltos": 11
+    },
+    {
+      "id": "040",
+      "categoria": "familia",
+      "qs": "familia=Thraupidae&page=1&size=50",
+      "ms": 17.243175,
+      "total": 500,
+      "devueltos": 50
+    },
+    {
+      "id": "041",
+      "categoria": "pagina_profunda",
+      "qs": "page=190&size=50",
+      "ms": 42.146081,
+      "total": 10000,
+      "devueltos": 50
+    },
+    {
+      "id": "042",
+      "categoria": "q_2_letras_like",
+      "qs": "q=es&page=1&size=50",
+      "ms": 10.520222,
+      "total": 500,
+      "devueltos": 50
+    },
+    {
+      "id": "043",
+      "categoria": "q_epiteto",
+      "qs": "q=variabilis&page=0&size=10",
+      "ms": 22.539735,
+      "total": 321,
+      "devueltos": 10
+    },
+    {
+      "id": "044",
+      "categoria": "q_familia",
+      "qs": "q=oophaga&familia=Dendrobatidae&page=0&size=10",
+      "ms": 34.170238,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "045",
+      "categoria": "departamento",
+      "qs": "departamento=Vichada&page=0&size=10",
+      "ms": 18.741105,
+      "total": 303,
+      "devueltos": 10
+    },
+    {
+      "id": "046",
+      "categoria": "familia_departamento",
+      "qs": "familia=Thraupidae&departamento=Risaralda&page=0&size=30",
+      "ms": 34.305482,
+      "total": 16,
+      "devueltos": 16
+    },
+    {
+      "id": "047",
+      "categoria": "q_nombre_comun",
+      "qs": "q=rana%20arlequ%C3%ADn%20blanco&page=0&size=10",
+      "ms": 27.741703,
+      "total": 17,
+      "devueltos": 10
+    },
+    {
+      "id": "048",
+      "categoria": "q_departamento",
+      "qs": "q=paramensis&departamento=27&page=0&size=50",
+      "ms": 20.657635,
+      "total": 9,
+      "devueltos": 9
+    },
+    {
+      "id": "049",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=cattleya%20elegans&page=0&size=10",
+      "ms": 26.060031,
+      "total": 16,
+      "devueltos": 10
+    },
+    {
+      "id": "050",
+      "categoria": "q_epiteto",
+      "qs": "q=riparius&page=3&size=50",
+      "ms": 18.319697,
+      "total": 320,
+      "devueltos": 50
+    },
+    {
+      "id": "051",
+      "categoria": "q_numero_ficha",
+      "qs": "q=carga001&page=0&size=20",
+      "ms": 23.175801,
+      "total": 100,
+      "devueltos": 20
+    },
+    {
+      "id": "052",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=micrurus%20andinus&page=0&size=20",
+      "ms": 26.691927,
+      "total": 17,
+      "devueltos": 17
+    },
+    {
+      "id": "053",
+      "categoria": "q_genero",
+      "qs": "q=rhinella&page=3&size=20",
+      "ms": 32.477712,
+      "total": 500,
+      "devueltos": 20
+    },
+    {
+      "id": "054",
+      "categoria": "q_epiteto",
+      "qs": "q=bogotensis&page=2&size=50",
+      "ms": 18.641361,
+      "total": 320,
+      "devueltos": 50
+    },
+    {
+      "id": "055",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=atelopus%20andicola&page=0&size=20",
+      "ms": 15.420666,
+      "total": 16,
+      "devueltos": 16
+    },
+    {
+      "id": "056",
+      "categoria": "pagina_profunda",
+      "qs": "page=467&size=20",
+      "ms": 64.931637,
+      "total": 10000,
+      "devueltos": 20
+    },
+    {
+      "id": "057",
+      "categoria": "departamento",
+      "qs": "departamento=70&page=0&size=30",
+      "ms": 27.362572,
+      "total": 303,
+      "devueltos": 30
+    },
+    {
+      "id": "058",
+      "categoria": "q_familia",
+      "qs": "q=aureus&familia=Dendrobatidae&page=0&size=30",
+      "ms": 23.188706,
+      "total": 34,
+      "devueltos": 30
+    },
+    {
+      "id": "059",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=boana%20riparius&page=0&size=30",
+      "ms": 15.228665,
+      "total": 16,
+      "devueltos": 16
+    },
+    {
+      "id": "060",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=anolis%20amazonicus&page=0&size=30",
+      "ms": 20.489944,
+      "total": 17,
+      "devueltos": 17
+    },
+    {
+      "id": "061",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=espeletia%20aureus&page=0&size=10",
+      "ms": 31.436494,
+      "total": 17,
+      "devueltos": 10
+    },
+    {
+      "id": "062",
+      "categoria": "q_genero",
+      "qs": "q=dendropsophus&page=0&size=10",
+      "ms": 33.564234,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "063",
+      "categoria": "familia",
+      "qs": "familia=Thraupidae&page=0&size=10",
+      "ms": 20.389199,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "064",
+      "categoria": "q_epiteto",
+      "qs": "q=caribaeus&page=1&size=30",
+      "ms": 26.308476,
+      "total": 340,
+      "devueltos": 30
+    },
+    {
+      "id": "065",
+      "categoria": "q_departamento",
+      "qs": "q=puya&departamento=68&page=0&size=10",
+      "ms": 41.026092,
+      "total": 15,
+      "devueltos": 10
+    },
+    {
+      "id": "066",
+      "categoria": "pagina_profunda",
+      "qs": "page=178&size=50",
+      "ms": 43.548545,
+      "total": 10000,
+      "devueltos": 50
+    },
+    {
+      "id": "067",
+      "categoria": "q_epiteto",
+      "qs": "q=gigas&page=3&size=50",
+      "ms": 59.788659,
+      "total": 340,
+      "devueltos": 50
+    },
+    {
+      "id": "068",
+      "categoria": "q_genero",
+      "qs": "q=atelopus&page=1&size=30",
+      "ms": 58.557984,
+      "total": 500,
+      "devueltos": 30
+    },
+    {
+      "id": "069",
+      "categoria": "familia_departamento",
+      "qs": "familia=Ursidae&departamento=Putumayo&page=0&size=10",
+      "ms": 36.8149,
+      "total": 15,
+      "devueltos": 10
+    },
+    {
+      "id": "070",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=rhinella%20orinocensis&page=0&size=10",
+      "ms": 16.39038,
+      "total": 17,
+      "devueltos": 10
+    },
+    {
+      "id": "071",
+      "categoria": "familia",
+      "qs": "familia=Hylidae&page=0&size=10",
+      "ms": 8.644885,
+      "total": 1000,
+      "devueltos": 10
+    },
+    {
+      "id": "072",
+      "categoria": "q_departamento",
+      "qs": "q=leptodactylus&departamento=25&page=0&size=30",
+      "ms": 38.296355,
+      "total": 15,
+      "devueltos": 15
+    },
+    {
+      "id": "073",
+      "categoria": "familia",
+      "qs": "familia=Felidae&page=2&size=50",
+      "ms": 22.151746,
+      "total": 500,
+      "devueltos": 50
+    },
+    {
+      "id": "074",
+      "categoria": "q_prefijo",
+      "qs": "q=pan&page=1&size=10",
+      "ms": 31.719038,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "075",
+      "categoria": "q_nombre_comun",
+      "qs": "q=frailej%C3%B3n%20colombiano&page=0&size=10",
+      "ms": 15.424083,
+      "total": 17,
+      "devueltos": 10
+    },
+    {
+      "id": "076",
+      "categoria": "q_familia",
+      "qs": "q=cattleya&familia=Orchidaceae&page=0&size=30",
+      "ms": 34.341716,
+      "total": 500,
+      "devueltos": 30
+    },
+    {
+      "id": "077",
+      "categoria": "q_epiteto",
+      "qs": "q=andinus&page=1&size=20",
+      "ms": 30.780909,
+      "total": 339,
+      "devueltos": 20
+    },
+    {
+      "id": "078",
+      "categoria": "departamento",
+      "qs": "departamento=Guaviare&page=3&size=50",
+      "ms": 21.486252,
+      "total": 303,
+      "devueltos": 50
+    },
+    {
+      "id": "079",
+      "categoria": "pagina_profunda",
+      "qs": "page=480&size=20",
+      "ms": 82.074458,
+      "total": 10000,
+      "devueltos": 20
+    },
+    {
+      "id": "080",
+      "categoria": "q_nombre_comun",
+      "qs": "q=rana%20saltarina%20verde&page=0&size=50",
+      "ms": 43.637427,
+      "total": 17,
+      "devueltos": 17
+    },
+    {
+      "id": "081",
+      "categoria": "q_departamento",
+      "qs": "q=montanus&departamento=52&page=0&size=10",
+      "ms": 42.194279,
+      "total": 11,
+      "devueltos": 10
+    },
+    {
+      "id": "082",
+      "categoria": "q_numero_ficha",
+      "qs": "q=carga0&page=0&size=50",
+      "ms": 128.065675,
+      "total": 9999,
+      "devueltos": 50
+    },
+    {
+      "id": "083",
+      "categoria": "pagina_profunda",
+      "qs": "page=495&size=20",
+      "ms": 43.440245,
+      "total": 10000,
+      "devueltos": 20
+    },
+    {
+      "id": "084",
+      "categoria": "q_genero",
+      "qs": "q=rhinella&page=0&size=30",
+      "ms": 21.68689,
+      "total": 500,
+      "devueltos": 30
+    },
+    {
+      "id": "085",
+      "categoria": "departamento",
+      "qs": "departamento=13&page=1&size=50",
+      "ms": 23.116139,
+      "total": 303,
+      "devueltos": 50
+    },
+    {
+      "id": "086",
+      "categoria": "q_epiteto",
+      "qs": "q=rubrum&page=2&size=20",
+      "ms": 21.155768,
+      "total": 340,
+      "devueltos": 20
+    },
+    {
+      "id": "087",
+      "categoria": "q_genero",
+      "qs": "q=passiflora&page=1&size=10",
+      "ms": 34.153163,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "088",
+      "categoria": "q_nombre_comun",
+      "qs": "q=jaguar%20dorado&page=0&size=10",
+      "ms": 26.16804,
+      "total": 17,
+      "devueltos": 10
+    },
+    {
+      "id": "089",
+      "categoria": "q_genero",
+      "qs": "q=panthera&page=0&size=30",
+      "ms": 37.948858,
+      "total": 500,
+      "devueltos": 30
+    },
+    {
+      "id": "090",
+      "categoria": "q_prefijo",
+      "qs": "q=puy&page=0&size=20",
+      "ms": 26.534927,
+      "total": 500,
+      "devueltos": 20
+    },
+    {
+      "id": "091",
+      "categoria": "q_departamento",
+      "qs": "q=leptodactylus&departamento=27&page=0&size=30",
+      "ms": 29.762717,
+      "total": 15,
+      "devueltos": 15
+    },
+    {
+      "id": "092",
+      "categoria": "q_familia",
+      "qs": "q=gigas&familia=Fagaceae&page=0&size=50",
+      "ms": 34.649092,
+      "total": 17,
+      "devueltos": 17
+    },
+    {
+      "id": "093",
+      "categoria": "familia_departamento",
+      "qs": "familia=Podocarpaceae&departamento=Vichada&page=0&size=20",
+      "ms": 19.499458,
+      "total": 15,
+      "devueltos": 15
+    },
+    {
+      "id": "094",
+      "categoria": "q_epiteto",
+      "qs": "q=silvestris&page=2&size=20",
+      "ms": 17.725237,
+      "total": 320,
+      "devueltos": 20
+    },
+    {
+      "id": "095",
+      "categoria": "q_genero_epiteto",
+      "qs": "q=hyloxalus%20lacustris&page=0&size=20",
+      "ms": 18.713778,
+      "total": 16,
+      "devueltos": 16
+    },
+    {
+      "id": "096",
+      "categoria": "q_departamento",
+      "qs": "q=variabilis&departamento=44&page=0&size=50",
+      "ms": 22.564707,
+      "total": 10,
+      "devueltos": 10
+    },
+    {
+      "id": "097",
+      "categoria": "familia_departamento",
+      "qs": "familia=Orchidaceae&departamento=Magdalena&page=0&size=50",
+      "ms": 25.600525,
+      "total": 15,
+      "devueltos": 15
+    },
+    {
+      "id": "098",
+      "categoria": "familia",
+      "qs": "familia=Fagaceae&page=3&size=10",
+      "ms": 17.001434,
+      "total": 500,
+      "devueltos": 10
+    },
+    {
+      "id": "099",
+      "categoria": "q_epiteto",
+      "qs": "q=orinocensis&page=0&size=30",
+      "ms": 20.456416,
+      "total": 340,
+      "devueltos": 30
+    }
+  ]
+}

@@ -56,7 +56,7 @@ Prefijos: `CIENTIFICO`, `EQUIPOS` (servicio de escritura) y `CONSULTA`, `REPORTE
 | `AIVEN_TRUSTSTORE_PATH`, `AIVEN_TRUSTSTORE_PASSWORD`, `AIVEN_SSL_MODE` (opcional) | Truststore PKCS12 con el CA (4.5) y modo SSL (`VERIFY_CA` o `VERIFY_IDENTITY`) |
 | `<P>_DB_CONNECT_TIMEOUT_MS`, `<P>_DB_SOCKET_TIMEOUT_MS` | Opcionales (3000 / 30000) |
 
-Perfil `local` (del `.env` de la raíz): `MYSQL_TRANSACCIONAL_HOST/PORT` + `MYSQL_CIENTIFICO_USER/PASSWORD` (científico) o `MYSQL_EQUIPOS_USER/PASSWORD` (equipos); `MYSQL_LECTURA_*` (consulta pública); `MYSQL_ANALITICA_*` (reportes); `MYSQL_GATEWAY_*` (gateway).
+Perfil `local` (del `.env` de la raíz): `MYSQL_TRANSACCIONAL_HOST/PORT` + `MYSQL_CIENTIFICO_USER/PASSWORD` (científico) o `MYSQL_EQUIPOS_USER/PASSWORD` (equipos); `MYSQL_LECTURA_*` (consulta pública); `MYSQL_ANALITICA_*` (reportes); `MYSQL_GATEWAY_*` (gateway). En local también hay dos usuarios por base, como en Aiven: el de arriba es el `*_app` y Flyway usa `<P>_MIGR_USER/PASSWORD` (`cientifico_migr`, `equipos_migr`, etc.). Los crea `infra/mysql/initdb/01-usuarios.sh`, que además bloquea el historial de registro con el mismo `deploy/aiven/03-...` (D60); `levantar.ps1` y `levantar.sh` lo corren en cada arranque.
 
 Además, los de siempre: `RABBITMQ_*`, `REDIS_PASSWORD`, `KEYCLOAK_*`, `UBICACION_CLAVES`, `UBICACION_CLAVE_ACTIVA` (ver `.env.example` de la raíz y de cada servicio). Cada servicio lee `../.env` (raíz) y luego `./.env` (propio) cuando se ejecuta desde su carpeta; el último gana. Plantillas: `.env.example` en cada carpeta de servicio. Sin comentarios al final de línea (se leen como `.properties`).
 
@@ -123,6 +123,14 @@ rm 01-escritura-bases-y-usuarios.sql
 ```
 
 La copia con claves está en `deploy/aiven/.gitignore`; la plantilla (`.example`) es lo único que se sube. El script es idempotente: repetirlo rota contraseñas y recalcula permisos. Termina con `SHOW GRANTS` de cada usuario: deben verse solo `SELECT, INSERT, UPDATE, DELETE` (`*_app`) o esos más `CREATE, ALTER, DROP, INDEX, REFERENCES` (`*_migr`), sobre su propia base, sin `ALL PRIVILEGES` ni `WITH GRANT OPTION`. `avnadmin` nunca se usa en una aplicación.
+
+**5) Solo en el servicio de escritura, después de arrancar `servicio-cientifico` una vez** (para que Flyway cree las tablas): bloquea el historial (D60, RNF10). No tiene contraseñas, se ejecuta tal cual. Repítelo cada vez que una migración nueva de `cientifico` cree tablas:
+
+```bash
+mysql --ssl-mode=VERIFY_CA --ssl-ca=../../certs/ca.pem -h <HOST> -P <PUERTO> -u avnadmin -p < 03-registro-historial-append-only.sql.example
+```
+
+Para comprobarlo, conectado como `cientifico_app`, `UPDATE hallazgo_version SET autor = autor LIMIT 1;` debe fallar con `ERROR 1142`.
 
 Aiven MySQL exige clave primaria en todas las tablas (`sql_require_primary_key`) y no admite `CREATE TABLE ... SELECT`, triggers ni `SET GLOBAL`: las migraciones deben pasar `deploy/aiven/verificar-migraciones.sh`.
 
@@ -239,6 +247,7 @@ Pendiente de sus dueños (Nicolás: equipos y reportes; Santiago: gateway): crea
 - El tráfico a Aiven va cifrado y verificado, pero depende de la lista de IP permitidas y de la contraseña del usuario.
 - Con dos servicios de Aiven en cuentas distintas, cada integrante necesita el CA de cada servicio que use en su truststore (4.5).
 - No hay despliegue de las webs (Vercel) en esta iteración.
+- Cuando se desplieguen, las webs se sirven **solo desde `dist/`** (`npm run build`). Nunca con `vite dev`, `vite preview` ni `--host` en redes compartidas: el servidor de desarrollo expone el arnés de `web-interna/src/ubicacion/dev/` y su modo simulado (D58, SEC-J-I33).
 
 ## 10. CI (GitHub Actions) y pruebas de API con Bruno
 
@@ -246,9 +255,12 @@ Workflow: `.github/workflows/ci.yml`, en cada `push` y `pull_request` (permisos 
 
 | Job | Qué hace | Falla si |
 |---|---|---|
-| `frontend` | `web-publica`: Node 22, `npm ci`, `npm run build`, `npm test` (vitest), `npm audit --omit=dev --audit-level=high` | build, tests o auditoría fallan |
-| `backend` (matriz) | `mvn -B -pl <servicio> -am verify` para `servicio-cientifico` y `servicio-consulta-publica`, Java 21 Temurin, caché Maven. Los tests usan Testcontainers: `ubuntu-latest` ya trae Docker. Para sumar servicios, añadirlos a la matriz (hay un comentario en el archivo) | compilación o tests fallan |
+| `frontend` | `web-publica`: Node 22, `npm ci`, `npm run build`, `npm test` (vitest), `npm audit --omit=dev --audit-level=high`, y E2E Playwright (Chromium, Firefox, WebKit) | build, tests, auditoría o E2E fallan |
+| `web-interna` ("web-interna (build y tests)") | Igual que `frontend` sobre `web-interna`: Node 22, `npm ci`, `npm run build`, `npm test` (vitest), `npm audit --omit=dev --audit-level=high`. Los pasos de E2E (`npx playwright install --with-deps chromium firefox webkit` y `npm run test:e2e`) son **condicionales**: solo corren si existe `web-interna/playwright.config.js` (`if: hashFiles(...) != ''`), así la CI sirve antes y después de que lleguen las E2E. Las E2E no usan backend ni Keycloak: levantan `vite` y simulan la API con `page.route`. Si fallan, sube el artefacto `playwright-report-web-interna` | build, tests, auditoría o E2E fallan |
+| `backend` (matriz de 5 entradas) | `mvn -B -pl <servicio> -am verify` con Java 21 Temurin y caché Maven. Entradas: `servicio-cientifico`, `servicio-consulta-publica` y `api-gateway` en **UTC** (zona de los runners), más `servicio-cientifico` y `servicio-consulta-publica` en **America/Bogota**. Los nombres de los jobs llevan la zona: `backend (servicio-cientifico, UTC)`, `backend (servicio-cientifico, America/Bogota)`, etc. Los tests usan Testcontainers: `ubuntu-latest` ya trae Docker. Para sumar servicios, añadir una entrada a `matrix.include` (hay un comentario en el archivo) | compilación o tests fallan |
 | `bruno` | MySQL 8.4, RabbitMQ 4.1 y Redis 7.4 como service containers; Keycloak 26.8.1 con `docker run` e importando `infra/keycloak/realm-biohub.json`; crea las bases con `infra/ci/init-mysql.sql`; arranca los jars con el perfil `local` (Flyway migra); siembra hallazgos con `infra/ci/SembrarHallazgos.java`; espera los healthchecks de actuator; ejecuta `@usebruno/cli@4.3.0 run --env ci` | cualquier test de la colección falla |
+
+**Zona horaria en el backend.** `ValidadorDatosHallazgoTest` fallaba entre las 00:00 y las 05:00 UTC porque mezclaba la zona del servidor con la de Bogotá (ver `00-plan.md`, iteración 17). Las entradas `America/Bogota` de la matriz lo cubren: cada job define `TZ: ${{ matrix.tz }}` y el comando Maven pasa `-DargLine=-Duser.timezone=<tz>`. Se eligió `argLine` y no `MAVEN_OPTS` porque las pruebas corren en una JVM hija de Surefire/Failsafe: `MAVEN_OPTS` solo afecta a la JVM de Maven. `TZ` ya lo hereda la JVM hija en Linux; `-Duser.timezone` lo deja explícito y no requiere tocar ningún `pom.xml` (ninguno define `argLine`; si alguno la define algún día, hay que concatenar `@{argLine}`/`${argLine}`). `api-gateway` queda solo en UTC: no maneja fechas locales. Comprobación local: `TZ=America/Bogota mvn -B -ntp -q -pl servicio-consulta-publica -am test -Dtest=ValidadorDatosHallazgoTest -Dsurefire.failIfNoSpecifiedTests=false` (el XML de Surefire muestra `user.timezone=America/Bogota`). Los artefactos de informes fallidos se llaman `surefire-<servicio>-utc` y `surefire-<servicio>-bogota`.
 
 El job `bruno` sube el artefacto `bruno-resultados` (JUnit XML, informe HTML sin cuerpos ni cabeceras, y los logs de los dos servicios).
 
@@ -306,7 +318,10 @@ Guía para el equipo: `11-seguridad-y-acceso.md`.
 | `GATEWAY_LIMITE_CONSUMIDOR_POR_MINUTO`, `GATEWAY_LIMITE_IP_PORTAL_POR_MINUTO`, `GATEWAY_LIMITE_FALLOS_KEY_POR_MINUTO` | Opcionales | Por defecto 60, 120 y 20 |
 | `REDIS_MAXMEMORY` | Opcional, solo Compose | Por defecto `256mb` |
 | `GATEWAY_CIRCUITO_FALLOS`, `GATEWAY_CIRCUITO_TIEMPO_ABIERTO` | Opcionales | Circuit breaker hacia los servicios (D52). Por defecto 5 fallos y `10s` |
-| `RABBITMQ_CIENTIFICO_PASSWORD`, `RABBITMQ_CONSULTA_PASSWORD`, `RABBITMQ_REPORTES_PASSWORD` | Opcionales, `.env` raíz | Crean los usuarios por servicio (SEC-04) |
+| `GATEWAY_TESELAS_URL`, `GATEWAY_TESELAS_AGENTE`, `GATEWAY_TESELAS_POR_USUARIO`, `GATEWAY_TESELAS_CACHE` | Opcionales | Proxy de teselas del mapa (D56). Por defecto, OSM, el `User-Agent` de BioHub, 600 por minuto y `64MB`. El gateway necesita salida a internet hacia ese servidor |
+| `RABBITMQ_CIENTIFICO_PASSWORD`, `RABBITMQ_CONSULTA_PASSWORD`, `RABBITMQ_REPORTES_PASSWORD` | Opcionales, `.env` raíz | Crean los usuarios por servicio (SEC-04). Tras D61, `reportes_mq` necesita los permisos nuevos de `biohub.reportes`: vuelve a correr `docker compose up -d rabbitmq-usuarios` |
+| `EVIDENCIAS_DIR` | Opcional, `servicio-cientifico` | Carpeta de fotos y audios (D62). Por defecto `./datos/evidencias`, ignorada por Git. En contenedores, un volumen persistente |
+| `REPORTES_PROGRAMACION` | Opcional, `servicio-reportes` | Cron del reporte mensual automático (D61). Por defecto `0 0 3 1 * *` (día 1, 3 a. m. de Bogotá); `-` lo desactiva |
 
 - **Cambios del realm:** `failureFactor` 3, cliente `biohub-gateway` y usuario de prueba `sinrol1`. Hay que reimportar el realm.
 - **Migración del gateway en Aiven:** la aplica `gateway_migr` al arrancar con el perfil `aiven`. Una vez aplicada no se edita.
