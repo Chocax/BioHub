@@ -87,7 +87,7 @@ describe('Registrar hallazgo (HU-01)', () => {
     expect(api.post).toHaveBeenCalledWith('/api/cientifico/hallazgos', expect.objectContaining({
       nombreCientifico: 'Oophaga histrionica', departamento: 'Chocó', latitud: 5.53214, longitud: -73.36712,
       nombreComun: null, atributos: null,
-    }));
+    }), { cabeceras: { 'Idempotency-Key': expect.stringMatching(/^[0-9a-f-]{36}$/) } });
     // Solo la foto: el audio de más de 9 MB no se envía
     expect(api.subir).toHaveBeenCalledTimes(1);
     expect(api.subir.mock.calls[0][0]).toBe('/api/cientifico/hallazgos/h-1/evidencias');
@@ -108,6 +108,26 @@ describe('Registrar hallazgo (HU-01)', () => {
     // El error queda pegado al campo (aria-describedby), no solo en el aviso de arriba
     expect(screen.getByLabelText(/^Familia/)).toHaveAccessibleDescription(/La familia no existe en el catálogo/);
     expect(screen.getByLabelText(/^Familia/)).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('reintentar sin cambios repite la Idempotency-Key; corregir un campo usa una nueva', async () => {
+    const u = userEvent.setup();
+    api.post.mockRejectedValue(new ErrorApi(0));
+    montar('/hallazgos/nuevo', ['investigador_campo']);
+    await llenarObligatorios(u);
+    const registrar = () => u.click(screen.getByRole('button', { name: 'Registrar hallazgo' }));
+    const clave = (n) => api.post.mock.calls[n][2].cabeceras['Idempotency-Key'];
+
+    await registrar();
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    await registrar();
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2));
+    expect(clave(1)).toBe(clave(0));
+
+    await u.type(screen.getByLabelText(/^Familia/), 'e');
+    await registrar();
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(3));
+    expect(clave(2)).not.toBe(clave(0));
   });
 
   it('un rol que no registra no ve el formulario', async () => {

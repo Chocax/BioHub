@@ -43,6 +43,10 @@ export default function NuevoHallazgo() {
   const [enviando, setEnviando] = useState(false);
   const [progreso, setProgreso] = useState(null);
   const ultimaEspecie = useRef('');
+  // Idempotency-Key del registro (HU-01): la misma mientras no cambien los datos, para que reenviar tras un error de
+  // red no cree el hallazgo dos veces; si el usuario corrige algo, el siguiente envío lleva una clave nueva.
+  const claveRegistro = useRef(null);
+  useEffect(() => { claveRegistro.current = null; }, [datos, atributos]);
 
   const cambiar = (campo) => (e) => setDatos((d) => ({ ...d, [campo]: e.target.value }));
   const sugerencias = useSugerencias();
@@ -115,7 +119,9 @@ export default function NuevoHallazgo() {
         longitud: datos.longitud === '' ? null : Number(datos.longitud),
         atributos: Object.keys(atributosListos).length ? atributosListos : null,
       };
-      const { hallazgoId } = await api.post('/api/cientifico/hallazgos', cuerpo);
+      claveRegistro.current ??= crypto.randomUUID();
+      const { hallazgoId } = await api.post('/api/cientifico/hallazgos', cuerpo,
+        { cabeceras: { 'Idempotency-Key': claveRegistro.current } });
       const validos = archivos.filter((a) => !a.error);
       const fallidos = [];
       for (let i = 0; i < validos.length; i += 1) {

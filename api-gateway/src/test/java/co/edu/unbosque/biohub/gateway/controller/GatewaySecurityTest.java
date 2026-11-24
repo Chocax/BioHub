@@ -123,6 +123,17 @@ class GatewaySecurityTest {
     }
 
     @Test
+    void corsDejaEnviarIdempotencyKeyAlRegistrarUnHallazgo() throws Exception {
+        mvc.perform(options("/api/cientifico/hallazgos")
+                        .header("Origin", "http://localhost:5173")
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "authorization,content-type,idempotency-key"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Headers",
+                        org.hamcrest.Matchers.containsStringIgnoringCase("idempotency-key")));
+    }
+
+    @Test
     void circuitoAbiertoDa503ConRetryAfter() throws Exception {
         tokenValidoPara("auditor1", "auditor_cientifico");
         given(proxyService.reenviar(any(HttpServletRequest.class)))

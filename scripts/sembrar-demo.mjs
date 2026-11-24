@@ -9,6 +9,8 @@
 // Se puede correr varias veces: si ya hay hallazgos no crea más, y los equipos repetidos se saltan.
 // Solo para el entorno local: nunca contra Aiven ni contra datos reales.
 
+import { randomUUID } from 'node:crypto';
+
 const GATEWAY = process.env.BIOHUB_GATEWAY ?? 'http://localhost:8080';
 const KEYCLOAK = process.env.BIOHUB_KEYCLOAK ?? 'http://localhost:8180';
 const CLAVE = process.env.BIOHUB_CLAVE_PRUEBA;
@@ -28,10 +30,10 @@ async function token(usuario) {
   return (await r.json()).access_token;
 }
 
-async function pedir(metodo, ruta, tk, cuerpo) {
+async function pedir(metodo, ruta, tk, cuerpo, extra = {}) {
   const r = await fetch(GATEWAY + ruta, {
     method: metodo,
-    headers: { Authorization: `Bearer ${tk}`, ...(cuerpo !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+    headers: { ...extra, Authorization: `Bearer ${tk}`, ...(cuerpo !== undefined ? { 'Content-Type': 'application/json' } : {}) },
     body: cuerpo !== undefined ? JSON.stringify(cuerpo) : undefined,
   });
   const texto = await r.text();
@@ -96,7 +98,7 @@ async function main() {
           fechaRecoleccion: mes(atras, (i * 2) % 27 + 1), departamento, categoriaUicn: uicn,
           descripcion: `Registro de expedición en ${departamento}.`,
           latitud: azar(lat), longitud: azar(lon), atributos: atributos ?? null,
-        });
+        }, { 'Idempotency-Key': randomUUID() }); // el registro la exige (HU-01: un reintento no duplica el hallazgo)
         if (r.status === 201) ids.push(r.datos.hallazgoId);
         else console.log(`  no se creó ${cientifico}: ${r.status} ${JSON.stringify(r.datos).slice(0, 160)}`);
       }
@@ -112,10 +114,19 @@ async function main() {
     }
   }
 
+  // Todo equipo nace entregado a un investigador de campo activo (HU-04): se le asignan a investigador1.
+  const usuarios = await pedir('GET', '/api/gateway/usuarios?page=0&size=50', admin);
+  const custodio = (usuarios.datos?.content ?? [])
+    .find((u) => u.usuario === 'investigador1' && u.activo && (u.roles ?? []).includes('investigador_campo'));
   let equiposNuevos = 0;
-  for (const [codigoInventario, nombre, categoria] of EQUIPOS) {
-    const r = await pedir('POST', '/api/equipos', admin, { codigoInventario, nombre, categoria });
-    if (r.status === 201) equiposNuevos += 1;
+  if (!custodio) {
+    console.log(`  no se crearon equipos: investigador1 no aparece como investigador de campo activo (${usuarios.status})`);
+  } else {
+    for (const [codigoInventario, nombre, categoria] of EQUIPOS) {
+      const r = await pedir('POST', '/api/equipos', admin, { codigoInventario, nombre, categoria, custodioId: custodio.id });
+      if (r.status === 201) equiposNuevos += 1;
+      else if (r.status !== 409) console.log(`  no se creó el equipo ${codigoInventario}: ${r.status} ${JSON.stringify(r.datos).slice(0, 160)}`);
+    }
   }
   console.log(`  equipos nuevos: ${equiposNuevos} (los que ya existían se saltan)`);
 

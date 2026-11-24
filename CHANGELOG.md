@@ -4,6 +4,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed (registro desde la web, 2026-11-24)
+- Registrar un hallazgo desde la web interna daba 400 "encabezado obligatorio": el servicio científico exige `Idempotency-Key` desde el PR #23 y ni la web ni el gateway la enviaban. La web manda una clave por intento (la misma si se reintenta sin cambios) y el gateway la permite en CORS.
+- `levantar -Sembrar` no creaba hallazgos (mismo encabezado) ni equipos (el alta exige custodio desde el PR #22): ahora envía la clave y asigna los equipos a `investigador1`.
+
 ### Added (repositorio, 2026-11-25)
 - Licencia MIT, plantilla de PR y `CODEOWNERS` por zona.
 - El repositorio pasa a `Chocax/BioHub`: enlaces del README y agente de usuario del proxy de teselas al día.
