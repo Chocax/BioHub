@@ -1,0 +1,18 @@
+# Responsables por zona. GitHub pide la revisión de estas personas cuando un PR toca sus archivos.
+# Las zonas compartidas (afectan a todos los servicios) las revisa Santiago.
+
+# Zonas compartidas e infraestructura
+/pom.xml                    @Chocax
+/docker-compose.yml         @Chocax
+/infra/                     @Chocax
+/.github/                   @Chocax
+/levantar.*                 @Chocax
+/api-gateway/               @Chocax
+/web-interna/               @Chocax
+/web-publica/               @Chocax @JuaniMP
+
+# Servicios
+/servicio-cientifico/       @Nandoski666
+/servicio-consulta-publica/ @JuaniMP
+/servicio-equipos/          @Gattocho888
+/servicio-reportes/         @Gattocho888
