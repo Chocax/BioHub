@@ -25,7 +25,7 @@ Respondemos en un máximo de 7 días y avisamos cuando quede corregido.
 
 - Escaneo de secretos con bloqueo al hacer push.
 - CodeQL en Java, JavaScript y GitHub Actions.
-- Alertas y actualizaciones de seguridad de Dependabot.
+- Alertas de Dependabot cuando una dependencia tiene una vulnerabilidad conocida (sin PRs automáticos: las dependencias se actualizan a mano).
 - `.env`, `certs/`, `*.pem` y `*.p12` nunca se suben (están en `.gitignore`).
 
 El detalle de los controles está en [docs/equipo/08-reporte-seguridad.md](docs/equipo/08-reporte-seguridad.md) y
