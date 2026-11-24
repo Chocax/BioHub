@@ -45,8 +45,8 @@
 
     // Dos cóndores andinos planeando en círculos (la térmica): uno cerca, a la izquierda, y otro lejos, más pequeño.
     [
-      { izq: '17vw', arriba: '30vh', ancho: '150px', vuelta: '44s', ruta: 'path("M 0 -70 A 210 70 0 1 1 0 70 A 210 70 0 1 1 0 -70")', clase: '' },
-      { izq: '80vw', arriba: '20vh', ancho: '74px', vuelta: '58s', ruta: 'path("M 0 50 A 140 50 0 1 0 0 -50 A 140 50 0 1 0 0 50")', clase: ' bh-condor--lejos' },
+      { izq: '15vw', arriba: '32vh', ancho: '200px', vuelta: '44s', ruta: 'path("M 0 -70 A 210 70 0 1 1 0 70 A 210 70 0 1 1 0 -70")', clase: '' },
+      { izq: '80vw', arriba: '20vh', ancho: '96px', vuelta: '58s', ruta: 'path("M 0 50 A 140 50 0 1 0 0 -50 A 140 50 0 1 0 0 50")', clase: ' bh-condor--lejos' },
     ].forEach(function (c) {
       var vuelo = document.createElement('div');
       vuelo.className = 'bh-condor' + c.clase;
