@@ -9,17 +9,18 @@ import { useRevelar, useTitulo } from '../componentes/ui.jsx';
 import { ordenAleatorio } from '../componentes/ordenAleatorio.js';
 import { FONDOS_GRANDES, PINTURAS } from '../componentes/pinturas.js';
 
-/** Módulos de la sala, con la pintura y el encuadre de cada viñeta. */
+/** Módulos de la sala. Cada viñeta turna tres obras (la primera con su encuadre propio). */
 const MODULOS = [
-  { capacidad: 'registrarHallazgo', ruta: '/hallazgos/nuevo', titulo: 'Registrar hallazgo', texto: 'Carga un espécimen con su ficha, fotos y audios.', imagen: 'colibri', encuadre: '62% 40%' },
-  { capacidad: 'buscarHallazgos', ruta: '/buscar', titulo: 'Explorar hallazgos', texto: 'Filtra por especie, fecha, investigador o departamento.', imagen: 'rio', encuadre: '40% 60%' },
-  { capacidad: 'verMapa', ruta: '/mapa', titulo: 'Mapa de coordenadas', texto: 'Ubicaciones exactas, solo para alto rango.', imagen: 'chimborazo', encuadre: '50% 35%' },
-  { capacidad: 'verPlantillas', ruta: '/plantillas', titulo: 'Fichas taxonómicas', texto: 'Atributos flexibles por especie.', imagen: 'pitahaya', encuadre: '35% 68%' },
-  { capacidad: 'equipos', ruta: '/equipos', titulo: 'Equipos de campo', texto: 'Drones, cámaras trampa y sensores con su custodio.', imagen: 'sangay', encuadre: '58% 40%' },
-  { capacidad: 'reportes', ruta: '/reportes', titulo: 'Presión sobre ecosistemas', texto: 'Reporte mensual con zonas de alerta.', imagen: 'mariquita', encuadre: '45% 60%' },
-  { capacidad: 'usuarios', ruta: '/usuarios', titulo: 'Usuarios y roles', texto: 'Altas, cambios de rol y accesos.', imagen: 'sudamerica', encuadre: '45% 55%' },
-  { capacidad: 'apiKeys', ruta: '/api-keys', titulo: 'API para externos', texto: 'Llaves y límites para universidades y ONG.', imagen: 'tequendama-cima', encuadre: '42% 50%' },
+  { capacidad: 'registrarHallazgo', ruta: '/hallazgos/nuevo', titulo: 'Registrar hallazgo', texto: 'Carga un espécimen con su ficha, fotos y audios.', obras: ['colibri', 'pasiflora', 'tropico'], encuadre: '62% 40%' },
+  { capacidad: 'buscarHallazgos', ruta: '/buscar', titulo: 'Explorar hallazgos', texto: 'Filtra por especie, fecha, investigador o departamento.', obras: ['rio', 'lluvia', 'andes'], encuadre: '40% 60%' },
+  { capacidad: 'verMapa', ruta: '/mapa', titulo: 'Mapa de coordenadas', texto: 'Ubicaciones exactas, solo para alto rango.', obras: ['chimborazo', 'chita', 'icononzo'], encuadre: '50% 35%' },
+  { capacidad: 'verPlantillas', ruta: '/plantillas', titulo: 'Fichas taxonómicas', texto: 'Atributos flexibles por especie.', obras: ['pitahaya', 'condor', 'mutisia'], encuadre: '35% 68%' },
+  { capacidad: 'equipos', ruta: '/equipos', titulo: 'Equipos de campo', texto: 'Drones, cámaras trampa y sensores con su custodio.', obras: ['sangay', 'bongo', 'cachiri'], encuadre: '58% 40%' },
+  { capacidad: 'reportes', ruta: '/reportes', titulo: 'Presión sobre ecosistemas', texto: 'Reporte mensual con zonas de alerta.', obras: ['mariquita', 'nubes', 'choachi'], encuadre: '45% 60%' },
+  { capacidad: 'usuarios', ruta: '/usuarios', titulo: 'Usuarios y roles', texto: 'Altas, cambios de rol y accesos.', obras: ['sudamerica', 'santa-marta', 'guacamaya'], encuadre: '45% 55%' },
+  { capacidad: 'apiKeys', ruta: '/api-keys', titulo: 'API para externos', texto: 'Llaves y límites para universidades y ONG.', obras: ['tequendama-cima', 'tequendama', 'andes'], encuadre: '42% 50%' },
 ];
+const VINETA_MS = 7000;
 
 const ACCION_PRINCIPAL = [
   ['registrarHallazgo', '/hallazgos/nuevo', 'Registrar hallazgo'],
@@ -50,6 +51,54 @@ const MENSAJES = [
     texto: 'Los viajeros del siglo XIX dibujaban lo que veían, con notas al margen. Hoy la misma curiosidad se registra con fotos, audios y una ficha por especie.' },
 ];
 const INTERVALO_MS = 18000;
+
+/**
+ * Viñeta de un módulo: el título, el círculo y el texto llevan a la sala; las tres obras se turnan solas con fundido
+ * (cada viñeta con un desfase, para que no cambien todas a la vez) y los hexágonos de abajo eligen la obra a mano.
+ * Se detiene al pasar el mouse o con el foco, y no se mueve con «reducir movimiento».
+ */
+function Vineta({ modulo, orden }) {
+  const [actual, setActual] = useState(0);
+  const [pausa, setPausa] = useState(false);
+  const [vuelta, setVuelta] = useState(0); // reinicia el turno al elegir una obra a mano
+  const obras = modulo.obras.map((clave, i) => ({ clave, ...PINTURAS[clave], encuadre: i === 0 ? modulo.encuadre : PINTURAS[clave]?.encuadre }));
+
+  useEffect(() => {
+    if (pausa || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return undefined;
+    let intervalo;
+    const inicio = setTimeout(() => {
+      setActual((a) => (a + 1) % obras.length);
+      intervalo = setInterval(() => setActual((a) => (a + 1) % obras.length), VINETA_MS);
+    }, VINETA_MS + orden * 900);
+    return () => { clearTimeout(inicio); clearInterval(intervalo); };
+  }, [pausa, vuelta, orden, obras.length]);
+
+  return (
+    <div className="vineta revelar" style={{ transitionDelay: `${orden * 70}ms` }}
+      onMouseEnter={() => setPausa(true)} onMouseLeave={() => setPausa(false)}
+      onFocus={() => setPausa(true)} onBlur={() => setPausa(false)}>
+      <Link to={modulo.ruta} className="vineta__enlace">
+        <p className="vineta__titulo">{modulo.titulo}</p>
+        <span className="vineta__circulo">
+          {obras.map((o, i) => (
+            <img key={o.clave} src={o.chica} alt="" loading="lazy" style={{ objectPosition: o.encuadre }}
+              className={i === actual ? 'vineta__obra vineta__obra--activa' : 'vineta__obra'} />
+          ))}
+        </span>
+        <p className="vineta__texto">{modulo.texto}</p>
+      </Link>
+      <div className="vineta__obras" role="group" aria-label={`Obras de ${modulo.titulo}`}>
+        {obras.map((o, i) => (
+          <button key={o.clave} type="button" className="vineta__punto" aria-pressed={i === actual}
+            aria-label={`${o.titulo}, ${o.autor}`} title={`${o.titulo} · ${o.autor}`}
+            onClick={() => { setActual(i); setVuelta((v) => v + 1); }}>
+            <Hex relleno={i === actual} />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function LienzoRotativo() {
   // Orden al azar en cada visita, y nunca la misma diapositiva de arranque que la vez anterior.
@@ -164,16 +213,7 @@ export default function Inicio() {
           <h2 id="sala-titulo" className="sala__titulo revelar">Tu <em>galería</em></h2>
           <p className="sala__bajada revelar">Lo que tu rol puede hacer en BioHub</p>
           <div className="vinetas">
-            {modulos.map((m, i) => (
-              <Link key={m.ruta} to={m.ruta} className="vineta revelar" style={{ transitionDelay: `${i * 70}ms` }}>
-                <p className="vineta__titulo">{m.titulo}</p>
-                <span className="vineta__circulo">
-                  <img src={`/pinturas/${m.imagen}-800.webp`} alt="" loading="lazy" style={{ objectPosition: m.encuadre }} />
-                </span>
-                <p className="vineta__texto">{m.texto}</p>
-                <span className="hexes" aria-hidden="true"><Hex /><Hex relleno={i % 3 === 0} /><Hex /></span>
-              </Link>
-            ))}
+            {modulos.map((m, i) => <Vineta key={m.ruta} modulo={m} orden={i} />)}
           </div>
         </section>
       ) : (

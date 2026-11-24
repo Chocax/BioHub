@@ -111,7 +111,8 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(props.origenesPermitidos());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "X-API-Key"));
+        // Idempotency-Key: el registro de hallazgos la exige para que un reintento no cree un hallazgo repetido (HU-01)
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "X-API-Key", "Idempotency-Key"));
         config.setExposedHeaders(List.of(HttpHeaders.RETRY_AFTER, "X-RateLimit-Limit", "X-RateLimit-Remaining"));
         config.setAllowCredentials(false); // se usa Bearer token, no cookies
         config.setMaxAge(3600L);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { buscarHallazgos, estadoDeError } from './api/ubicacionApi.js';
 import AccesoDenegado from './AccesoDenegado.jsx';
 import Aviso from './componentes/Aviso.jsx';
@@ -24,6 +24,18 @@ const TAMANOS = [20, 50, 100];
  */
 export default function PaginaBusqueda({ cliente, roles = [], alSesionVencida, alVerEnMapa, alVerDetalle, sugerencias }) {
   const altoRango = esAltoRango(roles);
+  // «¿Por qué?» de la columna Coordenadas: sube hasta el aviso del rol, le da el foco y lo resalta un momento.
+  // `resaltes` cambia la key del aviso para que la animación se repita en cada clic.
+  const idAviso = useId();
+  const [resaltes, setResaltes] = useState(0);
+  const mostrarPorQue = () => setResaltes((n) => n + 1);
+  useEffect(() => {
+    if (!resaltes) return;
+    const aviso = document.getElementById(idAviso);
+    const quieto = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    aviso?.scrollIntoView?.({ behavior: quieto ? 'auto' : 'smooth', block: 'center' });
+    aviso?.focus({ preventScroll: true });
+  }, [resaltes, idAviso]);
   const [filtros, setFiltros] = useState(FILTROS_VACIOS);
   const [pagina, setPagina] = useState(0);
   const [tamano, setTamano] = useState(20);
@@ -78,7 +90,10 @@ export default function PaginaBusqueda({ cliente, roles = [], alSesionVencida, a
   return (
     <div className="ub-raiz">
       <h1>Búsqueda de hallazgos</h1>
-      {!altoRango ? <Aviso tipo="info">{TEXTO_ROL_RESTRINGIDO}</Aviso> : null}
+      {!altoRango ? (
+        <Aviso key={resaltes} tipo="info" id={idAviso} tabIndex={-1}
+          className={resaltes ? 'ub-aviso--resaltado' : undefined}>{TEXTO_ROL_RESTRINGIDO}</Aviso>
+      ) : null}
       <FiltrosHallazgos valores={filtros} onAplicar={aplicar} onLimpiar={limpiar} sugerencias={sugerencias} />
 
       <section aria-label="Resultados" aria-busy={estado.tipo === 'cargando'}>
@@ -131,7 +146,8 @@ export default function PaginaBusqueda({ cliente, roles = [], alSesionVencida, a
                 </select>
               </label>
             </div>
-            <TablaHallazgos hallazgos={estado.hallazgos} altoRango={altoRango} onVerEnMapa={alVerEnMapa} onVerDetalle={alVerDetalle} />
+            <TablaHallazgos hallazgos={estado.hallazgos} altoRango={altoRango} onVerEnMapa={alVerEnMapa} onVerDetalle={alVerDetalle}
+              onPorQue={mostrarPorQue} idAviso={idAviso} />
             <Paginacion
               pagina={estado.page}
               totalPaginas={estado.totalPaginas}
