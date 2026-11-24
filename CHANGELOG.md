@@ -7,6 +7,11 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 ### Added (repositorio, 2026-11-25)
 - Licencia MIT, plantilla de PR, `CODEOWNERS` por zona y `.github/dependabot.yml` (PR semanales agrupados hacia `develop`).
 - El repositorio pasa a `Chocax/BioHub`: enlaces del README y agente de usuario del proxy de teselas al día.
+- `SECURITY.md` con el reporte privado de vulnerabilidades.
+- README: el gráfico de ramas muestra la historia real de la Entrega 3 con todas las ramas, y explica las reglas de `main` y `develop`.
+
+### Fixed (repositorio, 2026-11-25)
+- `scripts/sembrar-demo.mjs`: al limpiar el HTML de Wikimedia Commons ya no puede quedar una etiqueta armada (alerta de CodeQL).
 
 ### Added (cóndor y README, 2026-11-24)
 - El cóndor andino entra a la colección: la lámina IX del *Recueil d'observations de zoologie* de Humboldt y Bonpland (1811, dominio público) es la obra número 20 del carrusel interno, el cielo del portal y el fondo del login.
