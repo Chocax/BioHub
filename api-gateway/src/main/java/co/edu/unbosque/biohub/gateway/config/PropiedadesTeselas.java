@@ -30,7 +30,7 @@ public record PropiedadesTeselas(String urlOrigen, String agenteUsuario, int zoo
         urlOrigen = urlOrigen == null || urlOrigen.isBlank()
                 ? "https://tile.openstreetmap.org/{z}/{x}/{y}.png" : urlOrigen;
         agenteUsuario = agenteUsuario == null || agenteUsuario.isBlank()
-                ? "BioHub-api-gateway/0.1 (+https://github.com/JuaniMP/BioHub)" : agenteUsuario;
+                ? "BioHub-api-gateway/0.1 (+https://github.com/Chocax/BioHub)" : agenteUsuario;
         zoomMaximo = zoomMaximo > 0 ? zoomMaximo : 12;
         porUsuario = porUsuario > 0 ? porUsuario : 600;
         cacheMaximo = cacheMaximo == null ? DataSize.ofMegabytes(64) : cacheMaximo;

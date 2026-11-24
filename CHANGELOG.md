@@ -4,6 +4,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
 ## [Unreleased]
 
+### Added (repositorio, 2026-11-25)
+- Licencia MIT, plantilla de PR, `CODEOWNERS` por zona y `.github/dependabot.yml` (PR semanales agrupados hacia `develop`).
+- El repositorio pasa a `Chocax/BioHub`: enlaces del README y agente de usuario del proxy de teselas al día.
+
 ### Added (cóndor y README, 2026-11-24)
 - El cóndor andino entra a la colección: la lámina IX del *Recueil d'observations de zoologie* de Humboldt y Bonpland (1811, dominio público) es la obra número 20 del carrusel interno, el cielo del portal y el fondo del login.
 - En el login, dos cóndores (silueta propia en la pose heráldica del escudo de Bogotá, `condor.svg`) planean en círculos detrás de la tarjeta; se ocultan en pantallas pequeñas y con movimiento reducido.
