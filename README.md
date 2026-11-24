@@ -1,24 +1,18 @@
 <div align="center">
 
-<img src="web-interna/public/favicon.svg" alt="Logo de BioHub" width="104">
+<img src="docs/readme/cabecera.svg" alt="BioHub, el inventario vivo de la biodiversidad de Colombia, sobre obras de dominio público que se van fundiendo" width="100%">
 
-# BioHub
+<br>
 
-**Sistema Nacional de Registro y Vigilancia de Biodiversidad**
+**Sistema Nacional de Registro y Vigilancia de Biodiversidad.** Un solo lugar para registrar, proteger y divulgar el inventario de flora y fauna de Colombia.
 
-Un solo lugar para registrar, proteger y divulgar el inventario de flora y fauna de Colombia.
+<a href="https://github.com/JuaniMP/BioHub/actions/workflows/ci.yml"><img src="docs/readme/fichas/ci.svg" alt="CI: GitHub Actions" height="30"></a>
+<img src="docs/readme/fichas/entrega.svg" alt="Entrega 3: implementación" height="30">
+<img src="docs/readme/fichas/curso.svg" alt="Curso: Ingeniería de Software 2" height="30">
+<img src="docs/readme/fichas/universidad.svg" alt="Universidad El Bosque, 2026" height="30">
+<img src="docs/readme/fichas/colombia.svg" alt="Hecho en Colombia" height="30">
 
-[![CI](https://github.com/JuaniMP/BioHub/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/JuaniMP/BioHub/actions/workflows/ci.yml)
-![Java 21](https://img.shields.io/badge/Java-21-b07219)
-![Spring Boot 3.5](https://img.shields.io/badge/Spring%20Boot-3.5.16-6db33f)
-![React 19](https://img.shields.io/badge/React-19-149eca)
-![MySQL 8.4](https://img.shields.io/badge/MySQL-8.4-00758f)
-![Keycloak 26](https://img.shields.io/badge/Keycloak-26-4d4d4d)
-![RabbitMQ 4](https://img.shields.io/badge/RabbitMQ-4.1-ff6600)
-
-Proyecto del curso **Ingeniería de Software 2**, Universidad El Bosque, 2026-2.
-
-<img src="docs/capturas/portal-inicio.webp" alt="Portal público de BioHub: buscador de especies sobre una pintura de dominio público" width="100%">
+[Qué es](#1-qué-es-biohub) · [Capturas](#3-capturas) · [Arquitectura](#4-arquitectura) · [Concepto artístico](#5-concepto-artístico) · [Cómo levantarlo](#8-cómo-levantarlo) · [Equipo](#12-equipo-quién-hizo-qué)
 
 </div>
 
@@ -88,7 +82,7 @@ La matriz completa está en [11-seguridad-y-acceso.md](docs/equipo/11-seguridad-
 <table>
   <tr>
     <td width="50%"><img src="docs/capturas/login.webp" alt="Inicio de sesión con el tema de BioHub"><br><sub><b>Inicio de sesión</b> · tema propio de Keycloak, con una obra distinta en cada visita</sub></td>
-    <td width="50%"><img src="docs/capturas/interna-salas.webp" alt="Inicio de la web interna con el carrusel de obras"><br><sub><b>Web interna · inicio</b> · carrusel de 19 obras con los mensajes del sistema</sub></td>
+    <td width="50%"><img src="docs/capturas/interna-salas.webp" alt="Inicio de la web interna con el carrusel de obras"><br><sub><b>Web interna · inicio</b> · carrusel de 20 obras con los mensajes del sistema</sub></td>
   </tr>
   <tr>
     <td><img src="docs/capturas/interna-inicio.webp" alt="Portada de la web interna"><br><sub><b>Web interna · portada</b> · el menú muestra solo las salas del rol</sub></td>
@@ -103,7 +97,8 @@ La matriz completa está en [11-seguridad-y-acceso.md](docs/equipo/11-seguridad-
     <td><img src="docs/capturas/portal-catalogo.webp" alt="Catálogo público por especie"><br><sub><b>Portal · catálogo</b> · una tarjeta por especie, con su foto pública</sub></td>
   </tr>
   <tr>
-    <td colspan="2" align="center"><img src="docs/capturas/portal-ficha.webp" alt="Ficha pública de una especie en peligro" width="70%"><br><sub><b>Portal · ficha pública</b> · solo departamento y región: la ubicación exacta de una especie en peligro nunca sale del sistema</sub></td>
+    <td><img src="docs/capturas/portal-inicio.webp" alt="Portal público: buscador de especies sobre una pintura"><br><sub><b>Portal · inicio</b> · el buscador flota sobre una obra distinta en cada visita</sub></td>
+    <td><img src="docs/capturas/portal-ficha.webp" alt="Ficha pública de una especie en peligro"><br><sub><b>Portal · ficha pública</b> · solo departamento y región: la ubicación exacta de una especie en peligro nunca sale del sistema</sub></td>
   </tr>
 </table>
 
@@ -196,14 +191,20 @@ Los diagramas C4 (componentes y clases), de paquetes, de secuencia y la WBS est�
 
 BioHub se presenta como **una galería de museo**. La biodiversidad de Colombia ya fue pintada por los viajeros y las expediciones científicas del siglo XIX, y esas obras son de dominio público. Las usamos como paredes de la galería.
 
-- **19 obras en tres lugares.** El carrusel del inicio interno, el cielo del portal y el fondo del inicio de sesión muestran las mismas 19 obras, en orden aleatorio en cada visita. Son de Frederic Edwin Church (sus bocetos de Colombia y Ecuador de 1853, *El corazón de los Andes*, *El Salto del Tequendama*, *El Río de Luz*), Martin Johnson Heade (colibríes y orquídeas), las acuarelas de la **Comisión Corográfica** (Carmelo Fernández, Henry Price), Edward Walhouse Mark, una lámina de la **Expedición Botánica** de Mutis y un grabado de Humboldt. Cada carpeta de imágenes tiene su `CREDITOS.md` con autor, museo, licencia y fuente.
+- **20 obras en tres lugares.** El carrusel del inicio interno, el cielo del portal y el fondo del inicio de sesión muestran las mismas 20 obras, en orden aleatorio en cada visita. Son de Frederic Edwin Church (sus bocetos de Colombia y Ecuador de 1853, *El corazón de los Andes*, *El Salto del Tequendama*, *El Río de Luz*), Martin Johnson Heade (colibríes y orquídeas), las acuarelas de la **Comisión Corográfica** (Carmelo Fernández, Henry Price), Edward Walhouse Mark y la lámina del cóndor de Humboldt y Bonpland. Las salas suman una lámina de la **Expedición Botánica** de Mutis y los puentes de Icononzo de Humboldt. Cada carpeta de imágenes tiene su `CREDITOS.md` con autor, museo, licencia y fuente.
+- **El cóndor andino.** El ave del escudo de Colombia, que planea sobre la sabana de Bogotá y los páramos que la rodean, es el símbolo de la colección: su cabeza, grabada para el *Recueil d'observations de zoologie* de Humboldt y Bonpland (1811), es una de las 20 obras, y una silueta propia del cóndor, en la pose heráldica del ave del escudo de Bogotá, planea en círculos sobre el fondo del inicio de sesión y cruza la cabecera de este README.
 - **La web interna es la galería.** Sigue [DESIGN.md](docs/diseño%20front/DESIGNS/WEB%20INTERNA/DESIGN.md): fondo color masilla, tinta negra y pinturas al óleo. Cada módulo es una **sala**: su nombre aparece en vertical en el margen y cada pintura lleva su **cartela**, como en un museo. Los mensajes del carrusel explican el sistema ("La ciencia se corrige, el historial se conserva").
 - **El portal es el cielo abierto.** Más claro y azul, para cualquier visitante: el buscador flota sobre la pintura y el catálogo se recorre como una colección.
-- **El inicio de sesión es la entrada.** Un tema propio de Keycloak (`infra/keycloak/themes/biohub`) con la tarjeta de la galería sobre una obra que cambia cada pocos segundos.
-- **Tipografía:** *Fraunces* (serif de exhibición, para títulos y nombres científicos) e *Inter* (texto e interfaz). El monograma, el follaje y la mariposa morpho son SVG propios del proyecto.
+- **El inicio de sesión es la entrada.** Un tema propio de Keycloak (`infra/keycloak/themes/biohub`) con la tarjeta de la galería sobre una obra que cambia cada pocos segundos, y dos cóndores que giran en la térmica detrás de ella.
+- **Tipografía:** *Fraunces* (serif de exhibición, para títulos y nombres científicos) e *Inter* (texto e interfaz). El monograma, el follaje, la mariposa morpho y el cóndor son SVG propios del proyecto.
 - **Accesible y liviano.** Las obras se sirven en WebP en tres tamaños (800, 1600 y grande), solo se monta la pintura actual y sus vecinas, y se respeta `prefers-reduced-motion`.
 
 ## 6. Stack tecnológico
+
+<img src="docs/readme/stack.svg" alt="Stack tecnológico: Java 21, Spring Boot 3.5.16, JPA y Flyway, API Gateway propio, React 19, Vite 8, Leaflet, Keycloak 26, MySQL 8.4, Redis 7.4, RabbitMQ 4.1, Aiven, Testcontainers, Playwright, ArchUnit y GitHub Actions" width="100%">
+
+<details>
+<summary><b>El detalle por capa</b></summary>
 
 | Capa | Tecnologías |
 |---|---|
@@ -214,6 +215,8 @@ BioHub se presenta como **una galería de museo**. La biodiversidad de Colombia 
 | **Mensajería** | RabbitMQ 4.1, exchange *topic* `biohub.eventos`, colas con DLQ y un usuario AMQP por servicio |
 | **Pruebas** | JUnit 5, Testcontainers (MySQL, RabbitMQ y Redis reales), ArchUnit, Vitest + Testing Library, Playwright (Chromium, Firefox y WebKit), k6, Bruno |
 | **Infraestructura** | Docker Compose para la infraestructura local, Aiven (MySQL administrado con SSL), GitHub Actions |
+
+</details>
 
 ## 7. Estructura del repositorio
 
@@ -459,20 +462,21 @@ gitGraph
         <li>Control centralizado de quién ve coordenadas (Strategy + Decorator + ArchUnit)</li>
         <li>Mapa y búsqueda interna, con auditoría de accesos</li>
         <li><code>servicio-consulta-publica</code>: modelo de lectura por eventos, caché Redis y DLQ</li>
-        <li>Primera versión de <code>web-publica</code>, CI en GitHub Actions, MySQL en Aiven y pruebas de carga con k6</li>
+        <li>CI en GitHub Actions, MySQL en Aiven y pruebas de carga con k6</li>
         <li>Plan de trabajo, revisiones de QA y seguridad e integración de los PR en develop</li>
       </ul>
     </td>
     <td valign="top" width="50%">
       <h3>Santiago Pinzón Vásquez</h3>
-      <a href="https://github.com/Chocax">@Chocax</a> · Seguridad, acceso e infraestructura<br><br>
-      <b>Gateway, Keycloak, webs e infraestructura</b>
+      <a href="https://github.com/Chocax">@Chocax</a> · Frontend developer · seguridad e infraestructura<br><br>
+      <b>Las dos webs, el gateway, Keycloak e infraestructura</b>
       <ul>
+        <li><b>Frontend:</b> diseño y construcción de <code>web-interna</code> y <code>web-publica</code>: el concepto de galería, las salas, el carrusel de las 20 obras, el cóndor, el catálogo por especie, la CSP y las pruebas de las salas</li>
+        <li>Tema de inicio de sesión de Keycloak con el estilo de la galería</li>
         <li><code>api-gateway</code>: API Keys, límites en Redis, circuit breaker, teselas del mapa y administración de usuarios</li>
-        <li>Keycloak: realm, roles y el tema de inicio de sesión</li>
-        <li>Diseño y construcción de <code>web-interna</code> y del portal (concepto de galería, las 19 obras, CSP)</li>
+        <li>Keycloak: realm y roles</li>
         <li>Historial append-only en MySQL, usuarios <code>*_app</code>/<code>*_migr</code> y limpieza de GPS en evidencias</li>
-        <li>Reportes en PDF y CSV, catálogo por especie con fotos públicas</li>
+        <li>Reportes en PDF y CSV con el diseño de BioHub</li>
         <li><code>levantar.ps1</code> y <code>levantar.sh</code>, y la infraestructura compartida</li>
       </ul>
     </td>
@@ -550,6 +554,6 @@ gitGraph
 ## 15. Créditos y licencia
 
 - **Autores:** Juanita Mejía Pineda, Santiago Pinzón Vásquez, Hernando Javier García Mogollón y Nicolás Espinosa Estrada. Ingeniería de Software 2, Universidad El Bosque.
-- **Obras:** todas de dominio público o CC0 (Wikimedia Commons, Smithsonian Cooper Hewitt, Biblioteca Nacional de Colombia). El crédito completo de cada una está en `web-interna/public/pinturas/CREDITOS.md`, `web-publica/public/pinturas/CREDITOS.md` y `infra/keycloak/themes/biohub/login/resources/img/CREDITOS.md`.
+- **Obras:** todas de dominio público o CC0 (Wikimedia Commons, Smithsonian Cooper Hewitt, Biblioteca Nacional de Colombia y la biblioteca de libros raros de McGill en Internet Archive). El crédito completo de cada una está en `web-interna/public/pinturas/CREDITOS.md`, `web-publica/public/pinturas/CREDITOS.md` y `infra/keycloak/themes/biohub/login/resources/img/CREDITOS.md`.
 - **Mapa:** © colaboradores de OpenStreetMap.
 - **Licencia del código:** pendiente de definir (el repositorio aún no incluye archivo `LICENSE`).

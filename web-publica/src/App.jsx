@@ -37,7 +37,7 @@ export default function App() {
         </div>
         <div className="pie-publico__columna">
           <p className="pie-publico__titulo">Créditos</p>
-          <p>Pinturas de dominio público: F. E. Church, M. J. Heade, círculo de J. Constable y la Comisión Corográfica.</p>
+          <p>Pinturas de dominio público: F. E. Church, M. J. Heade, círculo de J. Constable, la Comisión Corográfica, E. W. Mark y el cóndor de Humboldt y Bonpland.</p>
           <p>Fotografías de las expediciones, publicadas por quien las registró.</p>
         </div>
         <p className="pie-publico__legal">© {new Date().getFullYear()} BioHub · Proyecto académico, Universidad El Bosque</p>

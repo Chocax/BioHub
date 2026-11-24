@@ -39,6 +39,14 @@ Acuarelas de la Comisión Corográfica y de Edward Walhouse Mark, una lámina de
 | `mutisia.webp`, `mutisia-800.webp` | *Mutisia clematis*, lámina de la Real Expedición Botánica del Nuevo Reino de Granada | Salvador Rizo, 1783-1816 | Real Jardín Botánico de Madrid | Dominio público | https://commons.wikimedia.org/wiki/File:Mutisia_Clematis_RealExpedicionBotanicaNuevaGranada.jpg |
 | `icononzo.webp`, `icononzo-800.webp` | Puentes naturales de Icononzo (*Vues des Cordillères*) | Alexander von Humboldt, 1810 | — | Dominio público | https://commons.wikimedia.org/wiki/File:Puentes_de_icononzo.jpg |
 
+## El cóndor andino (Internet Archive, dominio público)
+
+El ave del escudo de Colombia. Lámina IX del *Recueil d'observations de zoologie et d'anatomie comparée* del viaje de Humboldt y Bonpland por el Nuevo Continente, escaneada por la biblioteca de libros raros de McGill (hoja n462). Se recortó en horizontal alrededor de la cabeza y se pasó a WebP; no se alteró su contenido.
+
+| Archivo | Obra | Autor y año | Colección | Licencia | Fuente |
+|---|---|---|---|---|---|
+| `condor.webp`, `condor-800.webp` | Cabeza del cóndor (*Vultur gryphus*), lámina IX | Alexander von Humboldt y Aimé Bonpland, 1811 | McGill University Library, Rare Books and Special Collections | Dominio público | https://archive.org/details/McGillLibrary-rbsc_recueil-dobservations-de-zoologie-danatomie_folioOAH881_425918111-21655 |
+
 ## Nubes y trópico (también en el portal)
 
 | Archivo | Obra | Autor y año | Museo | Licencia | Fuente |

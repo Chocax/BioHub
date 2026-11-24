@@ -22,9 +22,9 @@ const delLogin = () => {
 const ordenadas = (l) => [...l].sort();
 
 describe('obras de pantalla completa', () => {
-  it('son 19 y todas están en el registro de pinturas', () => {
-    expect(FONDOS_GRANDES).toHaveLength(19);
-    expect(new Set(FONDOS_GRANDES).size).toBe(19);
+  it('son 20 y todas están en el registro de pinturas', () => {
+    expect(FONDOS_GRANDES).toHaveLength(20);
+    expect(new Set(FONDOS_GRANDES).size).toBe(20);
     for (const n of FONDOS_GRANDES) expect(PINTURAS[n], n).toBeDefined();
   });
 

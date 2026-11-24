@@ -26,6 +26,8 @@ export const PINTURAS = {
   'santa-marta': { src: '/pinturas/santa-marta.webp', chica: '/pinturas/santa-marta-800.webp', titulo: 'Catedral de Santa Marta', autor: 'E. W. Mark, 1844', encuadre: '50% 60%' },
   mutisia: { src: '/pinturas/mutisia.webp', chica: '/pinturas/mutisia-800.webp', titulo: 'Mutisia clematis', autor: 'S. Rizo, Expedición Botánica', encuadre: '50% 35%' },
   icononzo: { src: '/pinturas/icononzo.webp', chica: '/pinturas/icononzo-800.webp', titulo: 'Puentes naturales de Icononzo', autor: 'A. von Humboldt, 1810', encuadre: '50% 30%' },
+  // El cóndor andino, ave del escudo de Colombia: lámina del viaje de Humboldt y Bonpland (Internet Archive, McGill)
+  condor: { src: '/pinturas/condor.webp', chica: '/pinturas/condor-800.webp', titulo: 'Cabeza del cóndor (Vultur gryphus)', autor: 'A. von Humboldt y A. Bonpland, 1811', encuadre: '45% 40%' },
   sangay: { src: '/pinturas/sangay.webp', chica: '/pinturas/sangay-800.webp', titulo: 'El volcán Sangay en erupción', autor: 'F. E. Church, década de 1850', encuadre: '58% 40%' },
 };
 
@@ -33,13 +35,13 @@ const CLAVES = Object.keys(PINTURAS);
 
 /**
  * Las obras que se ven a pantalla completa: el carrusel del inicio interno, el cielo del portal y el fondo del login
- * usan exactamente estas 19 (en orden aleatorio). Quedan fuera las tres verticales y pequeñas (Mutisia, Icononzo y la
+ * usan exactamente estas 20 (en orden aleatorio). Quedan fuera las tres verticales y pequeñas (Mutisia, Icononzo y la
  * catedral de Santa Marta), que solo aparecen en las salas. La prueba listasDeFondos.test.js vigila que las tres listas
  * (aquí, web-publica/src/paginas/Inicio.jsx y el fondos.js del tema de Keycloak) sigan iguales.
  */
 export const FONDOS_GRANDES = ['andes', 'rio', 'colibri', 'tequendama', 'lluvia', 'pasiflora', 'nubes', 'tropico',
   'tequendama-cima', 'pitahaya', 'guacamaya', 'sudamerica', 'chimborazo', 'sangay', 'chita', 'cachiri', 'mariquita',
-  'bongo', 'choachi'];
+  'bongo', 'choachi', 'condor'];
 
 /** Una pintura al azar (distinta de `evitar`, si se da): cada vez que se abre una sala cambia la obra. */
 export function pinturaAlAzar(evitar) {

@@ -36,6 +36,22 @@ html.login-pf, .login-pf body {
 html.bh-con-fondos, .bh-con-fondos body { background-image: none !important; background-color: #2f3a2a !important; }
 @media (prefers-reduced-motion: reduce) { .bh-fondo { animation: none; transition: none; } }
 
+/* Cóndores andinos (js/fondos.js) que planean en círculos lentos, como en una térmica, sobre la pintura y detrás de la
+   tarjeta. Se ven de lejos: las alas siguen horizontales y solo se ladean un poco al girar. */
+.bh-condor {
+  position: fixed; z-index: 1; width: 0; height: 0; pointer-events: none;
+}
+.bh-condor img {
+  display: block; width: var(--bh-condor-ancho, 150px); height: auto; opacity: .9;
+  filter: drop-shadow(0 8px 12px rgb(0 0 0 / .28));
+  offset-path: var(--bh-condor-ruta); offset-rotate: 0deg; offset-anchor: 50% 50%;
+  animation: bh-termica var(--bh-condor-vuelta, 42s) linear infinite, bh-planeo 7s ease-in-out infinite;
+}
+.bh-condor--lejos img { opacity: .55; filter: blur(.4px) drop-shadow(0 4px 6px rgb(0 0 0 / .2)); }
+@keyframes bh-termica { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+@keyframes bh-planeo { 0%, 100% { scale: 1 1; rotate: -7deg; } 50% { scale: 1 .88; rotate: 6deg; } }
+@media (prefers-reduced-motion: reduce), (max-width: 760px) { .bh-condor { display: none; } }
+
 .login-pf body::before {
   content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 1;
   background: linear-gradient(100deg, rgb(13 13 12 / .55) 0%, rgb(13 13 12 / .15) 45%, rgb(13 13 12 / .05) 100%);
