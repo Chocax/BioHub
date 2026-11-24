@@ -7,7 +7,7 @@ const movimiento = (reducido) =>
 
 describe('CieloRotativo', () => {
   // Azar fijo en 0,9999: el barajado deja el orden original (Andes, río, ...) y las pruebas son estables.
-  beforeEach(() => { vi.useFakeTimers(); window.localStorage.clear(); vi.spyOn(Math, 'random').mockReturnValue(0.9999); });
+  beforeEach(() => { vi.useFakeTimers(); window.localStorage.clear(); window.sessionStorage.clear(); vi.spyOn(Math, 'random').mockReturnValue(0.9999); });
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
   it('renderiza solo la actual y la siguiente, con srcset de 800, 1600 y grande', () => {
@@ -41,13 +41,10 @@ describe('CieloRotativo', () => {
     expect(imgs[0].getAttribute('src')).toContain('andes');
   });
 
-  it('al volver a abrir no arranca con la misma pintura que la vez anterior', () => {
+  it('barajar las pinturas no guarda nada en el navegador (WP-08)', () => {
     movimiento(false);
-    const primera = (c) => c.querySelector('img[data-activa="true"]').getAttribute('src');
-    const { container, unmount } = render(<CieloRotativo />);
-    const antes = primera(container);
-    unmount();
-    const otra = render(<CieloRotativo />);
-    expect(primera(otra.container)).not.toBe(antes);
+    render(<CieloRotativo />);
+    expect(window.localStorage.length).toBe(0);
+    expect(window.sessionStorage.length).toBe(0);
   });
 });
