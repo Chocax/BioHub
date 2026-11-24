@@ -411,43 +411,95 @@ Guía completa (Aiven, CA, variables, vuelta atrás): [09-despliegue.md](docs/eq
 
 ## 11. Ramas y flujo de trabajo
 
+Así se armó la Entrega 3: cada integrante trabajó en su rama, la fusionó en `develop` por pull request las veces que hizo falta, y `develop` pasó a `main` al cerrar la entrega.
+
 ```mermaid
+%%{init: {'gitGraph': {'mainBranchName': 'main', 'rotateCommitLabel': true}}}%%
 gitGraph
   commit id: "esqueleto"
   branch develop
   checkout develop
-  commit id: "integración"
+  commit id: "reparto de ramas"
+  branch feature/ubicacion-consulta-publica
   branch feature/seguridad-acceso
+  branch feature/reportes-equipos
+  branch feature/registro-cientifico
+  checkout feature/ubicacion-consulta-publica
+  commit id: "Aiven y ubicación"
+  checkout develop
+  merge feature/ubicacion-consulta-publica
+  checkout feature/seguridad-acceso
   commit id: "gateway y Keycloak"
   checkout develop
   merge feature/seguridad-acceso
-  branch feature/registro-cientifico
-  commit id: "registro"
+  checkout feature/ubicacion-consulta-publica
+  commit id: "roles y mapa"
   checkout develop
-  merge feature/registro-cientifico
-  branch feature/reportes-equipos
+  merge feature/ubicacion-consulta-publica
+  checkout feature/reportes-equipos
   commit id: "equipos y reportes"
   checkout develop
   merge feature/reportes-equipos
+  checkout feature/registro-cientifico
+  commit id: "registro"
+  checkout develop
+  merge feature/registro-cientifico
+  branch feature/revision-antes-del-front
+  commit id: "web interna"
+  checkout develop
+  merge feature/revision-antes-del-front
+  branch feature/revision-front-2
+  commit id: "segunda revisión"
+  checkout develop
+  merge feature/revision-front-2
+  checkout feature/ubicacion-consulta-publica
+  commit id: "fotos públicas"
+  checkout develop
+  merge feature/ubicacion-consulta-publica
+  branch feature/correcciones-revision
+  commit id: "20 obras"
+  checkout develop
+  merge feature/correcciones-revision
+  branch fix/reportes-equipos-mejoras
+  commit id: "custodia y CSV"
+  checkout develop
+  merge fix/reportes-equipos-mejoras
+  checkout feature/registro-cientifico
+  commit id: "correcciones del registro"
+  checkout develop
+  merge feature/registro-cientifico
+  checkout feature/correcciones-revision
+  commit id: "README y cóndor"
+  checkout develop
+  merge feature/correcciones-revision
   checkout main
   merge develop tag: "Entrega 3"
 ```
 
 | Rama | Para qué | Responsable |
 |---|---|---|
-| `main` | Solo entregas. Recibe `develop` por pull request en cada entrega | Todo el equipo |
+| `main` | Solo entregas. Recibe `develop` por pull request al cerrar cada entrega | Todo el equipo |
 | `develop` | Integración: todo entra por pull request con la CI en verde | Todo el equipo |
-| `feature/ubicacion-consulta-publica` | Ubicación cifrada, mapa, búsqueda, consulta pública y portal | Juanita |
-| `feature/seguridad-acceso` | Gateway, Keycloak, roles, web interna e infraestructura compartida | Santiago |
+| `feature/ubicacion-consulta-publica` | Ubicación cifrada, mapa, búsqueda, consulta pública y portal (cerrada: su trabajo ya está en `develop`) | Juanita |
+| `feature/seguridad-acceso` | Gateway, Keycloak, roles e infraestructura compartida | Santiago |
 | `feature/registro-cientifico` | Registro de hallazgos, fichas, evidencias e historial | Hernando |
 | `feature/reportes-equipos` | Equipos de campo y reportes analíticos | Nicolás |
-| `feature/revision-*`, `feature/correcciones-revision`, `fix/*` | Revisiones generales, correcciones e integración entre ramas | Quien abrió la revisión |
+| `fix/reportes-equipos-mejoras` | Departamentos normalizados, CSV seguro, custodia e historial de equipos | Nicolás |
+| `feature/revision-antes-del-front`, `feature/revision-front-2` | Revisión general y las dos webs con el diseño de galería | Santiago |
+| `feature/correcciones-revision` | Correcciones de la revisión del equipo, las 20 obras, el cóndor y el README | Santiago |
 
-`main` y `develop` están **protegidas**: nada de push directo ni *force push*, todo entra por pull request y cada quien puede fusionar el suyo. Antes de abrir el PR, actualiza tu rama con `develop` y comprueba que `mvn test` (y `npm test` si tocaste una web) pasen.
+`main` y `develop` están **protegidas** con reglas del repositorio:
+
+- Nada de push directo, *force push* ni borrado: todo entra por pull request.
+- El PR solo se puede fusionar con los 11 jobs de la CI en verde y las conversaciones resueltas. Cada quien puede fusionar el suyo.
+- En `develop` se fusiona con **Create a merge commit** (o *squash* si es un PR de una sola vez); en `main`, solo con merge commit.
+- El PR trae una plantilla con la lista de chequeo, y `CODEOWNERS` pide la revisión del responsable de cada zona.
+
+Antes de abrir el PR, actualiza tu rama con `develop` (`git fetch origin` y `git merge origin/develop`) y comprueba que `mvn test` (y `npm test` si tocaste una web) pasen.
 
 - **Commits:** Conventional Commits en español (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`).
 - **Migraciones Flyway:** `V<AAAAMMDD_HHMM>__descripcion.sql`, para que dos personas en el mismo esquema nunca choquen. Nunca se edita una migración aplicada: se crea otra.
-- **Zonas compartidas** (las coordina Santiago y se avisa antes de tocarlas): `pom.xml` raíz, `docker-compose.yml`, `infra/`, el realm de Keycloak y `config/` de `servicio-cientifico`.
+- **Zonas compartidas** (las coordina Santiago y se avisa antes de tocarlas): `pom.xml` raíz, `docker-compose.yml`, `infra/`, `.github/`, el realm de Keycloak y `config/` de `servicio-cientifico`.
 
 ## 12. Equipo: quién hizo qué
 
